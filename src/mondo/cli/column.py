@@ -23,6 +23,7 @@ from mondo.api.queries import (
     COLUMNS_ON_BOARD,
     CREATE_OR_GET_TAG,
 )
+from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
     UnknownColumnTypeError,
@@ -35,6 +36,7 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+app.add_typer(doc_app, name="doc", help="Read/write the content of a `doc`-typed column.")
 
 
 # ----- helpers -----

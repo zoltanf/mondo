@@ -310,3 +310,60 @@ mutation ($name: String!, $board: ID!) {
   }
 }
 """.strip()
+
+
+# --- docs (the Doc column → workspace doc pointer + blocks) ---
+
+# Fetch a doc's full block tree by object_id (extracted from the doc column).
+DOCS_BY_OBJECT_ID = """
+query ($objs: [ID!]!) {
+  docs(object_ids: $objs) {
+    id
+    object_id
+    name
+    doc_kind
+    url
+    workspace_id
+    blocks {
+      id
+      type
+      content
+      parent_block_id
+    }
+  }
+}
+""".strip()
+
+
+# Create a new doc attached to an item's doc-column (populates the column).
+CREATE_DOC_ON_ITEM = """
+mutation ($item: ID!, $col: String!) {
+  create_doc(location: { board: { item_id: $item, column_id: $col } }) {
+    id
+    object_id
+    name
+    url
+  }
+}
+""".strip()
+
+
+# Bulk-create blocks at the end of a doc.
+CREATE_DOC_BLOCKS = """
+mutation ($doc: ID!, $blocks: [CreateBlockInput!]!) {
+  create_doc_blocks(doc_id: $doc, blocks: $blocks) {
+    id
+    type
+  }
+}
+""".strip()
+
+
+# Delete a single doc block by id (used by `doc clear --replace`).
+DELETE_DOC_BLOCK = """
+mutation ($block: String!) {
+  delete_doc_block(block_id: $block) {
+    id
+  }
+}
+""".strip()
