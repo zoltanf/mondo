@@ -28,6 +28,8 @@ class GlobalOpts:
     debug: bool
     output: str | None = None
     query: str | None = None
+    yes: bool = False
+    dry_run: bool = False
 
     def emit(
         self,

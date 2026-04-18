@@ -10,6 +10,7 @@ import typer
 
 from mondo.api.auth import ENV_VAR
 from mondo.api.errors import AuthError, MondoError
+from mondo.api.queries import ME_QUERY
 from mondo.cli.context import GlobalOpts
 
 KEYRING_SERVICE = "mondo"
@@ -18,19 +19,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-_ME_QUERY = """
-query {
-  me {
-    id
-    name
-    email
-    is_admin
-    account { id name slug tier }
-  }
-}
-""".strip()
 
 
 @app.command()
@@ -45,7 +33,7 @@ def whoami(ctx: typer.Context) -> None:
 
     try:
         with client:
-            result = client.execute(_ME_QUERY)
+            result = client.execute(ME_QUERY)
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
@@ -73,7 +61,7 @@ def status(ctx: typer.Context) -> None:
 
     try:
         with client:
-            result = client.execute(_ME_QUERY)
+            result = client.execute(ME_QUERY)
     except MondoError as e:
         typer.secho(f"\nerror: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e

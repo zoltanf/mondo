@@ -13,6 +13,7 @@ import typer
 from mondo.cli.auth import app as auth_app
 from mondo.cli.context import GlobalOpts
 from mondo.cli.graphql import graphql_command
+from mondo.cli.item import app as item_app
 from mondo.logging_ import configure_logging
 from mondo.version import __version__
 
@@ -37,6 +38,7 @@ app = typer.Typer(
 )
 
 app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
+app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
 app.command(
     name="graphql",
     help="Send a raw GraphQL query/mutation to monday.com.",
@@ -88,6 +90,14 @@ def _root(
     debug: bool = typer.Option(
         False, "--debug", help="Log every GraphQL query and response to stderr."
     ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip confirmation prompts on destructive actions."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="For mutating commands: print the GraphQL mutation and variables, don't send.",
+    ),
     version: bool = typer.Option(
         False,
         "--version",
@@ -107,6 +117,8 @@ def _root(
         debug=debug,
         output=output.value if output is not None else None,
         query=query,
+        yes=yes,
+        dry_run=dry_run,
     )
 
 
