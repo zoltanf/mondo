@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mondo"
+version = "0.1.0"
+description = "Power-user CLI for the monday.com GraphQL API — az/gh/gam style."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "MIT" }
+authors = [{ name = "marktguru" }]
+keywords = ["monday", "monday.com", "cli", "graphql", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "typer>=0.15.0",
+    "rich>=13.9.0",
+    "gql[requests]>=3.5.0",
+    "jmespath>=1.0.1",
+    "ruamel.yaml>=0.18.6",
+    "keyring>=25.0.0",
+    "tenacity>=9.0.0",
+    "pydantic>=2.9.0",
+    "loguru>=0.7.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-httpx>=0.35.0",
+    "syrupy>=4.8.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[project.scripts]
+mondo = "mondo.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/marktguru/mondo"
+Issues = "https://github.com/marktguru/mondo/issues"
+Documentation = "https://github.com/marktguru/mondo#readme"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mondo"]
+
+[tool.uv]
+# uv manages the virtualenv under .venv/ by default.
+# Lockfile (uv.lock) is checked in for reproducible builds.
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "SIM",      # simplify
+    "RUF",      # ruff-specific
+]
+ignore = [
+    "E501",     # line length handled by formatter
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+files = ["src/mondo"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+markers = [
+    "integration: integration tests requiring MONDAY_TEST_TOKEN (deselect with '-m \"not integration\"')",
+]
