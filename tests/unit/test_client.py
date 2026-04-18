@@ -56,7 +56,9 @@ class TestHeaders:
 class TestExecuteBody:
     def test_posts_query_and_variables(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({}))
-        client = MondayClient(token="t", api_version="2026-01")
+        # inject_complexity=False keeps the exact query bytes — otherwise the
+        # client rewrites outgoing queries to carry the `complexity` meter.
+        client = MondayClient(token="t", api_version="2026-01", inject_complexity=False)
         client.execute("query ($id: ID!) { me { id } }", variables={"id": 1})
         import json as _json
 

@@ -255,11 +255,11 @@ def _dispatch(
         _write_xlsx(item_rows, item_headers, subitem_rows, subitem_headers, out)
         return
 
-    buf: Any
-    if out is not None:
-        buf = out.open("w", encoding="utf-8", newline="")
-    else:
-        buf = io.StringIO()
+    buf: Any = (
+        out.open("w", encoding="utf-8", newline="")
+        if out is not None
+        else io.StringIO()
+    )
 
     try:
         if fmt is ExportFormat.csv:

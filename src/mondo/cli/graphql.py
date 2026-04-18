@@ -62,7 +62,7 @@ def graphql_command(
 
     try:
         with client:
-            result = client.execute(query_text, variables=vars_dict)
+            result = client.execute(query_text, variables=vars_dict, raw=True)
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e

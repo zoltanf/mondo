@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from mondo.api.complexity import ComplexityMeter, inject_complexity_field
 from mondo.api.errors import (
     AuthError,
     MondoError,
@@ -59,6 +60,7 @@ class MondayClient:
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_sleep: SleepFn = time.sleep,
         http_client: httpx.Client | None = None,
+        inject_complexity: bool = True,
     ) -> None:
         register_secret(token)
         self._token = token
@@ -68,6 +70,8 @@ class MondayClient:
         self._sleep = retry_sleep
         self._client = http_client or httpx.Client(timeout=timeout)
         self._owns_client = http_client is None
+        self._inject_complexity = inject_complexity
+        self.meter = ComplexityMeter()
 
     @property
     def api_version(self) -> str:
@@ -89,12 +93,21 @@ class MondayClient:
         self,
         query: str,
         variables: dict[str, Any] | None = None,
+        *,
+        raw: bool = False,
     ) -> dict[str, Any]:
         """POST the query, return the parsed response envelope, raise on error.
 
         Retries retryable errors up to `max_retries` times with backoff.
+        When the client was built with `inject_complexity=True` (default) and
+        `raw=False`, the outgoing query is rewritten to request monday's
+        complexity counters; the response's `complexity` block feeds
+        `self.meter`. Pass `raw=True` on user-written GraphQL (the `mondo
+        graphql` passthrough) to avoid rewriting their query.
         """
-        body = {"query": query, "variables": variables or {}}
+        should_inject = self._inject_complexity and not raw
+        sent_query = inject_complexity_field(query) if should_inject else query
+        body = {"query": sent_query, "variables": variables or {}}
         attempt = 0
         last_exc: MondoError | None = None
 
@@ -112,6 +125,13 @@ class MondayClient:
                 exc = _classify_response(response)
                 if exc is None:
                     parsed: dict[str, Any] = response.json()
+                    sample = self.meter.record(parsed.get("data"))
+                    if sample is not None:
+                        logger.debug(
+                            f"complexity drain: cost={sample.query_cost} "
+                            f"budget={sample.budget_after}/{sample.budget_before} "
+                            f"(resets in {sample.reset_in_seconds}s)"
+                        )
                     return parsed
                 last_exc = exc
 

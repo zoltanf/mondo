@@ -9,10 +9,10 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
-> output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a),
+> output formatters, JMESPath). **Phase 2 complete**: board CRUD (2a),
 > structural column CRUD (2b), group CRUD (2c), workspace CRUD (2d), board
-> export (2e), and bulk import (2f) shipped**; complexity metering queued.
-> Phase 3 covers users/docs/webhooks and the rest.
+> export (2e), bulk import (2f), and complexity metering (2g). Phase 3 covers
+> users/docs/webhooks and the rest.
 
 ---
 
@@ -87,6 +87,19 @@ mondo board duplicate  --id 1234567890 --type duplicate_board_with_pulses_and_up
 
 monday's `boards` query has no server-side name filter; `--name-contains` and
 `--name-matches` are applied client-side after page-based fetch.
+
+### Complexity metering
+
+```bash
+mondo complexity status                   # cheap query → print the live budget
+mondo --debug item list --board 42        # logs `complexity drain: cost=… budget=…/…` per call
+```
+
+Every query sent by `mondo` is transparently rewritten to ask monday for
+the current [complexity counters](https://developer.monday.com/api-reference/docs/complexity),
+feeding a session-local meter exposed through `client.meter` (for agents) and
+`mondo complexity status` (for humans). The raw-passthrough `mondo graphql`
+is exempt — what you type is what gets sent.
 
 ### Import
 
@@ -361,7 +374,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 511 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 525 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

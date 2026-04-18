@@ -15,6 +15,7 @@ from mondo.cli.argv import reorder_argv
 from mondo.cli.auth import app as auth_app
 from mondo.cli.board import app as board_app
 from mondo.cli.column import app as column_app
+from mondo.cli.complexity import app as complexity_app
 from mondo.cli.context import GlobalOpts
 from mondo.cli.export import app as export_app
 from mondo.cli.graphql import graphql_command
@@ -53,6 +54,11 @@ app.add_typer(column_app, name="column", help="Read and write monday column valu
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")
 app.add_typer(export_app, name="export", help="Export a board's data to CSV/JSON/XLSX/Markdown.")
 app.add_typer(import_app, name="import", help="Bulk-import items from CSV into a board.")
+app.add_typer(
+    complexity_app,
+    name="complexity",
+    help="Inspect monday's per-minute complexity budget.",
+)
 app.command(
     name="graphql",
     help="Send a raw GraphQL query/mutation to monday.com.",
