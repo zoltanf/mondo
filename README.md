@@ -9,8 +9,8 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a)
-> shipped; teams, subitems, updates, workspace docs, webhooks, files,
-> aggregation, and validation queued.
+> and teams (3b) shipped; subitems, updates, workspace docs, webhooks,
+> files, aggregation, and validation queued.
 
 ---
 
@@ -167,6 +167,24 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Teams
+
+```bash
+mondo team list   [--id 1 --id 2]           # filter to specific IDs
+mondo team get    --id 7
+mondo team create --name "Platform" [--subscriber 1 --subscriber 2] \
+                  [--parent-team 3] [--guest-team] [--allow-empty]
+mondo team delete --id 7 --hard --yes       # permanent
+
+mondo team add-users      --id 7 --user 1 [--user 2]
+mondo team remove-users   --id 7 --user 1
+mondo team assign-owners  --id 7 --user 1   # promote to team owner
+mondo team remove-owners  --id 7 --user 1
+```
+
+All mass-change mutations return `{successful_users, failed_users}` — mondo
+surfaces the full partial-success payload so agents can retry failures.
 
 ### Workspaces
 
@@ -391,7 +409,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 540 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 552 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

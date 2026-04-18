@@ -22,6 +22,7 @@ from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
 from mondo.cli.import_ import app as import_app
 from mondo.cli.item import app as item_app
+from mondo.cli.team import app as team_app
 from mondo.cli.user import app as user_app
 from mondo.cli.workspace import app as workspace_app
 from mondo.logging_ import configure_logging
@@ -56,6 +57,7 @@ app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their
 app.add_typer(
     user_app, name="user", help="List and manage users (roles, team membership, activation)."
 )
+app.add_typer(team_app, name="team", help="Manage teams and their owners.")
 app.add_typer(export_app, name="export", help="Export a board's data to CSV/JSON/XLSX/Markdown.")
 app.add_typer(import_app, name="import", help="Bulk-import items from CSV into a board.")
 app.add_typer(
