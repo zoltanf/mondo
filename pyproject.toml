@@ -79,6 +79,10 @@ ignore = [
     "E501",     # line length handled by formatter
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer/Click expect call-based defaults — these are idiomatic, not bugs.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

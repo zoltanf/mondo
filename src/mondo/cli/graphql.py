@@ -1,7 +1,8 @@
 """`mondo graphql '<query>'` — raw GraphQL passthrough.
 
 Reads a query (positional, from stdin via `-`, or from a file via `@path`) and
-prints the parsed response envelope `{data, errors, extensions}` as JSON.
+emits the parsed response envelope `{data, errors, extensions}` through the
+global formatter pipeline (so `-o json` / `-q` / etc. work uniformly).
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def graphql_command(
         help="Variables as a JSON string. Use `@path` to read from a file.",
     ),
 ) -> None:
-    """Send a raw GraphQL query to monday.com and print the JSON response."""
+    """Send a raw GraphQL query to monday.com and print the response."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
     query_text = _load_query(query)
@@ -66,4 +67,4 @@ def graphql_command(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    typer.echo(json.dumps(result, indent=2, sort_keys=False))
+    opts.emit(result)

@@ -69,17 +69,32 @@ class TestStatus:
 
 
 class TestWhoami:
-    def test_tty_prints_human_readable(
+    def test_non_tty_emits_json(
         self, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
     ) -> None:
         monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_me_response())
-        # CliRunner's stdout is not a TTY by default — so expect JSON
+        # CliRunner's stdout is not a TTY → default format is json
         result = runner.invoke(app, ["auth", "whoami"])
         assert result.exit_code == 0
-        # Output is JSON when not a TTY
         parsed = json.loads(result.stdout)
-        assert parsed["me"]["name"] == "Alice"
+        assert parsed["name"] == "Alice"
+        assert parsed["account"]["name"] == "Acme"
+
+    def test_query_projection(self, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock) -> None:
+        monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_me_response())
+        result = runner.invoke(app, ["-q", "name", "-o", "none", "auth", "whoami"])
+        assert result.exit_code == 0
+        assert result.stdout.strip() == "Alice"
+
+    def test_output_yaml(self, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock) -> None:
+        monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_me_response())
+        result = runner.invoke(app, ["-o", "yaml", "auth", "whoami"])
+        assert result.exit_code == 0
+        assert "name: Alice" in result.stdout
+        assert "slug: acme" in result.stdout
 
     def test_sends_me_query(self, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock) -> None:
         monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")

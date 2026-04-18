@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import getpass
-import json
 import sys
-from typing import Any
 
 import keyring
 import typer
-from rich.console import Console
-from rich.table import Table
 
 from mondo.api.auth import ENV_VAR
 from mondo.api.errors import AuthError, MondoError
@@ -37,20 +33,6 @@ query {
 """.strip()
 
 
-def _format_me(data: dict[str, Any]) -> str:
-    """Fallback text format for `me` data."""
-    me = data.get("me") or {}
-    acct = me.get("account") or {}
-    lines = [
-        f"id:      {me.get('id')}",
-        f"name:    {me.get('name')}",
-        f"email:   {me.get('email')}",
-        f"admin:   {me.get('is_admin')}",
-        f"account: {acct.get('name')} ({acct.get('slug')}, tier={acct.get('tier')})",
-    ]
-    return "\n".join(lines)
-
-
 @app.command()
 def whoami(ctx: typer.Context) -> None:
     """Print the currently authenticated user and account."""
@@ -68,35 +50,20 @@ def whoami(ctx: typer.Context) -> None:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    data = result.get("data") or {}
-    if sys.stdout.isatty():
-        typer.echo(_format_me(data))
-    else:
-        typer.echo(json.dumps(data, indent=2))
+    me = (result.get("data") or {}).get("me") or {}
+    opts.emit(me)
 
 
 @app.command()
 def status(ctx: typer.Context) -> None:
     """Show token source, profile, API version, and the authenticated identity."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    console = Console()
 
     try:
         resolved = opts.resolve_token()
     except AuthError as e:
         typer.secho(f"not logged in: {e}", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-
-    table = Table(show_header=False, box=None, pad_edge=False)
-    table.add_column(style="cyan")
-    table.add_column()
-    table.add_row("profile", resolved.profile_name or "(default)")
-    table.add_row("token source", resolved.source.describe())
-    if resolved.keyring_key:
-        table.add_row("keyring key", resolved.keyring_key)
-    if resolved.config_path:
-        table.add_row("config file", str(resolved.config_path))
-    console.print(table)
 
     try:
         client = opts.build_client()
@@ -111,9 +78,25 @@ def status(ctx: typer.Context) -> None:
         typer.secho(f"\nerror: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    data = result.get("data") or {}
-    console.print()
-    console.print(_format_me(data))
+    me = (result.get("data") or {}).get("me") or {}
+    account = me.get("account") or {}
+
+    payload = {
+        "profile": resolved.profile_name or "(default)",
+        "token_source": resolved.source.describe(),
+        "keyring_key": resolved.keyring_key,
+        "config_file": str(resolved.config_path) if resolved.config_path else None,
+        "api_version": client.api_version,
+        "user_id": me.get("id"),
+        "user_name": me.get("name"),
+        "user_email": me.get("email"),
+        "is_admin": me.get("is_admin"),
+        "account_id": account.get("id"),
+        "account_name": account.get("name"),
+        "account_slug": account.get("slug"),
+        "account_tier": account.get("tier"),
+    }
+    opts.emit(payload)
 
 
 @app.command()

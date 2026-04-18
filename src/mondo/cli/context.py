@@ -6,11 +6,15 @@ or uses the helper `build_client(opts)` to get a ready-to-use MondayClient.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+from typing import Any, TextIO
 
 from mondo.api.auth import ResolvedToken, resolve_token
 from mondo.api.client import MondayClient
 from mondo.config.loader import config_path, load_config
+from mondo.output import choose_default_format, format_output
+from mondo.output.query import apply_query
 
 
 @dataclass
@@ -22,6 +26,30 @@ class GlobalOpts:
     flag_api_version: str | None
     verbose: bool
     debug: bool
+    output: str | None = None
+    query: str | None = None
+
+    def emit(
+        self,
+        data: Any,
+        *,
+        stream: TextIO | None = None,
+        default_tty_override: bool | None = None,
+    ) -> None:
+        """Render `data` to stdout (or `stream`) honoring --output and --query.
+
+        Applies `--query` before formatting. Auto-picks the format based on
+        whether stdout is a TTY if `--output` wasn't set.
+        """
+        out = stream or sys.stdout
+        is_tty = (
+            default_tty_override
+            if default_tty_override is not None
+            else hasattr(out, "isatty") and out.isatty()
+        )
+        fmt = self.output or choose_default_format(is_tty=is_tty)
+        projected = apply_query(data, self.query)
+        format_output(projected, fmt=fmt, stream=out, tty=is_tty)
 
     def resolve_token(self) -> ResolvedToken:
         """Run the token resolution chain using this invocation's options."""
