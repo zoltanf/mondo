@@ -8,8 +8,8 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 *apps*). `mondo` is a wrapper for the *platform API*: boards, items, columns,
 workspaces, users, docs, webhooks, etc.
 
-> Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a)
-> and teams (3b) shipped; subitems, updates, workspace docs, webhooks,
+> Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
+> teams (3b), and subitems (3c) shipped; updates, workspace docs, webhooks,
 > files, aggregation, and validation queued.
 
 ---
@@ -167,6 +167,25 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Subitems
+
+```bash
+mondo subitem list    --parent 1234567890
+mondo subitem get     --id 9876543210
+mondo subitem create  --parent 1234567890 --name "Sub task" \
+                      [--subitems-board 999 --column status9=Done] \
+                      [--create-labels-if-missing]
+mondo subitem rename  --id 9876 --board 999 --name "New title"
+mondo subitem move    --id 9876 --group subitems_of_1234567890
+mondo subitem archive --id 9876 --yes
+mondo subitem delete  --id 9876 --hard --yes
+```
+
+Subitems live on a separate hidden board (§12). Pass `--subitems-board <id>`
+on `create` to get codec dispatch on `--column` values — the id surfaces on
+`mondo subitem list`'s output as `.[0].board.id`. Without it, `--column`
+values are sent verbatim.
 
 ### Teams
 
@@ -409,7 +428,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 552 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 565 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
