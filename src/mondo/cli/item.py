@@ -12,6 +12,8 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, UsageError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
+    COLUMNS_ON_BOARD,
+    CREATE_OR_GET_TAG,
     ITEM_ARCHIVE,
     ITEM_CREATE,
     ITEM_DELETE,
@@ -23,7 +25,8 @@ from mondo.api.queries import (
     ITEM_RENAME,
 )
 from mondo.cli.context import GlobalOpts
-from mondo.util.kvparse import parse_columns
+from mondo.columns import UnknownColumnTypeError, parse_value
+from mondo.util.kvparse import parse_column_kv
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -102,6 +105,78 @@ def _parse_filter(expr: str) -> dict[str, Any]:
         raise UsageError(f"invalid --filter {expr!r}: expected COL=VAL or COL!=VAL")
     values = [v.strip() for v in raw.split(",")]
     return {"column_id": col.strip(), "compare_value": values, "operator": operator}
+
+
+def _parse_settings(raw: str | None) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, raw: str) -> str:
+    """Resolve any non-integer tag names via create_or_get_tag; return comma-ids."""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    ids: list[int] = []
+    for part in parts:
+        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
+            ids.append(int(part))
+            continue
+        result = client.execute(CREATE_OR_GET_TAG, {"name": part, "board": board_id})
+        tag = ((result.get("data") or {}).get("create_or_get_tag")) or {}
+        if not tag.get("id"):
+            raise MondoError(f"create_or_get_tag returned no id for {part!r}")
+        ids.append(int(tag["id"]))
+    return ",".join(str(i) for i in ids)
+
+
+def _fetch_column_defs(client: MondayClient, board_id: int) -> dict[str, dict[str, Any]]:
+    """One-shot fetch of `{col_id: {type, settings_str, ...}}` for a board."""
+    result = client.execute(COLUMNS_ON_BOARD, {"board": board_id})
+    boards = (result.get("data") or {}).get("boards") or []
+    if not boards:
+        return {}
+    return {c["id"]: c for c in (boards[0].get("columns") or [])}
+
+
+def _build_column_values(
+    client: MondayClient,
+    board_id: int,
+    pairs: list[str],
+    *,
+    raw_mode: bool,
+) -> dict[str, Any]:
+    """Apply codecs to `--column K=V` pairs, using live board column types.
+
+    raw_mode=True disables codec dispatch (user's value used as-is after JSON
+    parse-or-passthrough). Raw mode also skips the preflight query.
+    """
+    parsed_pairs = [parse_column_kv(p) for p in pairs]
+
+    if raw_mode:
+        return dict(parsed_pairs)
+
+    defs = _fetch_column_defs(client, board_id)
+    out: dict[str, Any] = {}
+    for col_id, raw_value in parsed_pairs:
+        definition = defs.get(col_id)
+        # Non-string values mean the user passed JSON — honor it as raw.
+        if definition is None or not isinstance(raw_value, str):
+            out[col_id] = raw_value
+            continue
+        col_type = definition["type"]
+        settings = _parse_settings(definition.get("settings_str"))
+        if col_type == "tags":
+            raw_value = _resolve_tag_names_to_ids(client, board_id, raw_value)
+        try:
+            out[col_id] = parse_value(col_type, raw_value, settings)
+        except UnknownColumnTypeError:
+            # Unfamiliar column type → don't translate, send raw
+            out[col_id] = raw_value
+    return out
 
 
 def _build_query_params(filters: list[str] | None, order_by: str | None) -> dict[str, Any] | None:
@@ -232,9 +307,15 @@ def create_cmd(
         "--column",
         metavar="COL=VAL",
         help=(
-            "Set a column value as raw JSON or bare string. Repeatable. "
-            'Example: --column status=\'{"label":"Done"}\' --column text=Hi'
+            "Set a column value. Values are codec-parsed per column type "
+            "(status=Done, due=2026-04-25, owner=42, tags=urgent,blocked). "
+            "JSON objects pass through as-is. Repeatable."
         ),
+    ),
+    raw_columns: bool = typer.Option(
+        False,
+        "--raw-columns",
+        help="Skip the codec pipeline; treat --column values as raw JSON or strings.",
     ),
     create_labels_if_missing: bool = typer.Option(
         False,
@@ -254,11 +335,33 @@ def create_cmd(
     """Create a new item on a board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
-    try:
-        col_values = parse_columns(columns or [])
-    except ValueError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+    # Resolve column values — codec dispatch needs a live client for the
+    # board-columns preflight and (for tags) create_or_get_tag.
+    # `--raw-columns` skips the preflight, so `--dry-run --raw-columns` is fully offline.
+    col_values: dict[str, Any] = {}
+    if columns:
+        if raw_columns:
+            col_values = dict(parse_column_kv(p) for p in columns)
+        else:
+            try:
+                client_for_preflight = opts.build_client()
+            except MondoError as e:
+                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=int(e.exit_code)) from e
+            try:
+                with client_for_preflight:
+                    col_values = _build_column_values(
+                        client_for_preflight,
+                        board_id,
+                        columns,
+                        raw_mode=False,
+                    )
+            except ValueError as e:
+                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=5) from e
+            except MondoError as e:
+                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=int(e.exit_code)) from e
 
     variables: dict[str, Any] = {
         "board": board_id,

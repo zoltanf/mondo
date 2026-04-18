@@ -28,7 +28,10 @@ def _ok(data: dict) -> dict:
 
 
 def _last_body(httpx_mock: HTTPXMock) -> dict:
-    return json.loads(httpx_mock.get_request().content)  # type: ignore[union-attr]
+    """Return the JSON body of the most recent POST."""
+    reqs = httpx_mock.get_requests()
+    assert reqs, "no requests captured"
+    return json.loads(reqs[-1].content)
 
 
 # --- get ---
@@ -179,7 +182,33 @@ class TestItemCreate:
         assert body["variables"]["name"] == "New"
         assert body["variables"]["values"] is None
 
-    def test_with_columns_json_encoded(self, httpx_mock: HTTPXMock) -> None:
+    def test_with_codec_dispatch(self, httpx_mock: HTTPXMock) -> None:
+        # Preflight: board columns — used by the codec dispatcher
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "B",
+                            "columns": [
+                                {"id": "text", "type": "text", "settings_str": "{}"},
+                                {
+                                    "id": "status",
+                                    "type": "status",
+                                    "settings_str": json.dumps(
+                                        {"labels": {"0": "Working on it", "1": "Done"}}
+                                    ),
+                                },
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        # The create mutation
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -197,14 +226,69 @@ class TestItemCreate:
                 "--column",
                 "text=Hello",
                 "--column",
-                'status={"label":"Done"}',
+                "status=Done",
             ],
         )
         assert result.exit_code == 0, result.stdout
         values = json.loads(_last_body(httpx_mock)["variables"]["values"])
+        # Status codec converts "Done" → {"label": "Done"}
         assert values == {"text": "Hello", "status": {"label": "Done"}}
 
-    def test_dry_run_does_not_call_api(self, httpx_mock: HTTPXMock) -> None:
+    def test_raw_columns_skips_codec(self, httpx_mock: HTTPXMock) -> None:
+        # No preflight when --raw-columns
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "99", "name": "New"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--name",
+                "New",
+                "--raw-columns",
+                "--column",
+                'status={"label":"Done"}',
+            ],
+        )
+        assert result.exit_code == 0
+        values = json.loads(_last_body(httpx_mock)["variables"]["values"])
+        assert values == {"status": {"label": "Done"}}
+        assert len(httpx_mock.get_requests()) == 1  # no preflight
+
+    def test_dry_run_with_columns_still_does_preflight(self, httpx_mock: HTTPXMock) -> None:
+        # With codec dispatch we need the preflight to know column types;
+        # only the final `create_item` mutation is skipped under --dry-run.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "name": "B", "columns": []}]}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--name",
+                "Hi",
+                "--column",
+                "text=Hello",
+            ],
+        )
+        assert result.exit_code == 0
+        # One preflight, zero mutations
+        assert len(httpx_mock.get_requests()) == 1
+        parsed = json.loads(result.stdout)
+        assert "create_item" in parsed["query"]
+
+    def test_dry_run_no_columns_is_fully_offline(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
             [
@@ -219,7 +303,6 @@ class TestItemCreate:
         )
         assert result.exit_code == 0
         assert len(httpx_mock.get_requests()) == 0
-        # Output contains the mutation and variables
         parsed = json.loads(result.stdout)
         assert "create_item" in parsed["query"]
         assert parsed["variables"]["name"] == "Hi"

@@ -11,6 +11,7 @@ from enum import StrEnum
 import typer
 
 from mondo.cli.auth import app as auth_app
+from mondo.cli.column import app as column_app
 from mondo.cli.context import GlobalOpts
 from mondo.cli.graphql import graphql_command
 from mondo.cli.item import app as item_app
@@ -39,6 +40,7 @@ app = typer.Typer(
 
 app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
 app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
+app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.command(
     name="graphql",
     help="Send a raw GraphQL query/mutation to monday.com.",

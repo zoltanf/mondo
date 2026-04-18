@@ -209,3 +209,104 @@ mutation ($id: ID!, $group: String!) {
   }
 }
 """.strip()
+
+
+# --- columns: list / get / context ---
+
+COLUMNS_ON_BOARD = """
+query ($board: ID!) {
+  boards(ids: [$board]) {
+    id
+    name
+    columns {
+      id
+      title
+      type
+      description
+      archived
+      settings_str
+    }
+  }
+}
+""".strip()
+
+
+# Single-round-trip fetch for `column get/set/clear`:
+# item.board.id + column definition (from board.columns) + current value.
+COLUMN_CONTEXT = """
+query ($id: ID!, $cols: [String!]!) {
+  items(ids: [$id]) {
+    id
+    name
+    board {
+      id
+      columns(ids: $cols) {
+        id
+        title
+        type
+        settings_str
+      }
+    }
+    column_values(ids: $cols) {
+      id
+      type
+      text
+      value
+    }
+  }
+}
+""".strip()
+
+
+CHANGE_COLUMN_VALUE = """
+mutation (
+  $item: ID!
+  $board: ID!
+  $col: String!
+  $value: JSON!
+  $create_labels: Boolean
+) {
+  change_column_value(
+    item_id: $item
+    board_id: $board
+    column_id: $col
+    value: $value
+    create_labels_if_missing: $create_labels
+  ) {
+    id
+    name
+    column_values(ids: [$col]) { id type text value }
+  }
+}
+""".strip()
+
+
+CHANGE_MULTIPLE_COLUMN_VALUES = """
+mutation (
+  $item: ID!
+  $board: ID!
+  $values: JSON!
+  $create_labels: Boolean
+) {
+  change_multiple_column_values(
+    item_id: $item
+    board_id: $board
+    column_values: $values
+    create_labels_if_missing: $create_labels
+  ) {
+    id
+    name
+    column_values { id type text value }
+  }
+}
+""".strip()
+
+
+CREATE_OR_GET_TAG = """
+mutation ($name: String!, $board: ID!) {
+  create_or_get_tag(tag_name: $name, board_id: $board) {
+    id
+    name
+  }
+}
+""".strip()
