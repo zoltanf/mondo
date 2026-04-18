@@ -19,6 +19,7 @@ from mondo.cli.context import GlobalOpts
 from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
 from mondo.cli.item import app as item_app
+from mondo.cli.workspace import app as workspace_app
 from mondo.logging_ import configure_logging
 from mondo.version import __version__
 
@@ -47,6 +48,7 @@ app.add_typer(board_app, name="board", help="Create, read, update, delete monday
 app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
+app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")
 app.command(
     name="graphql",
     help="Send a raw GraphQL query/mutation to monday.com.",

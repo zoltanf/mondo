@@ -10,9 +10,9 @@ workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
 > output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a),
-> structural column CRUD (2b), and group CRUD (2c) shipped**; workspace CRUD,
-> export/import, and complexity metering queued. Phase 3 covers users/docs/
-> webhooks and the rest.
+> structural column CRUD (2b), group CRUD (2c), and workspace CRUD (2d)
+> shipped**; export/import, and complexity metering queued. Phase 3 covers
+> users/docs/webhooks and the rest.
 
 ---
 
@@ -87,6 +87,23 @@ mondo board duplicate  --id 1234567890 --type duplicate_board_with_pulses_and_up
 
 monday's `boards` query has no server-side name filter; `--name-contains` and
 `--name-matches` are applied client-side after page-based fetch.
+
+### Workspaces
+
+```bash
+mondo workspace list          [--kind open|closed] [--state active|archived|deleted|all] \
+                              [--limit 100] [--max-items 500]
+mondo workspace get           --id 7
+mondo workspace create        --name "Engineering" [--kind open|closed] [--description …] \
+                              [--product-id 3]
+mondo workspace update        --id 7 [--name …] [--description …] [--kind closed]
+mondo workspace delete        --id 7 --hard --yes    # Main Workspace cannot be deleted
+
+mondo workspace add-user      --id 7 --user 42 [--user 43] [--kind subscriber|owner]
+mondo workspace remove-user   --id 7 --user 42
+mondo workspace add-team      --id 7 --team 11 [--team 12] [--kind subscriber|owner]
+mondo workspace remove-team   --id 7 --team 11
+```
 
 ### Groups
 
@@ -294,7 +311,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 472 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 490 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
