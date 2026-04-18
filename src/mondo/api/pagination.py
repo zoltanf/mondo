@@ -86,3 +86,41 @@ def _fetch_next(client: _ClientProtocol, cursor: str, limit: int) -> dict[str, A
         "cursor": None,
         "items": [],
     }
+
+
+MAX_BOARDS_PAGE_SIZE = 100
+
+
+def iter_boards_page(
+    client: _ClientProtocol,
+    *,
+    query: str,
+    variables: dict[str, Any],
+    collection_key: str = "boards",
+    limit: int = MAX_BOARDS_PAGE_SIZE,
+    max_items: int | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Iterate a page-based monday collection (boards/workspaces/users/etc.).
+
+    Unlike `iter_items_page`, these endpoints use `limit` + `page` (1-indexed);
+    stop when a page returns fewer than `limit` items.
+
+    `query` must accept `$limit: Int!` and `$page: Int!` variables and return
+    a top-level list under `data[collection_key]`.
+    """
+    page = 1
+    page_size = max(1, limit)
+    yielded = 0
+    while True:
+        result = client.execute(query, {**variables, "limit": page_size, "page": page})
+        records = (result.get("data") or {}).get(collection_key) or []
+        if not records:
+            return
+        for rec in records:
+            if max_items is not None and yielded >= max_items:
+                return
+            yield rec
+            yielded += 1
+        if len(records) < page_size:
+            return
+        page += 1

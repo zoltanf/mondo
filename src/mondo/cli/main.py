@@ -13,6 +13,7 @@ import typer
 
 from mondo.cli.argv import reorder_argv
 from mondo.cli.auth import app as auth_app
+from mondo.cli.board import app as board_app
 from mondo.cli.column import app as column_app
 from mondo.cli.context import GlobalOpts
 from mondo.cli.graphql import graphql_command
@@ -41,6 +42,7 @@ app = typer.Typer(
 )
 
 app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
+app.add_typer(board_app, name="board", help="Create, read, update, delete monday boards.")
 app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.command(

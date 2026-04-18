@@ -8,9 +8,10 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 *apps*). `mondo` is a wrapper for the *platform API*: boards, items, columns,
 workspaces, users, docs, webhooks, etc.
 
-> Status: Phase 1 MVP — auth, items, columns (including the `doc` column),
-> raw GraphQL passthrough, output formatters, and JMESPath projection.
-> Phases 2 and 3 add board/workspace/user/doc CRUD and more.
+> Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
+> output formatters, JMESPath). Phase 2 in progress: **board CRUD shipped (2a)**,
+> column/group/workspace structural CRUD, export/import, and complexity
+> metering queued. Phase 3 covers users/docs/webhooks and the rest.
 
 ---
 
@@ -65,6 +66,26 @@ mondo auth whoami                          # just the user + account
 mondo auth login                           # store token in keyring
 mondo auth logout                          # remove stored token
 ```
+
+### Boards
+
+```bash
+mondo board list       [--state active|archived|deleted|all] [--kind public|private|share] \
+                       [--workspace 42] [--order-by used_at|created_at] \
+                       [--name-contains pager] [--name-matches '^team-\w+$'] \
+                       [--limit 100] [--max-items 500]
+mondo board get        --id 1234567890
+mondo board create     --name "Roadmap" --kind public [--workspace 42] [--description …] \
+                       [--owner 7] [--subscriber 8] [--empty]
+mondo board update     --id 1234567890 --attribute name --value "Renamed"
+mondo board archive    --id 1234567890                   # reversible (30 days)
+mondo board delete     --id 1234567890 --hard --yes      # permanent
+mondo board duplicate  --id 1234567890 --type duplicate_board_with_pulses_and_updates \
+                       [--name "Copy"] [--workspace 42] [--keep-subscribers]
+```
+
+monday's `boards` query has no server-side name filter; `--name-contains` and
+`--name-matches` are applied client-side after page-based fetch.
 
 ### Items
 
@@ -245,7 +266,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 419 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 440 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

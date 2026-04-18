@@ -367,3 +367,163 @@ mutation ($block: String!) {
   }
 }
 """.strip()
+
+
+# --- boards ---
+
+# Page-based (limit+page) list of boards — monday's `boards` query has no cursor.
+# Includes workspace + basic folder context; omits heavy fields (items_page, activity_logs).
+BOARDS_LIST_PAGE = """
+query (
+  $limit: Int!
+  $page: Int!
+  $ids: [ID!]
+  $state: State
+  $kind: BoardKind
+  $workspaceIds: [ID]
+  $orderBy: BoardsOrderBy
+) {
+  boards(
+    limit: $limit
+    page: $page
+    ids: $ids
+    state: $state
+    board_kind: $kind
+    workspace_ids: $workspaceIds
+    order_by: $orderBy
+  ) {
+    id
+    name
+    description
+    state
+    board_kind
+    board_folder_id
+    workspace_id
+    items_count
+    updated_at
+  }
+}
+""".strip()
+
+
+# Detailed single-board fetch.
+BOARD_GET = """
+query ($id: ID!) {
+  boards(ids: [$id]) {
+    id
+    name
+    description
+    state
+    board_kind
+    board_folder_id
+    workspace_id
+    items_count
+    updated_at
+    permissions
+    workspace { id name kind }
+    owners { id name }
+    subscribers { id name }
+    top_group { id title }
+    groups { id title color position archived }
+    columns { id title type description archived }
+    tags { id name color }
+  }
+}
+""".strip()
+
+
+BOARD_CREATE = """
+mutation (
+  $name: String!
+  $kind: BoardKind!
+  $description: String
+  $folder: ID
+  $workspace: ID
+  $template: ID
+  $ownerIds: [ID]
+  $ownerTeamIds: [ID]
+  $subscriberIds: [ID]
+  $subscriberTeamIds: [ID]
+  $empty: Boolean
+) {
+  create_board(
+    board_name: $name
+    board_kind: $kind
+    description: $description
+    folder_id: $folder
+    workspace_id: $workspace
+    template_id: $template
+    board_owner_ids: $ownerIds
+    board_owner_team_ids: $ownerTeamIds
+    board_subscriber_ids: $subscriberIds
+    board_subscriber_teams_ids: $subscriberTeamIds
+    empty: $empty
+  ) {
+    id
+    name
+    description
+    state
+    board_kind
+    workspace_id
+    board_folder_id
+  }
+}
+""".strip()
+
+
+BOARD_DUPLICATE = """
+mutation (
+  $board: ID!
+  $duplicateType: DuplicateBoardType!
+  $name: String
+  $workspace: ID
+  $folder: ID
+  $keepSubscribers: Boolean
+) {
+  duplicate_board(
+    board_id: $board
+    duplicate_type: $duplicateType
+    board_name: $name
+    workspace_id: $workspace
+    folder_id: $folder
+    keep_subscribers: $keepSubscribers
+  ) {
+    board {
+      id
+      name
+      state
+      board_kind
+      workspace_id
+    }
+  }
+}
+""".strip()
+
+
+BOARD_UPDATE = """
+mutation ($board: ID!, $attribute: BoardAttributes!, $value: String!) {
+  update_board(board_id: $board, board_attribute: $attribute, new_value: $value)
+}
+""".strip()
+
+
+BOARD_ARCHIVE = """
+mutation ($board: ID!) {
+  archive_board(board_id: $board) {
+    id
+    name
+    state
+  }
+}
+""".strip()
+
+
+BOARD_DELETE = """
+mutation ($board: ID!) {
+  delete_board(board_id: $board) {
+    id
+    name
+    state
+  }
+}
+""".strip()
