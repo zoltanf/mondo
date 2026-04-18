@@ -8,11 +8,9 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 *apps*). `mondo` is a wrapper for the *platform API*: boards, items, columns,
 workspaces, users, docs, webhooks, etc.
 
-> Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
-> output formatters, JMESPath). **Phase 2 complete**: board CRUD (2a),
-> structural column CRUD (2b), group CRUD (2c), workspace CRUD (2d), board
-> export (2e), bulk import (2f), and complexity metering (2g). Phase 3 covers
-> users/docs/webhooks and the rest.
+> Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a)
+> shipped; teams, subitems, updates, workspace docs, webhooks, files,
+> aggregation, and validation queued.
 
 ---
 
@@ -150,6 +148,25 @@ Formats: `csv | tsv | json | xlsx | md`. Column headers are the board's column
 titles (archived columns are dropped). With `--include-subitems`, the CSV /
 TSV emit a second blank-line-separated block, JSON gets a `subitems` array,
 Markdown gets a `### Subitems` section, and XLSX gets a second worksheet.
+
+### Users
+
+```bash
+mondo user list   [--kind all|non_guests|guests|non_pending] [--email a@x.com] \
+                  [--name "Alice"] [--non-active] [--newest-first] [--limit 100]
+mondo user get    --id 42
+
+mondo user deactivate      --user 1 [--user 2] --yes
+mondo user activate        --user 1 [--user 2]
+mondo user update-role     --user 1 --role admin|member|guest|viewer
+mondo user add-to-team     --team 7 --user 1 [--user 2]
+mondo user remove-from-team --team 7 --user 1
+```
+
+`--role` hides four distinct server mutations (`update_multiple_users_as_admins`
+/ `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
+quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
+— mondo surfaces the full partial-success payload.
 
 ### Workspaces
 
@@ -374,7 +391,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 525 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 540 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
