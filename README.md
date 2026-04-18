@@ -9,9 +9,10 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
-> output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a) and
-> structural column CRUD (2b) shipped**; group/workspace CRUD, export/import,
-> and complexity metering queued. Phase 3 covers users/docs/webhooks and the rest.
+> output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a),
+> structural column CRUD (2b), and group CRUD (2c) shipped**; workspace CRUD,
+> export/import, and complexity metering queued. Phase 3 covers users/docs/
+> webhooks and the rest.
 
 ---
 
@@ -86,6 +87,24 @@ mondo board duplicate  --id 1234567890 --type duplicate_board_with_pulses_and_up
 
 monday's `boards` query has no server-side name filter; `--name-contains` and
 `--name-matches` are applied client-side after page-based fetch.
+
+### Groups
+
+```bash
+mondo group list       --board 1234567890
+mondo group create     --board 1234567890 --name "Planning" [--color "#00c875"] \
+                       [--relative-to topics] [--position-relative-method after_at]
+mondo group rename     --board 1234567890 --id topics --title "Workstreams"
+mondo group update     --board 1234567890 --id topics --attribute color --value "#ff007f"
+mondo group reorder    --board 1234567890 --id topics (--after g2 | --before g1 | --position 3)
+mondo group duplicate  --board 1234567890 --id topics [--title "Topics 2"] [--add-to-top]
+mondo group archive    --board 1234567890 --id topics --yes
+mondo group delete     --board 1234567890 --id topics --hard --yes   # cascades to items
+```
+
+`--color` accepts only monday's palette hex codes (e.g. `#00c875`, `#ff007f`);
+other values are rejected client-side. monday blocks deletion of the last
+remaining group on a board with `DeleteLastGroupException`.
 
 ### Items
 
@@ -275,7 +294,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 450 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 472 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

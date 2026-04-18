@@ -17,6 +17,7 @@ from mondo.cli.board import app as board_app
 from mondo.cli.column import app as column_app
 from mondo.cli.context import GlobalOpts
 from mondo.cli.graphql import graphql_command
+from mondo.cli.group import app as group_app
 from mondo.cli.item import app as item_app
 from mondo.logging_ import configure_logging
 from mondo.version import __version__
@@ -44,6 +45,7 @@ app = typer.Typer(
 app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
 app.add_typer(board_app, name="board", help="Create, read, update, delete monday boards.")
 app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
+app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.command(
     name="graphql",

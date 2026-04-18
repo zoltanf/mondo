@@ -520,7 +520,7 @@ def create_cmd(
         None,
         "--id",
         help=(
-            "Custom column ID (1–20 chars, lowercase alphanumeric + underscores, unique per board)."
+            "Custom column ID (1-20 chars, lowercase alphanumeric + underscores, unique per board)."
         ),
     ),
     after: str | None = typer.Option(
