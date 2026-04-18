@@ -356,3 +356,225 @@ class TestColumnClear:
         assert result.exit_code == 0
         body = json.loads(httpx_mock.get_requests()[-1].content)
         assert body["variables"]["value"] == "{}"
+
+
+# --- 2b: structural mutations ---
+
+
+class TestColumnCreate:
+    def test_minimal(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_column": {"id": "priority", "title": "Priority", "type": "status"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "Priority",
+                "--type",
+                "status",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[-1].content)
+        v = body["variables"]
+        assert v["board"] == 42
+        assert v["title"] == "Priority"
+        assert v["type"] == "status"
+        assert v["description"] is None
+        assert v["defaults"] is None
+        assert v["id"] is None
+        assert v["after"] is None
+
+    def test_with_defaults_gets_json_string(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_column": {"id": "priority"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "P",
+                "--type",
+                "status",
+                "--defaults",
+                '{"labels":{"1":"High"}}',
+                "--id",
+                "priority",
+                "--after",
+                "status_1",
+                "--description",
+                "desc",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        # defaults should be a JSON-stringified string, not a dict (§11.4 double-JSON)
+        assert isinstance(v["defaults"], str)
+        assert json.loads(v["defaults"]) == {"labels": {"1": "High"}}
+        assert v["id"] == "priority"
+        assert v["after"] == "status_1"
+        assert v["description"] == "desc"
+
+    def test_invalid_defaults_json_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "P",
+                "--type",
+                "status",
+                "--defaults",
+                "{not json",
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_dry_run(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "P",
+                "--type",
+                "status",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "create_column" in parsed["query"]
+        assert httpx_mock.get_requests() == []
+
+
+class TestColumnRename:
+    def test_basic(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"change_column_title": {"id": "status", "title": "Renamed"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "rename",
+                "--board",
+                "42",
+                "--id",
+                "status",
+                "--title",
+                "Renamed",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert v == {"board": 42, "col": "status", "title": "Renamed"}
+
+
+class TestColumnChangeMetadata:
+    def test_description(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"change_column_metadata": {"id": "status", "description": "x"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "change-metadata",
+                "--board",
+                "42",
+                "--id",
+                "status",
+                "--property",
+                "description",
+                "--value",
+                "x",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert v == {
+            "board": 42,
+            "col": "status",
+            "property": "description",
+            "value": "x",
+        }
+
+    def test_invalid_property(self, httpx_mock: HTTPXMock) -> None:
+        # Only title / description are allowed; Typer validates the enum.
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "change-metadata",
+                "--board",
+                "42",
+                "--id",
+                "status",
+                "--property",
+                "type",
+                "--value",
+                "x",
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+
+class TestColumnDelete:
+    def test_requires_confirmation(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["column", "delete", "--board", "42", "--id", "status"],
+            input="n\n",
+        )
+        assert result.exit_code == 1
+        assert httpx_mock.get_requests() == []
+
+    def test_yes_skips_prompt(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"delete_column": {"id": "status", "archived": True}}),
+        )
+        result = runner.invoke(
+            app,
+            ["--yes", "column", "delete", "--board", "42", "--id", "status"],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert v == {"board": 42, "col": "status"}
+
+    def test_dry_run(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["--yes", "--dry-run", "column", "delete", "--board", "42", "--id", "status"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "delete_column" in parsed["query"]
+        assert httpx_mock.get_requests() == []

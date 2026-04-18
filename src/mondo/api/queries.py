@@ -527,3 +527,78 @@ mutation ($board: ID!) {
   }
 }
 """.strip()
+
+
+# --- columns: structural (2b) ---
+
+COLUMN_CREATE = """
+mutation (
+  $board: ID!
+  $title: String!
+  $type: ColumnType!
+  $description: String
+  $defaults: JSON
+  $id: String
+  $after: ID
+) {
+  create_column(
+    board_id: $board
+    title: $title
+    column_type: $type
+    description: $description
+    defaults: $defaults
+    id: $id
+    after_column_id: $after
+  ) {
+    id
+    title
+    type
+    description
+    archived
+  }
+}
+""".strip()
+
+
+COLUMN_RENAME = """
+mutation ($board: ID!, $col: String!, $title: String!) {
+  change_column_title(board_id: $board, column_id: $col, title: $title) {
+    id
+    title
+    type
+  }
+}
+""".strip()
+
+
+COLUMN_CHANGE_METADATA = """
+mutation (
+  $board: ID!
+  $col: String!
+  $property: ColumnProperty!
+  $value: String!
+) {
+  change_column_metadata(
+    board_id: $board
+    column_id: $col
+    column_property: $property
+    value: $value
+  ) {
+    id
+    title
+    type
+    description
+  }
+}
+""".strip()
+
+
+COLUMN_DELETE = """
+mutation ($board: ID!, $col: String!) {
+  delete_column(board_id: $board, column_id: $col) {
+    id
+    title
+    archived
+  }
+}
+""".strip()

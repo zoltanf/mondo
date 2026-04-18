@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,11 @@ from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     CHANGE_COLUMN_VALUE,
     CHANGE_MULTIPLE_COLUMN_VALUES,
+    COLUMN_CHANGE_METADATA,
     COLUMN_CONTEXT,
+    COLUMN_CREATE,
+    COLUMN_DELETE,
+    COLUMN_RENAME,
     COLUMNS_ON_BOARD,
     CREATE_OR_GET_TAG,
 )
@@ -447,3 +452,184 @@ def clear_cmd(
         raise typer.Exit(code=int(e.exit_code)) from e
 
     opts.emit(data.get("change_column_value") or {})
+
+
+# ----- structural mutations (2b) -----
+
+
+class ColumnProperty(StrEnum):
+    """Attributes settable via `change_column_metadata`.
+
+    monday only allows `title` and `description` through this mutation; status
+    labels / dropdown options are seeded via `create_column --defaults` or
+    added at write-time with `create_labels_if_missing`.
+    """
+
+    title = "title"  # type: ignore[assignment]  # StrEnum value shadows str.title method
+    description = "description"
+
+
+def _dry_run_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
+    opts.emit({"query": query, "variables": variables})
+    raise typer.Exit(0)
+
+
+def _parse_defaults(raw: str | None) -> str | None:
+    """Validate `--defaults '<json>'` as JSON and return it as a JSON-*string*.
+
+    monday's `defaults` argument is typed `JSON` but expects a JSON-encoded
+    string (same double-JSON convention as `column_values`, §11.4). Returning
+    `None` leaves the argument unset.
+    """
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.secho(f"error: --defaults is not valid JSON ({exc}).", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    return json.dumps(parsed)
+
+
+@app.command("create")
+def create_cmd(
+    ctx: typer.Context,
+    board_id: int = typer.Option(..., "--board", help="Board ID to add the column to."),
+    title: str = typer.Option(..., "--title", help="Column title (shown in the UI)."),
+    column_type: str = typer.Option(
+        ...,
+        "--type",
+        help=(
+            "Column type (e.g. status, date, numbers, dropdown, people, text, "
+            "long_text, link, email, phone, checkbox, rating, tags, timeline, "
+            "week, hour, country, location, board_relation, dependency, doc). "
+            "See monday-api.md §11.5 for the full catalog."
+        ),
+    ),
+    description: str | None = typer.Option(None, "--description"),
+    defaults: str | None = typer.Option(
+        None,
+        "--defaults",
+        metavar="JSON",
+        help=(
+            'Type-specific defaults as JSON (e.g. status: \'{"labels":{"1":"High"}}\', '
+            'dropdown: \'{"settings":{"labels":[...]}}\').'
+        ),
+    ),
+    custom_id: str | None = typer.Option(
+        None,
+        "--id",
+        help=(
+            "Custom column ID (1–20 chars, lowercase alphanumeric + underscores, unique per board)."
+        ),
+    ),
+    after: str | None = typer.Option(
+        None, "--after", help="Position the new column after this column ID."
+    ),
+) -> None:
+    """Create a new column on a board."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    defaults_str = _parse_defaults(defaults)
+    variables: dict[str, Any] = {
+        "board": board_id,
+        "title": title,
+        "type": column_type,
+        "description": description,
+        "defaults": defaults_str,
+        "id": custom_id,
+        "after": after,
+    }
+    if opts.dry_run:
+        _dry_run_mutation(opts, COLUMN_CREATE, variables)
+    client = _client_or_exit(opts)
+    try:
+        with client:
+            data = _exec_or_exit(client, COLUMN_CREATE, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+    opts.emit(data.get("create_column") or {})
+
+
+@app.command("rename")
+def rename_cmd(
+    ctx: typer.Context,
+    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    column_id: str = typer.Option(..., "--id", help="Column ID."),
+    title: str = typer.Option(..., "--title", help="New column title."),
+) -> None:
+    """Rename a column (shortcut for change-metadata --property title)."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    variables = {"board": board_id, "col": column_id, "title": title}
+    if opts.dry_run:
+        _dry_run_mutation(opts, COLUMN_RENAME, variables)
+    client = _client_or_exit(opts)
+    try:
+        with client:
+            data = _exec_or_exit(client, COLUMN_RENAME, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+    opts.emit(data.get("change_column_title") or {})
+
+
+@app.command("change-metadata")
+def change_metadata_cmd(
+    ctx: typer.Context,
+    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    column_id: str = typer.Option(..., "--id", help="Column ID."),
+    column_property: ColumnProperty = typer.Option(
+        ...,
+        "--property",
+        help="Which metadata field to set. monday only allows title and description.",
+        case_sensitive=False,
+    ),
+    value: str = typer.Option(..., "--value", help="New value for the chosen property."),
+) -> None:
+    """Change a column's title or description."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    variables = {
+        "board": board_id,
+        "col": column_id,
+        "property": column_property.value,
+        "value": value,
+    }
+    if opts.dry_run:
+        _dry_run_mutation(opts, COLUMN_CHANGE_METADATA, variables)
+    client = _client_or_exit(opts)
+    try:
+        with client:
+            data = _exec_or_exit(client, COLUMN_CHANGE_METADATA, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+    opts.emit(data.get("change_column_metadata") or {})
+
+
+@app.command("delete")
+def delete_cmd(
+    ctx: typer.Context,
+    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    column_id: str = typer.Option(..., "--id", help="Column ID to delete."),
+) -> None:
+    """Delete a column (permanent — destroys all values stored in it)."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    if not opts.yes:
+        ok = typer.confirm(
+            f"PERMANENTLY delete column {column_id!r} on board {board_id}?",
+            default=False,
+        )
+        if not ok:
+            typer.echo("aborted.")
+            raise typer.Exit(1)
+    variables = {"board": board_id, "col": column_id}
+    if opts.dry_run:
+        _dry_run_mutation(opts, COLUMN_DELETE, variables)
+    client = _client_or_exit(opts)
+    try:
+        with client:
+            data = _exec_or_exit(client, COLUMN_DELETE, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+    opts.emit(data.get("delete_column") or {})

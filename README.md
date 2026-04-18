@@ -9,9 +9,9 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
-> output formatters, JMESPath). Phase 2 in progress: **board CRUD shipped (2a)**,
-> column/group/workspace structural CRUD, export/import, and complexity
-> metering queued. Phase 3 covers users/docs/webhooks and the rest.
+> output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a) and
+> structural column CRUD (2b) shipped**; group/workspace CRUD, export/import,
+> and complexity metering queued. Phase 3 covers users/docs/webhooks and the rest.
 
 ---
 
@@ -104,6 +104,7 @@ mondo item duplicate --id 987 --board 1234567890 --with-updates
 ### Columns
 
 ```bash
+# Read & write values
 mondo column list     --board 1234567890
 mondo column get      --item 987 --column status         # codec-rendered display
 mondo column get      --item 987 --column status --raw   # {id, type, value, text}
@@ -111,6 +112,14 @@ mondo column set      --item 987 --column status --value Done
 mondo column set      --item 987 --column tags   --value urgent,blocked   # names auto-resolve
 mondo column set-many --item 987 --values '{"text":"Hi","due":{"date":"2026-04-25"}}'
 mondo column clear    --item 987 --column status
+
+# Structural (2b)
+mondo column create          --board 1234567890 --title "Priority" --type status \
+                             --defaults '{"labels":{"1":"High","2":"Medium"}}' \
+                             [--id priority] [--after status] [--description "…"]
+mondo column rename          --board 1234567890 --id status --title "Workflow"
+mondo column change-metadata --board 1234567890 --id status --property description --value "…"
+mondo column delete          --board 1234567890 --id status --yes
 ```
 
 **Smart shorthand** — no raw JSON needed for common cases. Dispatched via a
@@ -266,7 +275,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 440 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 450 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
