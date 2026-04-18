@@ -19,6 +19,7 @@ from mondo.cli.context import GlobalOpts
 from mondo.cli.export import app as export_app
 from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
+from mondo.cli.import_ import app as import_app
 from mondo.cli.item import app as item_app
 from mondo.cli.workspace import app as workspace_app
 from mondo.logging_ import configure_logging
@@ -51,6 +52,7 @@ app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")
 app.add_typer(export_app, name="export", help="Export a board's data to CSV/JSON/XLSX/Markdown.")
+app.add_typer(import_app, name="import", help="Bulk-import items from CSV into a board.")
 app.command(
     name="graphql",
     help="Send a raw GraphQL query/mutation to monday.com.",

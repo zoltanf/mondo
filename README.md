@@ -10,8 +10,8 @@ workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
 > output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a),
-> structural column CRUD (2b), group CRUD (2c), workspace CRUD (2d), and
-> board export (2e) shipped**; import and complexity metering queued.
+> structural column CRUD (2b), group CRUD (2c), workspace CRUD (2d), board
+> export (2e), and bulk import (2f) shipped**; complexity metering queued.
 > Phase 3 covers users/docs/webhooks and the rest.
 
 ---
@@ -87,6 +87,41 @@ mondo board duplicate  --id 1234567890 --type duplicate_board_with_pulses_and_up
 
 monday's `boards` query has no server-side name filter; `--name-contains` and
 `--name-matches` are applied client-side after page-based fetch.
+
+### Import
+
+```bash
+# CSV round-trip (matches the export schema: name, group, plus column titles)
+mondo import board --board 1234567890 --from items.csv
+
+# With header-to-column-id overrides:
+mondo import board --board 1234567890 --from items.csv --mapping mapping.yaml
+
+# Default group for rows without a `group` column:
+mondo import board --board 1234567890 --from items.csv --group topics
+
+# Skip rows whose name already exists on the board (O(board size) pre-fetch):
+mondo import board --board 1234567890 --from items.csv --idempotency-name
+
+# Dry-run — prints what would be created without any mutations:
+mondo --dry-run import board --board 1234567890 --from items.csv
+```
+
+Column values use the same codec registry as `mondo item create` — so CSV
+cells like `Done`, `2026-04-25`, `urgent,blocked` parse into the right JSON.
+Each row emits a result record (`created`/`skipped`/`failed`/`dry-run`); a
+single failing row does not abort the run, and the command exits `1` if any
+row failed.
+
+`mapping.yaml` schema:
+
+```yaml
+columns:
+  Stage: status          # CSV header: monday column_id
+  Due Date: date4
+name_column: name        # optional; defaults to 'name'
+group_column: group      # optional; defaults to 'group'
+```
 
 ### Export
 
@@ -326,7 +361,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 501 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 511 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
