@@ -9,7 +9,7 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
-> teams (3b), subitems (3c), and updates (3d) shipped; workspace docs,
+> teams (3b), subitems (3c), updates (3d), and workspace docs (3e) shipped;
 > webhooks, files, aggregation, and validation queued.
 
 ---
@@ -167,6 +167,32 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Workspace docs
+
+Distinct from the `doc` *column* type (`mondo column doc`): these are
+standalone documents inside a workspace, built from a block tree.
+
+```bash
+mondo doc list           [--workspace 42] [--object-id 77] [--order-by used_at] \
+                         [--limit 100] [--max-items 500]
+mondo doc get            --id 7           # internal id
+mondo doc get            --object-id 77   # URL-visible id
+mondo doc get            --id 7 --format markdown    # render blocks → markdown
+mondo doc create         --workspace 42 --name "Spec" --kind public
+
+mondo doc add-content    --doc 7 --from-file spec.md         # bulk markdown → blocks
+mondo doc add-block      --doc 7 --type normal_text \
+                         --content '{"deltaFormat":[{"insert":"hi"}]}' \
+                         [--after <block-id>] [--parent-block <block-id>]
+mondo doc update-block   --id <block-id> --content '<json>'
+mondo doc delete-block   --id <block-id>
+```
+
+`add-content` reuses the Phase-1f markdown converter (headings h1-h3,
+paragraphs, bullet / numbered lists, blockquotes, fenced code, horizontal
+rules). monday has no top-level `delete_doc` mutation — delete individual
+blocks, or delete via the monday UI.
 
 ### Updates (item comments)
 
@@ -449,7 +475,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 583 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 599 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

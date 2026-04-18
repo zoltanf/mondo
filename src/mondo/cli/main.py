@@ -17,6 +17,7 @@ from mondo.cli.board import app as board_app
 from mondo.cli.column import app as column_app
 from mondo.cli.complexity import app as complexity_app
 from mondo.cli.context import GlobalOpts
+from mondo.cli.doc import app as doc_app
 from mondo.cli.export import app as export_app
 from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
@@ -57,6 +58,7 @@ app.add_typer(subitem_app, name="subitem", help="Create, read, update, delete su
 app.add_typer(
     update_app, name="update", help="Post, edit, like, pin, and delete item updates (comments)."
 )
+app.add_typer(doc_app, name="doc", help="Workspace-level docs (distinct from the `doc` column).")
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")

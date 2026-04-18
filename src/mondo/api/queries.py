@@ -417,6 +417,85 @@ mutation ($block: String!) {
 """.strip()
 
 
+# --- workspace docs (3e) — distinct from the `doc` column type ---
+
+DOCS_LIST_PAGE = """
+query (
+  $limit: Int!
+  $page: Int!
+  $ids: [ID!]
+  $objectIds: [ID!]
+  $workspaceIds: [ID!]
+  $orderBy: DocsOrderBy
+) {
+  docs(
+    limit: $limit
+    page: $page
+    ids: $ids
+    object_ids: $objectIds
+    workspace_ids: $workspaceIds
+    order_by: $orderBy
+  ) {
+    id
+    object_id
+    name
+    doc_kind
+    created_at
+    url
+    relative_url
+    workspace_id
+    created_by { id name }
+  }
+}
+""".strip()
+
+
+DOC_GET_BY_ID = """
+query ($ids: [ID!]!) {
+  docs(ids: $ids) {
+    id
+    object_id
+    name
+    doc_kind
+    created_at
+    url
+    relative_url
+    workspace_id
+    created_by { id name }
+    blocks { id type content parent_block_id }
+  }
+}
+""".strip()
+
+
+# Create a new doc inside a workspace (vs. the already-shipped
+# CREATE_DOC_ON_ITEM which creates one attached to a doc-column on an item).
+CREATE_DOC_IN_WORKSPACE = """
+mutation ($workspace: ID!, $name: String, $kind: BoardKind) {
+  create_doc(
+    location: {
+      workspace: { workspace_id: $workspace, name: $name, kind: $kind }
+    }
+  ) {
+    id
+    object_id
+    name
+    url
+  }
+}
+""".strip()
+
+
+UPDATE_DOC_BLOCK = """
+mutation ($block: String!, $content: JSON!) {
+  update_doc_block(block_id: $block, content: $content) {
+    id
+    type
+  }
+}
+""".strip()
+
+
 # --- boards ---
 
 # Page-based (limit+page) list of boards — monday's `boards` query has no cursor.
