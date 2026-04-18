@@ -10,9 +10,9 @@ workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 MVP complete (auth, items, columns, doc column, raw GraphQL,
 > output formatters, JMESPath). Phase 2 in progress: **board CRUD (2a),
-> structural column CRUD (2b), group CRUD (2c), and workspace CRUD (2d)
-> shipped**; export/import, and complexity metering queued. Phase 3 covers
-> users/docs/webhooks and the rest.
+> structural column CRUD (2b), group CRUD (2c), workspace CRUD (2d), and
+> board export (2e) shipped**; import and complexity metering queued.
+> Phase 3 covers users/docs/webhooks and the rest.
 
 ---
 
@@ -87,6 +87,21 @@ mondo board duplicate  --id 1234567890 --type duplicate_board_with_pulses_and_up
 
 monday's `boards` query has no server-side name filter; `--name-contains` and
 `--name-matches` are applied client-side after page-based fetch.
+
+### Export
+
+```bash
+mondo export board --board 1234567890 --format csv                        # to stdout
+mondo export board --board 1234567890 --format json --out board.json
+mondo export board --board 1234567890 --format xlsx --out board.xlsx      # required for xlsx
+mondo export board --board 1234567890 --format md   --include-subitems    # markdown pipe table
+mondo export board --board 1234567890 --format tsv  --max-items 1000
+```
+
+Formats: `csv | tsv | json | xlsx | md`. Column headers are the board's column
+titles (archived columns are dropped). With `--include-subitems`, the CSV /
+TSV emit a second blank-line-separated block, JSON gets a `subitems` array,
+Markdown gets a `### Subitems` section, and XLSX gets a second worksheet.
 
 ### Workspaces
 
@@ -311,7 +326,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 490 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 501 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

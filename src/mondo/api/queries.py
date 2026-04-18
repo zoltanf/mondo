@@ -124,6 +124,54 @@ query ($cursor: String!, $limit: Int!) {
 """.strip()
 
 
+# Export-oriented variants that also pull subitems (field selection costs
+# extra complexity; only use when --include-subitems is on).
+ITEMS_PAGE_INITIAL_WITH_SUBITEMS = """
+query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery) {
+  boards(ids: $boards) {
+    items_page(limit: $limit, query_params: $qp) {
+      cursor
+      items {
+        id
+        name
+        state
+        group { id title }
+        column_values { id type text value }
+        subitems {
+          id
+          name
+          state
+          column_values { id type text value }
+        }
+      }
+    }
+  }
+}
+""".strip()
+
+
+ITEMS_PAGE_NEXT_WITH_SUBITEMS = """
+query ($cursor: String!, $limit: Int!) {
+  next_items_page(cursor: $cursor, limit: $limit) {
+    cursor
+    items {
+      id
+      name
+      state
+      group { id title }
+      column_values { id type text value }
+      subitems {
+        id
+        name
+        state
+        column_values { id type text value }
+      }
+    }
+  }
+}
+""".strip()
+
+
 # --- mutations ---
 
 ITEM_CREATE = """

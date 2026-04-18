@@ -28,11 +28,16 @@ def iter_items_page(
     limit: int = MAX_PAGE_SIZE,
     query_params: dict[str, Any] | None = None,
     max_items: int | None = None,
+    query_initial: str = ITEMS_PAGE_INITIAL,
+    query_next: str = ITEMS_PAGE_NEXT,
 ) -> Iterator[dict[str, Any]]:
     """Yield items from a board, following `items_page` cursors.
 
     Stops when `max_items` is reached (if set) or the cursor is None.
     Handles expired cursors by restarting from the initial page.
+
+    `query_initial` / `query_next` let callers swap in field selections
+    (e.g. `ITEMS_PAGE_INITIAL_WITH_SUBITEMS` for export).
     """
     yielded = 0
     page_size = min(limit, MAX_PAGE_SIZE)
@@ -41,7 +46,7 @@ def iter_items_page(
         "limit": page_size,
         "qp": query_params,
     }
-    page = _initial_page(client, initial_vars)
+    page = _initial_page(client, query_initial, initial_vars)
     cursor = page["cursor"]
 
     for item in page["items"]:
@@ -52,10 +57,10 @@ def iter_items_page(
 
     while cursor:
         try:
-            next_page = _fetch_next(client, cursor, page_size)
+            next_page = _fetch_next(client, query_next, cursor, page_size)
         except CursorExpiredError:
             # Restart from the initial page; the caller re-sees some items.
-            page = _initial_page(client, initial_vars)
+            page = _initial_page(client, query_initial, initial_vars)
             cursor = page["cursor"]
             for item in page["items"]:
                 if max_items is not None and yielded >= max_items:
@@ -72,16 +77,16 @@ def iter_items_page(
             yielded += 1
 
 
-def _initial_page(client: _ClientProtocol, variables: dict[str, Any]) -> dict[str, Any]:
-    result = client.execute(ITEMS_PAGE_INITIAL, variables)
+def _initial_page(client: _ClientProtocol, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+    result = client.execute(query, variables)
     boards = (result.get("data") or {}).get("boards") or []
     if not boards:
         return {"cursor": None, "items": []}
     return boards[0].get("items_page") or {"cursor": None, "items": []}
 
 
-def _fetch_next(client: _ClientProtocol, cursor: str, limit: int) -> dict[str, Any]:
-    result = client.execute(ITEMS_PAGE_NEXT, {"cursor": cursor, "limit": limit})
+def _fetch_next(client: _ClientProtocol, query: str, cursor: str, limit: int) -> dict[str, Any]:
+    result = client.execute(query, {"cursor": cursor, "limit": limit})
     return (result.get("data") or {}).get("next_items_page") or {
         "cursor": None,
         "items": [],
