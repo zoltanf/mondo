@@ -6,10 +6,12 @@ are mounted as sub-apps.
 
 from __future__ import annotations
 
+import sys
 from enum import StrEnum
 
 import typer
 
+from mondo.cli.argv import reorder_argv
 from mondo.cli.auth import app as auth_app
 from mondo.cli.column import app as column_app
 from mondo.cli.context import GlobalOpts
@@ -124,5 +126,15 @@ def _root(
     )
 
 
+def main() -> None:
+    """Console-script entry point.
+
+    Reorders argv so root-level global flags work anywhere on the command line
+    (az/gh/gam UX), then hands off to Typer.
+    """
+    args = reorder_argv(sys.argv[1:])
+    app(args=args)
+
+
 if __name__ == "__main__":
-    app()
+    main()

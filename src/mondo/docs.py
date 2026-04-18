@@ -31,7 +31,7 @@ def extract_doc_ids_from_column_value(raw: str | None) -> list[int]:
         return []
     try:
         parsed = json.loads(raw)
-    except (TypeError, ValueError):
+    except ValueError:
         return []
     files = parsed.get("files") if isinstance(parsed, dict) else None
     if not isinstance(files, list):
@@ -45,11 +45,11 @@ def extract_doc_ids_from_column_value(raw: str | None) -> list[int]:
         if entry.get("fileType") not in (None, "MONDAY_DOC"):
             continue
         pointer = entry.get("objectId") if entry.get("objectId") is not None else entry.get("docId")
-        if pointer is None:
+        if not isinstance(pointer, (int, str, float)):
             continue
         try:
             ids.append(int(pointer))
-        except (TypeError, ValueError):
+        except ValueError:
             continue
     return ids
 
@@ -127,9 +127,7 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
             flush_paragraph()
             level = min(len(m.group(1)), 3)
             text = m.group(2).strip()
-            blocks.append(
-                {"type": _HEADING_TYPES[level], "content": _text_content(text)}
-            )
+            blocks.append({"type": _HEADING_TYPES[level], "content": _text_content(text)})
             i += 1
             continue
 
@@ -145,9 +143,7 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
         m = _BULLET_RE.match(line)
         if m:
             flush_paragraph()
-            blocks.append(
-                {"type": "bullet_list", "content": _text_content(m.group(1).strip())}
-            )
+            blocks.append({"type": "bullet_list", "content": _text_content(m.group(1).strip())})
             i += 1
             continue
 
@@ -155,9 +151,7 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
         m = _NUMBERED_RE.match(line)
         if m:
             flush_paragraph()
-            blocks.append(
-                {"type": "numbered_list", "content": _text_content(m.group(1).strip())}
-            )
+            blocks.append({"type": "numbered_list", "content": _text_content(m.group(1).strip())})
             i += 1
             continue
 
@@ -185,7 +179,7 @@ def _extract_text(content: Any) -> str:
     if isinstance(content, str):
         try:
             parsed = json.loads(content)
-        except (TypeError, ValueError):
+        except ValueError:
             return content  # plain string fallback
         content = parsed
     if not isinstance(content, dict):

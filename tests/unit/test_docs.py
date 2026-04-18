@@ -22,7 +22,9 @@ class TestExtractDocIds:
 
     def test_ignores_non_monday_doc_files(self) -> None:
         """If a doc column happens to also hold a non-doc file, skip it."""
-        raw = '{"files":[{"objectId":10,"fileType":"MONDAY_DOC"},{"objectId":20,"fileType":"ASSET"}]}'
+        raw = (
+            '{"files":[{"objectId":10,"fileType":"MONDAY_DOC"},{"objectId":20,"fileType":"ASSET"}]}'
+        )
         assert extract_doc_ids_from_column_value(raw) == [10]
 
     def test_falls_back_to_doc_id_when_object_id_missing(self) -> None:

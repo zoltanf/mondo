@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-mondo = "mondo.cli.main:app"
+mondo = "mondo.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/marktguru/mondo"

@@ -214,7 +214,7 @@ def get_cmd(
     if raw_value:
         try:
             value_payload = json.loads(raw_value)
-        except (TypeError, ValueError):
+        except ValueError:
             value_payload = raw_value
     try:
         rendered = render_value(col_type, value_payload, current.get("text"))

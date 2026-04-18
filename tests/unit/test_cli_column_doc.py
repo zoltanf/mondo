@@ -89,17 +89,21 @@ class TestDocGet:
                             "object_id": 5000,
                             "name": "Spec",
                             "blocks": [
-                                {"type": "heading", "content": {"deltaFormat": [{"insert": "Spec"}]}},
-                                {"type": "normal_text", "content": {"deltaFormat": [{"insert": "Hello"}]}},
+                                {
+                                    "type": "heading",
+                                    "content": {"deltaFormat": [{"insert": "Spec"}]},
+                                },
+                                {
+                                    "type": "normal_text",
+                                    "content": {"deltaFormat": [{"insert": "Hello"}]},
+                                },
                             ],
                         }
                     ]
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["column", "doc", "get", "--item", "1", "--column", "spec"]
-        )
+        result = runner.invoke(app, ["column", "doc", "get", "--item", "1", "--column", "spec"])
         assert result.exit_code == 0, result.stdout
         out = result.stdout
         assert "# Spec" in out
@@ -145,17 +149,11 @@ class TestDocGet:
         )
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
-        assert parsed == [
-            {"type": "heading", "content": {"deltaFormat": [{"insert": "Spec"}]}}
-        ]
+        assert parsed == [{"type": "heading", "content": {"deltaFormat": [{"insert": "Spec"}]}}]
 
     def test_empty_column_emits_empty(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_context_for_doc_column(None)
-        )
-        result = runner.invoke(
-            app, ["column", "doc", "get", "--item", "1", "--column", "spec"]
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
+        result = runner.invoke(app, ["column", "doc", "get", "--item", "1", "--column", "spec"])
         assert result.exit_code == 0
         # Markdown path → empty string
         assert result.stdout.strip() in ("", '""')
@@ -174,7 +172,12 @@ class TestDocGet:
                             "board": {
                                 "id": "42",
                                 "columns": [
-                                    {"id": "spec", "title": "Spec", "type": "text", "settings_str": "{}"},
+                                    {
+                                        "id": "spec",
+                                        "title": "Spec",
+                                        "type": "text",
+                                        "settings_str": "{}",
+                                    },
                                 ],
                             },
                             "column_values": [],
@@ -183,9 +186,7 @@ class TestDocGet:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["column", "doc", "get", "--item", "1", "--column", "spec"]
-        )
+        result = runner.invoke(app, ["column", "doc", "get", "--item", "1", "--column", "spec"])
         assert result.exit_code != 0
         assert len(httpx_mock.get_requests()) == 1
 
@@ -196,9 +197,7 @@ class TestDocGet:
 class TestDocSet:
     def test_creates_doc_when_column_empty(self, httpx_mock: HTTPXMock) -> None:
         # Preflight
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_context_for_doc_column(None)
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
         # create_doc
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -247,13 +246,7 @@ class TestDocSet:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "docs": [
-                        {"id": "700", "object_id": 5000, "blocks": []}
-                    ]
-                }
-            ),
+            json=_ok({"docs": [{"id": "700", "object_id": 5000, "blocks": []}]}),
         )
         # create_doc_blocks
         httpx_mock.add_response(
@@ -282,9 +275,7 @@ class TestDocSet:
     def test_from_file(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         md_file = tmp_path / "spec.md"
         md_file.write_text("# Title\n\nBody.\n")
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_context_for_doc_column(None)
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -312,9 +303,7 @@ class TestDocSet:
         assert result.exit_code == 0, result.stdout
 
     def test_dry_run_skips_mutations(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_context_for_doc_column(None)
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
         result = runner.invoke(
             app,
             [
@@ -372,9 +361,7 @@ class TestDocAppend:
         assert result.exit_code == 0
 
     def test_refuses_on_empty_doc_column(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_context_for_doc_column(None)
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
         result = runner.invoke(
             app,
             [

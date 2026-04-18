@@ -151,9 +151,7 @@ def set_cmd(
     from_file: Path | None = typer.Option(
         None, "--from-file", help="Read markdown content from a file."
     ),
-    markdown: str | None = typer.Option(
-        None, "--markdown", help="Inline markdown content."
-    ),
+    markdown: str | None = typer.Option(None, "--markdown", help="Inline markdown content."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Read markdown from stdin."),
 ) -> None:
     """Create the doc (if empty) and populate it from markdown. If the column
@@ -181,8 +179,14 @@ def set_cmd(
                     opts.emit(
                         {
                             "steps": [
-                                {"query": CREATE_DOC_ON_ITEM, "variables": {"item": item_id, "col": column_id}},
-                                {"query": CREATE_DOC_BLOCKS, "variables": {"doc": "<new-doc-id>", "blocks": blocks}},
+                                {
+                                    "query": CREATE_DOC_ON_ITEM,
+                                    "variables": {"item": item_id, "col": column_id},
+                                },
+                                {
+                                    "query": CREATE_DOC_BLOCKS,
+                                    "variables": {"doc": "<new-doc-id>", "blocks": blocks},
+                                },
                             ]
                         }
                     )
@@ -210,7 +214,12 @@ def set_cmd(
             if not doc_id:
                 raise MondoError("existing doc has no id")
             if opts.dry_run:
-                opts.emit({"query": CREATE_DOC_BLOCKS, "variables": {"doc": int(doc_id), "blocks": blocks}})
+                opts.emit(
+                    {
+                        "query": CREATE_DOC_BLOCKS,
+                        "variables": {"doc": int(doc_id), "blocks": blocks},
+                    }
+                )
                 raise typer.Exit(0)
             _exec(client, CREATE_DOC_BLOCKS, {"doc": int(doc_id), "blocks": blocks})
             opts.emit(
@@ -266,7 +275,12 @@ def append_cmd(
             if not doc_id:
                 raise MondoError("doc has no id")
             if opts.dry_run:
-                opts.emit({"query": CREATE_DOC_BLOCKS, "variables": {"doc": int(doc_id), "blocks": blocks}})
+                opts.emit(
+                    {
+                        "query": CREATE_DOC_BLOCKS,
+                        "variables": {"doc": int(doc_id), "blocks": blocks},
+                    }
+                )
                 raise typer.Exit(0)
             _exec(client, CREATE_DOC_BLOCKS, {"doc": int(doc_id), "blocks": blocks})
     except NotFoundError as e:
@@ -331,9 +345,7 @@ def clear_cmd(
 # ----- shared helpers -----
 
 
-def _read_markdown_source(
-    inline: str | None, path: Path | None, from_stdin: bool
-) -> str:
+def _read_markdown_source(inline: str | None, path: Path | None, from_stdin: bool) -> str:
     """One-of-three source selector: --markdown / --from-file / --from-stdin."""
     sources = [inline is not None, path is not None, from_stdin]
     count = sum(sources)

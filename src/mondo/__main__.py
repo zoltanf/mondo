@@ -1,4 +1,4 @@
-from mondo.cli.main import app
+from mondo.cli.main import main
 
 if __name__ == "__main__":
-    app()
+    main()
