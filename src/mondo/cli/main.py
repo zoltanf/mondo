@@ -24,6 +24,7 @@ from mondo.cli.import_ import app as import_app
 from mondo.cli.item import app as item_app
 from mondo.cli.subitem import app as subitem_app
 from mondo.cli.team import app as team_app
+from mondo.cli.update import app as update_app
 from mondo.cli.user import app as user_app
 from mondo.cli.workspace import app as workspace_app
 from mondo.logging_ import configure_logging
@@ -53,6 +54,9 @@ app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
 app.add_typer(board_app, name="board", help="Create, read, update, delete monday boards.")
 app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
 app.add_typer(subitem_app, name="subitem", help="Create, read, update, delete subitems.")
+app.add_typer(
+    update_app, name="update", help="Post, edit, like, pin, and delete item updates (comments)."
+)
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")

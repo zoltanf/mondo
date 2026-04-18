@@ -9,8 +9,8 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
-> teams (3b), and subitems (3c) shipped; updates, workspace docs, webhooks,
-> files, aggregation, and validation queued.
+> teams (3b), subitems (3c), and updates (3d) shipped; workspace docs,
+> webhooks, files, aggregation, and validation queued.
 
 ---
 
@@ -167,6 +167,27 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Updates (item comments)
+
+```bash
+mondo update list                                     # account-wide, paginated
+mondo update list   --item 1234567890 [--max-items 50]
+mondo update get    --id 555
+mondo update create --item 1234567890 --body "<p>FYI</p>"
+mondo update create --item 1234567890 --from-file note.html
+mondo update reply  --parent 555 --body "<p>re</p>"
+mondo update edit   --id 555 --body "<p>new body</p>"
+mondo update delete --id 555 --yes
+mondo update like   --id 555
+mondo update unlike --id 555
+mondo update pin    --id 555 [--item 1234567890]
+mondo update unpin  --id 555 [--item 1234567890]
+mondo update clear  --item 1234567890 --yes          # nuke ALL updates on an item
+```
+
+monday treats update `body` as **HTML** (not markdown) — `<p>`, `<mention>`,
+inline `<a>`/`<b>`/`<i>` etc. are supported. Page size is capped at 100.
 
 ### Subitems
 
@@ -428,7 +449,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 565 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 583 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
