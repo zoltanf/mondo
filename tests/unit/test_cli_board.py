@@ -161,11 +161,38 @@ class TestBoardList:
         assert body["variables"]["workspaceIds"] == [42, 43]
         assert body["variables"]["orderBy"] == "used_at"
 
+    def test_omits_unset_filter_args(self, httpx_mock: HTTPXMock) -> None:
+        """Monday drops arbitrary boards when `workspace_ids: null` is sent as
+        a variable. We build the query dynamically so unset filters are
+        absent from both the variables dict and the query string."""
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert set(body["variables"].keys()) == {"limit", "page"}
+        for forbidden in ("$state", "$kind", "$workspaceIds", "$orderBy", "$ids"):
+            assert forbidden not in body["query"], body["query"]
+        for forbidden in ("workspace_ids", "state:", "board_kind:", "order_by:"):
+            assert forbidden not in body["query"], body["query"]
+
+    def test_items_count_omitted_by_default(self, httpx_mock: HTTPXMock) -> None:
+        """items_count costs ~500k complexity per page; opt-in only."""
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        assert "items_count" not in _last_body(httpx_mock)["query"]
+
+    def test_with_item_counts_flag_includes_items_count(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list", "--with-item-counts"])
+        assert result.exit_code == 0, result.stdout
+        assert "items_count" in _last_body(httpx_mock)["query"]
+
     def test_dry_run_no_http(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(app, ["--dry-run", "board", "list"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
-        assert parsed["query"] == "<boards page iterator>"
+        assert "boards(" in parsed["query"]
         assert httpx_mock.get_requests() == []
 
 

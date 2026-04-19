@@ -23,7 +23,7 @@ from mondo.api.queries import (
     BOARD_DUPLICATE,
     BOARD_GET,
     BOARD_UPDATE,
-    BOARDS_LIST_PAGE,
+    build_boards_list_query,
 )
 from mondo.cli.context import GlobalOpts
 
@@ -163,6 +163,11 @@ def list_cmd(
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many boards total."
     ),
+    with_item_counts: bool = typer.Option(
+        False,
+        "--with-item-counts",
+        help="Include items_count per board (adds ~500k complexity per 100 boards).",
+    ),
 ) -> None:
     """List boards (page-based pagination)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -173,18 +178,18 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
 
-    variables: dict[str, Any] = {
-        "ids": None,
-        "state": state.value if state else None,
-        "kind": kind.value if kind else None,
-        "workspaceIds": workspace or None,
-        "orderBy": order_by.value if order_by else None,
-    }
+    query, variables = build_boards_list_query(
+        state=state.value if state else None,
+        kind=kind.value if kind else None,
+        workspace_ids=workspace or None,
+        order_by=order_by.value if order_by else None,
+        with_item_counts=with_item_counts,
+    )
 
     if opts.dry_run:
         opts.emit(
             {
-                "query": "<boards page iterator>",
+                "query": query,
                 "variables": {
                     **variables,
                     "limit": limit,
@@ -208,7 +213,7 @@ def list_cmd(
                 b
                 for b in iter_boards_page(
                     client,
-                    query=BOARDS_LIST_PAGE,
+                    query=query,
                     variables=variables,
                     limit=limit,
                     max_items=None,  # client-side filter applied below

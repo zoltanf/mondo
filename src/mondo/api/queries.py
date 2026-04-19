@@ -7,6 +7,8 @@ double-JSON escape trap (monday-api.md §11.4).
 
 from __future__ import annotations
 
+from typing import Any
+
 # --- me / account ---
 
 ME_QUERY = """
@@ -918,39 +920,68 @@ mutation ($id: ID!) {
 
 # --- boards ---
 
-# Page-based (limit+page) list of boards — monday's `boards` query has no cursor.
-# Includes workspace + basic folder context; omits heavy fields (items_page, activity_logs).
-BOARDS_LIST_PAGE = """
-query (
-  $limit: Int!
-  $page: Int!
-  $ids: [ID!]
-  $state: State
-  $kind: BoardKind
-  $workspaceIds: [ID]
-  $orderBy: BoardsOrderBy
-) {
-  boards(
-    limit: $limit
-    page: $page
-    ids: $ids
-    state: $state
-    board_kind: $kind
-    workspace_ids: $workspaceIds
-    order_by: $orderBy
-  ) {
-    id
-    name
-    description
-    state
-    board_kind
-    board_folder_id
-    workspace_id
-    items_count
-    updated_at
-  }
-}
-""".strip()
+
+def build_boards_list_query(
+    *,
+    state: str | None = None,
+    kind: str | None = None,
+    workspace_ids: list[int] | None = None,
+    order_by: str | None = None,
+    with_item_counts: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    """Build a page-based boards list query containing only the filter args
+    that are actually set.
+
+    Monday's `boards(...)` has a server-side quirk: passing `workspace_ids:
+    null` silently drops arbitrary boards from the result set (vs. omitting
+    the argument entirely, which returns everything). Safest to never send
+    null-valued filters, so we build the query and variables dict dynamically.
+
+    `items_count` costs ~500k complexity per page of 100 — by default it is
+    omitted; pass `with_item_counts=True` to include it.
+    """
+    var_decls: list[str] = ["$limit: Int!", "$page: Int!"]
+    args: list[str] = ["limit: $limit", "page: $page"]
+    variables: dict[str, Any] = {}
+
+    if state is not None:
+        var_decls.append("$state: State")
+        args.append("state: $state")
+        variables["state"] = state
+    if kind is not None:
+        var_decls.append("$kind: BoardKind")
+        args.append("board_kind: $kind")
+        variables["kind"] = kind
+    if workspace_ids:
+        var_decls.append("$workspaceIds: [ID]")
+        args.append("workspace_ids: $workspaceIds")
+        variables["workspaceIds"] = workspace_ids
+    if order_by is not None:
+        var_decls.append("$orderBy: BoardsOrderBy")
+        args.append("order_by: $orderBy")
+        variables["orderBy"] = order_by
+
+    fields = [
+        "id",
+        "name",
+        "description",
+        "state",
+        "board_kind",
+        "board_folder_id",
+        "workspace_id",
+        "updated_at",
+    ]
+    if with_item_counts:
+        fields.append("items_count")
+
+    query = (
+        f"query ({', '.join(var_decls)}) {{\n"
+        f"  boards({', '.join(args)}) {{\n"
+        f"    {' '.join(fields)}\n"
+        f"  }}\n"
+        f"}}"
+    )
+    return query, variables
 
 
 # Detailed single-board fetch.
