@@ -743,14 +743,14 @@ FAVORITES_LIST = """
 query {
   favorites {
     id
-    type
-    created_at
-    entity_id
-    entity_details {
-      ... on Board { id name }
-      ... on Dashboard { id name }
-      ... on Workspace { id name }
-      ... on Document { id name }
+    accountId
+    folderId
+    position
+    createdAt
+    updatedAt
+    object {
+      id
+      type
     }
   }
 }
@@ -767,6 +767,22 @@ query ($ids: [ID!]) {
     id
     name
     color
+  }
+}
+""".strip()
+
+
+# Fallback for board-scoped (private / shareable) tags — the ones
+# `create_or_get_tag` returns that don't show up in account-level `tags(ids:)`.
+TAG_BY_BOARD = """
+query ($board: ID!) {
+  boards(ids: [$board]) {
+    id
+    tags {
+      id
+      name
+      color
+    }
   }
 }
 """.strip()

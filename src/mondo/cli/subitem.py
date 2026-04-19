@@ -221,6 +221,11 @@ def create_cmd(
             except MondoError as e:
                 typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=int(e.exit_code)) from e
+            except ValueError as e:
+                # Codec validation (e.g. unknown status label) — surface as a
+                # clean CLI error rather than a Python traceback.
+                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=5) from e
 
     variables = {
         "parent": parent_id,

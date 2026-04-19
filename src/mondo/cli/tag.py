@@ -16,7 +16,7 @@ import typer
 
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
-from mondo.api.queries import CREATE_OR_GET_TAG, TAGS_LIST
+from mondo.api.queries import CREATE_OR_GET_TAG, TAG_BY_BOARD, TAGS_LIST
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -73,8 +73,21 @@ def list_cmd(
 def get_cmd(
     ctx: typer.Context,
     tag_id: int = typer.Option(..., "--id", help="Tag ID."),
+    board_id: int | None = typer.Option(
+        None,
+        "--board",
+        help="Board ID to scope the lookup to (required for board-private tags "
+        "— `create_or_get_tag` returns IDs that are NOT in the account-level "
+        "`tags()` collection).",
+    ),
 ) -> None:
-    """Fetch a single tag by ID."""
+    """Fetch a single tag by ID.
+
+    Monday's `tags(ids:)` only exposes account-level public tags. Tags created
+    via `create_or_get_tag` on a shareable/private board (or, empirically, any
+    board) are not visible there — pass `--board <id>` to look under
+    `board.tags` as a fallback.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"ids": [tag_id]}
     if opts.dry_run:
@@ -83,12 +96,18 @@ def get_cmd(
     try:
         with client:
             data = _exec_or_exit(client, TAGS_LIST, variables)
+            tags = data.get("tags") or []
+            if not tags and board_id is not None:
+                board_data = _exec_or_exit(client, TAG_BY_BOARD, {"board": board_id})
+                boards = board_data.get("boards") or []
+                board_tags = (boards[0].get("tags") or []) if boards else []
+                tags = [t for t in board_tags if str(t.get("id")) == str(tag_id)]
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    tags = data.get("tags") or []
     if not tags:
-        typer.secho(f"tag {tag_id} not found.", fg=typer.colors.RED, err=True)
+        scope = "account" if board_id is None else f"account + board {board_id}"
+        typer.secho(f"tag {tag_id} not found in {scope}.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
     opts.emit(tags[0])
 

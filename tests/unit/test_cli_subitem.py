@@ -142,6 +142,54 @@ class TestCreate:
         # Codec didn't run — string passthrough
         assert json.loads(v["values"]) == {"status9": "Done"}
 
+    def test_bad_label_returns_clean_error_not_traceback(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """Codec validation errors on subitem create used to leak a Python
+        traceback because the ValueError from parse_value wasn't caught.
+        Now it surfaces as a clean stderr message with exit code 5."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "99",
+                            "name": "SubBoard",
+                            "columns": [
+                                {
+                                    "id": "status9",
+                                    "title": "Status",
+                                    "type": "status",
+                                    "settings_str": '{"labels":{"1":"doing","2":"done"}}',
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "subitem",
+                "create",
+                "--parent",
+                "1",
+                "--name",
+                "Hi",
+                "--subitems-board",
+                "99",
+                "--column",
+                "status9=UNKNOWN",
+            ],
+        )
+        assert result.exit_code == 5
+        assert "unknown status label" in (result.output + result.stderr).lower()
+        # Traceback should NOT be in output
+        assert "Traceback" not in (result.output + result.stderr)
+
     def test_codec_dispatch_with_board(self, httpx_mock: HTTPXMock) -> None:
         # Preflight fetch of the subitems-board columns first, then create.
         httpx_mock.add_response(
