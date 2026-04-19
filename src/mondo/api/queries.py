@@ -750,6 +750,172 @@ query ($ids: [ID!]) {
 """.strip()
 
 
+# --- notify / me / account / aggregate / validation (3i) ---
+
+CREATE_NOTIFICATION = """
+mutation (
+  $user: ID!
+  $target: ID!
+  $targetType: NotificationTargetType!
+  $text: String!
+  $internal: Boolean
+) {
+  create_notification(
+    user_id: $user
+    target_id: $target
+    target_type: $targetType
+    text: $text
+    internal: $internal
+  ) {
+    id
+    text
+  }
+}
+""".strip()
+
+
+# `me` exposes the authenticated user. `account` is only reachable through
+# `me { account { ... } }` (no root `accounts` query) — see §14.
+ME_FULL = """
+query {
+  me {
+    id
+    name
+    email
+    is_admin
+    is_guest
+    is_view_only
+    is_pending
+    enabled
+    created_at
+    last_activity
+    title
+    photo_thumb
+    teams { id name }
+    account {
+      id
+      name
+      slug
+      tier
+      country_code
+      first_day_of_the_week
+      active_members_count
+      logo
+      plan { max_users tier period version }
+      products { id kind }
+    }
+  }
+}
+""".strip()
+
+
+ACCOUNT_ONLY = """
+query {
+  me {
+    account {
+      id
+      name
+      slug
+      tier
+      country_code
+      first_day_of_the_week
+      active_members_count
+      logo
+      plan { max_users tier period version }
+      products { id kind }
+    }
+  }
+}
+""".strip()
+
+
+# Aggregation API (2026-01+). Returns [AggregateGroupByResult { ... }].
+AGGREGATE_BOARD = """
+query (
+  $board: ID!
+  $groupBy: [GroupByInput!]
+  $select: [SelectInput!]
+  $rules: [AggregateRuleInput!]
+  $limit: Int
+) {
+  aggregate(
+    board_id: $board
+    group_by: $groupBy
+    select: $select
+    rules: $rules
+    limit: $limit
+  ) {
+    group_by_values
+    values
+    value
+  }
+}
+""".strip()
+
+
+# Validation rules (2025-04+ Pro/Enterprise rollout).
+VALIDATIONS_LIST = """
+query ($board: ID!) {
+  boards(ids: [$board]) {
+    id
+    validations {
+      id
+      column_id
+      rule_type
+      value
+      description
+    }
+  }
+}
+""".strip()
+
+
+VALIDATION_CREATE = """
+mutation (
+  $board: ID!
+  $columnId: String!
+  $ruleType: String!
+  $value: JSON
+  $description: String
+) {
+  create_validation_rule(
+    board_id: $board
+    column_id: $columnId
+    rule_type: $ruleType
+    value: $value
+    description: $description
+  ) {
+    id
+    column_id
+    rule_type
+  }
+}
+""".strip()
+
+
+VALIDATION_UPDATE = """
+mutation (
+  $id: ID!
+  $value: JSON
+  $description: String
+) {
+  update_validation_rule(id: $id, value: $value, description: $description) {
+    id
+    rule_type
+  }
+}
+""".strip()
+
+
+VALIDATION_DELETE = """
+mutation ($id: ID!) {
+  delete_validation_rule(id: $id) {
+    id
+  }
+}
+""".strip()
+
+
 # --- boards ---
 
 # Page-based (limit+page) list of boards — monday's `boards` query has no cursor.

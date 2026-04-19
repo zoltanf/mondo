@@ -8,10 +8,11 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 *apps*). `mondo` is a wrapper for the *platform API*: boards, items, columns,
 workspaces, users, docs, webhooks, etc.
 
-> Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
-> teams (3b), subitems (3c), updates (3d), workspace docs (3e), webhooks
-> (3f), files (3g), and activity/folders/favorites/tags (3h) shipped;
-> notify + me/account + aggregate + validation queued for 3i.
+> Status: **Phases 1, 2, and 3 complete.** Full command surface: auth, items,
+> subitems, columns (+ structural CRUD), groups, boards, workspaces, users,
+> teams, workspace docs, webhooks, files, activity, folders, favorites, tags,
+> notifications, aggregations, validation rules, bulk import/export, raw
+> GraphQL, and session complexity metering.
 
 ---
 
@@ -168,6 +169,51 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Me & account
+
+```bash
+mondo me        # authenticated user (teams + account embedded)
+mondo account   # the account (tier, plan, products, active_members_count)
+```
+
+### Notifications
+
+```bash
+mondo notify send --user 42 --target 100 --target-type Project --text "FYI"
+mondo notify send --user 42 --target 555 --target-type Post     --text "reply" --internal
+```
+
+monday's notification mutation is single-user; loop for batches. Delivery is
+async — the returned `id` is often `-1` and not queryable. `target_type` is
+case-sensitive: `Project` for item/board IDs, `Post` for updates/replies.
+
+### Aggregations
+
+```bash
+mondo aggregate board --board 1234567890 --select COUNT:*
+mondo aggregate board --board 1234567890 --group-by status --select COUNT:* --select SUM:price
+mondo aggregate board --board 1234567890 --group-by owner --select AVERAGE:duration \
+  --rules '[{"column_id":"status","operator":"any_of","compare_value":["Done"]}]'
+```
+
+Requires API version 2026-01+. Functions: `SUM | AVERAGE | COUNT |
+COUNT_DISTINCT | MIN | MAX | MEDIAN`. Use instead of pulling every item when
+you only need totals.
+
+### Validation rules (Pro/Enterprise)
+
+```bash
+mondo validation list   --board 1234567890
+mondo validation create --board 1234567890 --column status --rule-type REQUIRED
+mondo validation create --board 1234567890 --column numbers --rule-type MIN_VALUE \
+                        --value '{"min":10}' --description "Non-zero price"
+mondo validation update --id 1 --description "Updated"
+mondo validation delete --id 1 --yes
+```
+
+Violating item creates/edits raise `RecordInvalidException`. Not supported on
+multi-level subitem boards.
 
 ### Activity logs
 
@@ -555,7 +601,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 636 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 655 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

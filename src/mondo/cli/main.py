@@ -12,6 +12,7 @@ from enum import StrEnum
 import typer
 
 from mondo.cli.activity import app as activity_app
+from mondo.cli.aggregate import app as aggregate_app
 from mondo.cli.argv import reorder_argv
 from mondo.cli.auth import app as auth_app
 from mondo.cli.board import app as board_app
@@ -27,11 +28,14 @@ from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
 from mondo.cli.import_ import app as import_app
 from mondo.cli.item import app as item_app
+from mondo.cli.me import account_command, me_command
+from mondo.cli.notify import app as notify_app
 from mondo.cli.subitem import app as subitem_app
 from mondo.cli.tag import app as tag_app
 from mondo.cli.team import app as team_app
 from mondo.cli.update import app as update_app
 from mondo.cli.user import app as user_app
+from mondo.cli.validation import app as validation_app
 from mondo.cli.webhook import app as webhook_app
 from mondo.cli.workspace import app as workspace_app
 from mondo.logging_ import configure_logging
@@ -71,6 +75,13 @@ app.add_typer(folder_app, name="folder", help="Manage workspace folders.")
 app.add_typer(tag_app, name="tag", help="Read account-level tags; create-or-get for a board.")
 app.add_typer(favorite_app, name="favorite", help="List the current user's favorites.")
 app.add_typer(activity_app, name="activity", help="Read a board's activity logs.")
+app.add_typer(notify_app, name="notify", help="Send monday notifications.")
+app.add_typer(aggregate_app, name="aggregate", help="Run SUM/COUNT/AVG aggregations on a board.")
+app.add_typer(validation_app, name="validation", help="Manage server-side validation rules.")
+app.command(name="me", help="Print the authenticated user (id, name, teams, account).")(me_command)
+app.command(name="account", help="Print the current monday account (tier, plan, products).")(
+    account_command
+)
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")
