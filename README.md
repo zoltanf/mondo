@@ -9,8 +9,9 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
-> teams (3b), subitems (3c), updates (3d), workspace docs (3e), and
-> webhooks (3f) shipped; files, aggregation, and validation queued.
+> teams (3b), subitems (3c), updates (3d), workspace docs (3e), webhooks
+> (3f), and file upload/download (3g) shipped; aggregation and validation
+> queued.
 
 ---
 
@@ -167,6 +168,19 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Files
+
+```bash
+mondo file upload   --file report.pdf --item 1234567890 --column files
+mondo file upload   --file shot.png --target update --update 555
+mondo file download --asset 42                      # writes to ./<asset_name>
+mondo file download --asset 42 --out /tmp/x.pdf
+```
+
+Uploads go to `/v2/file` as multipart (max 500 MB per file, monday's cap).
+Downloads resolve the asset's URL via `assets(ids)` then stream the bytes
+to disk — works for `file`, image, and video attachments.
 
 ### Webhooks
 
@@ -496,7 +510,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 606 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 615 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check

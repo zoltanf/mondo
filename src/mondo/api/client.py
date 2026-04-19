@@ -10,6 +10,8 @@ Responsibilities:
 
 from __future__ import annotations
 
+import json as _json_module
+import os as _os_module
 import random
 import time
 from collections.abc import Callable
@@ -31,7 +33,17 @@ from mondo.api.errors import (
 from mondo.logging_ import register_secret
 from mondo.version import __version__
 
+
+def _json_dumps(obj: Any) -> str:
+    """JSON-stringify without ASCII escaping — matches what monday expects."""
+    return _json_module.dumps(obj, ensure_ascii=False)
+
+
+def _basename(path: str) -> str:
+    return _os_module.path.basename(path)
+
 DEFAULT_ENDPOINT = "https://api.monday.com/v2"
+DEFAULT_FILE_ENDPOINT = "https://api.monday.com/v2/file"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_RETRIES = 4
 
@@ -151,6 +163,42 @@ class MondayClient:
 
         assert last_exc is not None
         raise last_exc
+
+    def upload_file(
+        self,
+        query: str,
+        variables: dict[str, Any],
+        file_path: str,
+        *,
+        file_field: str = "file",
+        filename: str | None = None,
+        endpoint: str = DEFAULT_FILE_ENDPOINT,
+    ) -> dict[str, Any]:
+        """POST a multipart file upload to monday's /v2/file endpoint.
+
+        The monday file-upload protocol is the GraphQL multipart request
+        convention (variables: { file: null }, map: { "<field>": "variables.file" }).
+        Do NOT set Content-Type — httpx picks the right multipart boundary.
+        `file_field` matches the map value's leaf; defaults to "file".
+        """
+        headers = {
+            "Authorization": self._token,
+            "API-Version": self._api_version,
+            "User-Agent": f"mondo/{__version__}",
+        }
+        data = {
+            "query": query,
+            "variables": _json_dumps(variables),
+            "map": _json_dumps({file_field: "variables.file"}),
+        }
+        with open(file_path, "rb") as fh:
+            files = {file_field: (filename or _basename(file_path), fh)}
+            response = self._client.post(endpoint, headers=headers, data=data, files=files)
+        exc = _classify_response(response)
+        if exc is not None:
+            raise exc
+        parsed: dict[str, Any] = response.json()
+        return parsed
 
     def close(self) -> None:
         if self._owns_client:
