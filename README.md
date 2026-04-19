@@ -427,8 +427,16 @@ mondo item rename    --id 987 --board 1234567890 --name "New title"
 mondo item archive   --id 987                            # reversible (30-day monday recovery)
 mondo item delete    --id 987 --hard --yes               # permanent
 mondo item move      --id 987 --group topics_two         # between groups, same board
+mondo item move-to-board --id 987 --to-board 2345 --to-group topics \
+                      [--column-mapping status=state] [--column-mapping date4=due] \
+                      [--column-mapping notes=]        # '=' with empty target drops the column
 mondo item duplicate --id 987 --board 1234567890 --with-updates
 ```
+
+`item move-to-board` requires a destination group. Pass `--column-mapping
+SRC=DST` (repeatable) when the source and target boards have different
+column IDs; unmapped source columns are dropped. `--subitem-column-mapping`
+does the same for the moved item's subitems.
 
 ### Columns
 

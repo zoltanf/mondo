@@ -266,6 +266,36 @@ mutation ($id: ID!, $group: String!) {
 """.strip()
 
 
+# `move_item_to_board` — cross-board relocation. Takes optional
+# `columns_mapping` + `subitems_columns_mapping` so users can translate
+# source column IDs to destination IDs when the schemas differ. Each
+# mapping entry is `{ source: ID!, target: ID }`; a null/omitted
+# `target` drops the source column on the destination.
+ITEM_MOVE_BOARD = """
+mutation (
+  $id: ID!
+  $board: ID!
+  $group: ID!
+  $columns: [ColumnMappingInput!]
+  $subitemColumns: [ColumnMappingInput!]
+) {
+  move_item_to_board(
+    item_id: $id
+    board_id: $board
+    group_id: $group
+    columns_mapping: $columns
+    subitems_columns_mapping: $subitemColumns
+  ) {
+    id
+    name
+    state
+    board { id name }
+    group { id title }
+  }
+}
+""".strip()
+
+
 # --- columns: list / get / context ---
 
 COLUMNS_ON_BOARD = """

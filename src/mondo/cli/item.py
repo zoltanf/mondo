@@ -21,6 +21,7 @@ from mondo.api.queries import (
     ITEM_GET,
     ITEM_GET_WITH_SUBITEMS,
     ITEM_GET_WITH_UPDATES,
+    ITEM_MOVE_BOARD,
     ITEM_MOVE_GROUP,
     ITEM_RENAME,
 )
@@ -454,3 +455,81 @@ def move_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = _execute_mutation(opts, ITEM_MOVE_GROUP, {"id": item_id, "group": group_id})
     opts.emit(data.get("move_item_to_group") or {})
+
+
+def _parse_column_mapping(tokens: list[str]) -> list[dict[str, Any]]:
+    """Parse `source[=target]` tokens into ColumnMappingInput dicts.
+
+    `src=dst` maps source column `src` to dest column `dst`.
+    `src=` (empty target) or bare `src` drops the column on the destination
+    (monday treats a null `target` as "don't carry this column over").
+    """
+    out: list[dict[str, Any]] = []
+    for tok in tokens:
+        raw = tok.strip()
+        if not raw:
+            continue
+        if "=" in raw:
+            src, _, tgt = raw.partition("=")
+            src = src.strip()
+            tgt = tgt.strip()
+        else:
+            src, tgt = raw, ""
+        if not src:
+            raise UsageError(
+                f"--column-mapping {tok!r}: source column id is required "
+                "(use 'src=dst' or 'src=' to drop)."
+            )
+        out.append({"source": src, "target": tgt or None})
+    return out
+
+
+@app.command("move-to-board")
+def move_to_board_cmd(
+    ctx: typer.Context,
+    item_id: int = typer.Option(..., "--id", help="Item ID to move."),
+    board_id: int = typer.Option(..., "--to-board", help="Destination board ID."),
+    group_id: str = typer.Option(..., "--to-group", help="Destination group ID."),
+    column_mapping: list[str] | None = typer.Option(
+        None,
+        "--column-mapping",
+        metavar="SRC=DST",
+        help=(
+            "Map source column id → destination column id (repeatable). "
+            "`SRC=` (empty) drops the source column on the destination. "
+            "Required when source/dest schemas differ."
+        ),
+    ),
+    subitem_column_mapping: list[str] | None = typer.Option(
+        None,
+        "--subitem-column-mapping",
+        metavar="SRC=DST",
+        help=(
+            "Same as --column-mapping but for the subitems board "
+            "(repeatable). Only needed if the item has subitems."
+        ),
+    ),
+) -> None:
+    """Move an item to a different board, optionally remapping columns.
+
+    monday's `move_item_to_board` requires a destination group. If the
+    source and target board schemas differ, pass `--column-mapping src=dst`
+    (repeatable) so source columns land in the right destination columns;
+    unmapped source columns are dropped.
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    try:
+        columns = _parse_column_mapping(column_mapping or [])
+        subitem_columns = _parse_column_mapping(subitem_column_mapping or [])
+    except UsageError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e
+    variables: dict[str, Any] = {
+        "id": item_id,
+        "board": board_id,
+        "group": group_id,
+        "columns": columns or None,
+        "subitemColumns": subitem_columns or None,
+    }
+    data = _execute_mutation(opts, ITEM_MOVE_BOARD, variables)
+    opts.emit(data.get("move_item_to_board") or {})

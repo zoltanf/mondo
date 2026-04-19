@@ -426,3 +426,117 @@ class TestItemMove:
         assert result.exit_code == 0
         body = _last_body(httpx_mock)
         assert body["variables"] == {"id": 1, "group": "topics_two"}
+
+
+class TestItemMoveToBoard:
+    def _success_payload(self) -> dict[str, object]:
+        return {
+            "move_item_to_board": {
+                "id": "1",
+                "name": "Thing",
+                "state": "active",
+                "board": {"id": "99", "name": "Dest"},
+                "group": {"id": "g-new", "title": "Group"},
+            }
+        }
+
+    def test_basic_no_column_mapping(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok(self._success_payload())
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "move-to-board",
+                "--id",
+                "1",
+                "--to-board",
+                "99",
+                "--to-group",
+                "g-new",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["id"] == 1
+        assert v["board"] == 99
+        assert v["group"] == "g-new"
+        assert v["columns"] is None
+        assert v["subitemColumns"] is None
+
+    def test_column_mapping_parsed(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok(self._success_payload())
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "move-to-board",
+                "--id",
+                "1",
+                "--to-board",
+                "99",
+                "--to-group",
+                "g-new",
+                "--column-mapping",
+                "status=state",
+                "--column-mapping",
+                "date4=due",
+                "--column-mapping",
+                "notes=",  # drop
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["columns"] == [
+            {"source": "status", "target": "state"},
+            {"source": "date4", "target": "due"},
+            {"source": "notes", "target": None},
+        ]
+        assert v["subitemColumns"] is None
+
+    def test_subitem_column_mapping(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok(self._success_payload())
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "move-to-board",
+                "--id",
+                "1",
+                "--to-board",
+                "99",
+                "--to-group",
+                "g-new",
+                "--subitem-column-mapping",
+                "sub_status=sub_state",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["subitemColumns"] == [
+            {"source": "sub_status", "target": "sub_state"}
+        ]
+
+    def test_missing_source_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "move-to-board",
+                "--id",
+                "1",
+                "--to-board",
+                "99",
+                "--to-group",
+                "g-new",
+                "--column-mapping",
+                "=target-only",
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
