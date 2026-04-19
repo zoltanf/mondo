@@ -81,12 +81,23 @@ fi
 # --- Bump version ---------------------------------------------------------
 
 VERSION_FILE="src/mondo/version.py"
+PYPROJECT="pyproject.toml"
+
+# If anything between here and the commit step fails, revert the file edits
+# so the working tree ends up clean (otherwise a re-run would fail the clean-
+# tree precheck and the user would be stuck doing `git checkout --` manually).
+cleanup_on_error() {
+    echo "==> Release aborted — restoring $VERSION_FILE and $PYPROJECT" >&2
+    git checkout -- "$VERSION_FILE" "$PYPROJECT" 2>/dev/null || true
+}
+trap cleanup_on_error ERR
+
+
 echo "==> Writing $VERSION_FILE -> $VERSION"
 printf '__version__ = "%s"\n' "$VERSION" > "$VERSION_FILE"
 
 # Keep pyproject.toml in sync. The version line is the first `version = "..."`
 # under [project].
-PYPROJECT="pyproject.toml"
 python3 - "$VERSION" <<'PY'
 import pathlib
 import re
@@ -109,8 +120,8 @@ PY
 
 # --- Refresh lockfile + tests --------------------------------------------
 
-echo "==> uv sync"
-uv sync --quiet
+echo "==> uv sync --all-extras"
+uv sync --all-extras --quiet
 
 if [ "$SKIP_TESTS" -eq 0 ]; then
     echo "==> uv run pytest -m 'not integration'"
@@ -125,8 +136,26 @@ git add "$VERSION_FILE" "$PYPROJECT" uv.lock 2>/dev/null || git add "$VERSION_FI
 git commit -m "chore(release): $TAG"
 git tag -a "$TAG" -m "$TAG"
 
+# Past this point, a `git checkout` would be the wrong recovery — the edits
+# are already committed. Disable the rollback trap.
+trap - ERR
+
 echo "==> Pushing main and $TAG to origin..."
-git push origin main "$TAG"
+if ! git push origin main "$TAG"; then
+    cat >&2 <<EOF
+
+error: push failed. The commit and tag $TAG were created locally but not
+pushed. Once the network / remote issue is fixed, finish the release with:
+
+    git push origin main $TAG
+
+Or, to undo locally:
+
+    git tag -d $TAG
+    git reset --hard HEAD~1
+EOF
+    exit 1
+fi
 
 # --- Done -----------------------------------------------------------------
 
