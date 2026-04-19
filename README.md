@@ -813,9 +813,16 @@ For a dry-run before a real release, use a pre-release suffix:
 ```
 
 The script accepts any semver-compatible pre-release identifier
-(`X.Y.Z-<anything>`). GitHub marks the release as a pre-release automatically
-when the tag contains a `-`, and the Homebrew formula is still updated — use an
-RC tag only when you don't mind `brew upgrade` picking it up.
+(`X.Y.Z-<anything>`). Tags with a `-` in them get special treatment in CI:
+
+- The GitHub Release is created with the "pre-release" flag set, so it
+  doesn't show up as the "Latest" release on the repo page.
+- The Homebrew tap is **not** updated. Pre-releases are only discoverable by
+  browsing the Releases page or downloading the assets directly, so
+  `brew upgrade mondo` never silently moves users onto an RC build.
+
+To hand-test an RC via Homebrew anyway, edit `Formula/mondo.rb` locally in a
+checkout of [zoltanf/homebrew-mondo][tap] and run `brew install --build-from-tap`.
 
 ### Prerequisites (one-time, already set up)
 

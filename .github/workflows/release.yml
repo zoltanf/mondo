@@ -105,16 +105,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Tags with a hyphen (e.g. v0.4.0-rc1, v1.0.0-beta.2) are pre-releases.
+          prerelease_flag=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag \
+            $prerelease_flag \
             artifacts/mondo-*.tar.gz artifacts/mondo-*.zip
 
   update-homebrew:
     needs: release
     runs-on: ubuntu-24.04
+    # Skip the tap update on pre-release tags (e.g. v0.4.0-rc1). Otherwise
+    # `brew upgrade mondo` would pull in release candidates as the stable
+    # version. Pre-release tags still produce a GitHub Release with assets,
+    # just not an update to the Homebrew formula.
+    if: ${{ !contains(github.ref_name, '-') }}
     steps:
       - name: Derive version
         id: ver
