@@ -8,13 +8,11 @@ import sys
 import keyring
 import typer
 
-from mondo.api.auth import ENV_VAR
+from mondo.api.auth import ENV_VAR, KEYRING_SERVICE
 from mondo.api.errors import AuthError, MondoError
 from mondo.api.queries import ME_QUERY
 from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
-
-KEYRING_SERVICE = "mondo"
 
 app = typer.Typer(
     no_args_is_help=True,

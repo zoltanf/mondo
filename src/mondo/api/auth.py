@@ -3,9 +3,11 @@
 Precedence (per plan §10):
     1. `--api-token` flag
     2. `MONDAY_API_TOKEN` env var
-    3. Profile's `api_token_keyring` (via the OS keyring)
-    4. Profile's `api_token` (from config.yaml — last resort)
-    5. Fail with a pointer to `mondo auth login`
+    3. Profile's `api_token_keyring` (explicit config, via the OS keyring)
+    4. Implicit keyring slot `mondo:<profile_name>` — the slot `mondo auth
+       login` writes to by default, so zero-config login/status works
+    5. Profile's `api_token` (from config.yaml — last resort)
+    6. Fail with a pointer to `mondo auth login`
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from mondo.api.errors import AuthError
 from mondo.config.schema import Profile
 
 ENV_VAR = "MONDAY_API_TOKEN"
+KEYRING_SERVICE = "mondo"
 
 
 class TokenSource(StrEnum):
@@ -93,6 +96,20 @@ def resolve_token(
                 config_path=config_path,
                 keyring_key=profile.api_token_keyring,
             )
+
+    # Implicit convention: `mondo auth login` always stores at
+    # {KEYRING_SERVICE}:{profile_name or "default"}. Check that slot as a
+    # fallback so the login → status roundtrip works without config.yaml.
+    implicit_username = profile_name or "default"
+    stored = keyring.get_password(KEYRING_SERVICE, implicit_username)
+    if stored:
+        return ResolvedToken(
+            token=stored,
+            source=TokenSource.KEYRING,
+            profile_name=profile_name,
+            config_path=config_path,
+            keyring_key=f"{KEYRING_SERVICE}:{implicit_username}",
+        )
 
     if profile.api_token:
         return ResolvedToken(

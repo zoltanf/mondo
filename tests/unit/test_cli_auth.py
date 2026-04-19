@@ -40,6 +40,11 @@ def _me_response() -> dict:
 class TestStatus:
     def test_no_token_exits_3(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("MONDAY_API_TOKEN", raising=False)
+        # Isolate from the dev machine's real keyring (which may have an
+        # entry from `mondo auth login` during manual testing).
+        monkeypatch.setattr(
+            "mondo.api.auth.keyring.get_password", lambda service, username: None
+        )
         result = runner.invoke(app, ["auth", "status"])
         assert result.exit_code == 3
 

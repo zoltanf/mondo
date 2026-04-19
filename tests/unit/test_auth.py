@@ -104,6 +104,44 @@ class TestResolveTokenPrecedence:
         result = resolve_token(profile=Profile(), flag_token="")
         assert result.source == TokenSource.ENV
 
+    def test_implicit_keyring_found_without_explicit_api_token_keyring(
+        self, monkeypatch: pytest.MonkeyPatch, no_env: None
+    ) -> None:
+        """`mondo auth login` writes to mondo:<profile>. Resolve should find it
+        even when the user hasn't edited config.yaml to point at it."""
+        fake = FakeKeyring({("mondo", "default"): "login-token"})
+        monkeypatch.setattr("mondo.api.auth.keyring", fake)
+        result = resolve_token(profile=Profile(), flag_token=None)
+        assert result.token == "login-token"
+        assert result.source == TokenSource.KEYRING
+        assert result.keyring_key == "mondo:default"
+
+    def test_implicit_keyring_uses_profile_name_as_username(
+        self, monkeypatch: pytest.MonkeyPatch, no_env: None
+    ) -> None:
+        fake = FakeKeyring({("mondo", "work"): "work-token"})
+        monkeypatch.setattr("mondo.api.auth.keyring", fake)
+        result = resolve_token(profile=Profile(), flag_token=None, profile_name="work")
+        assert result.token == "work-token"
+        assert result.keyring_key == "mondo:work"
+
+    def test_explicit_keyring_still_wins_over_implicit(
+        self, monkeypatch: pytest.MonkeyPatch, no_env: None
+    ) -> None:
+        """A user who set api_token_keyring: 'someservice:someuser' should get
+        that entry, not the implicit mondo:default fallback."""
+        fake = FakeKeyring(
+            {
+                ("someservice", "someuser"): "explicit-token",
+                ("mondo", "default"): "implicit-token",
+            }
+        )
+        monkeypatch.setattr("mondo.api.auth.keyring", fake)
+        profile = Profile(api_token_keyring="someservice:someuser")
+        result = resolve_token(profile=profile, flag_token=None)
+        assert result.token == "explicit-token"
+        assert result.keyring_key == "someservice:someuser"
+
 
 class TestTokenSourceDescribe:
     """Used by `mondo auth status` to explain where the token came from."""
