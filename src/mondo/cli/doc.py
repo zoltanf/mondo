@@ -37,6 +37,7 @@ from mondo.api.queries import (
     DOCS_LIST_PAGE,
     UPDATE_DOC_BLOCK,
 )
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 from mondo.docs import blocks_to_markdown, markdown_to_blocks
 
@@ -114,7 +115,7 @@ def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> s
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("doc list"))
 def list_cmd(
     ctx: typer.Context,
     workspace: list[int] | None = typer.Option(
@@ -166,7 +167,7 @@ def list_cmd(
     opts.emit(items)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("doc get"))
 def get_cmd(
     ctx: typer.Context,
     doc_id: int | None = typer.Option(None, "--id", help="Internal doc ID."),
@@ -224,7 +225,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("doc create"))
 def create_cmd(
     ctx: typer.Context,
     workspace: int = typer.Option(..., "--workspace", help="Target workspace ID."),
@@ -252,7 +253,7 @@ def create_cmd(
     opts.emit(data.get("create_doc") or {})
 
 
-@app.command("add-block")
+@app.command("add-block", epilog=epilog_for("doc add-block"))
 def add_block_cmd(
     ctx: typer.Context,
     doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id, NOT object_id)."),
@@ -320,7 +321,7 @@ def add_block_cmd(
     opts.emit(data.get("create_doc_block") or {})
 
 
-@app.command("add-content")
+@app.command("add-content", epilog=epilog_for("doc add-content"))
 def add_content_cmd(
     ctx: typer.Context,
     doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
@@ -362,9 +363,7 @@ def add_content_cmd(
             pre = _exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
             docs_list = pre.get("docs") or []
             existing_blocks = (docs_list[0].get("blocks") or []) if docs_list else []
-            prev_id: str | None = (
-                str(existing_blocks[-1].get("id")) if existing_blocks else None
-            )
+            prev_id: str | None = str(existing_blocks[-1].get("id")) if existing_blocks else None
             for block in blocks:
                 data = _exec_or_exit(
                     client,
@@ -388,7 +387,7 @@ def add_content_cmd(
     opts.emit(created)
 
 
-@app.command("update-block")
+@app.command("update-block", epilog=epilog_for("doc update-block"))
 def update_block_cmd(
     ctx: typer.Context,
     block_id: str = typer.Option(..., "--id", help="Block ID to update."),
@@ -418,7 +417,7 @@ def update_block_cmd(
     opts.emit(data.get("update_doc_block") or {})
 
 
-@app.command("delete-block")
+@app.command("delete-block", epilog=epilog_for("doc delete-block"))
 def delete_block_cmd(
     ctx: typer.Context,
     block_id: str = typer.Option(..., "--id", help="Block ID to delete."),

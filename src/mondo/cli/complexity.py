@@ -11,6 +11,7 @@ from __future__ import annotations
 import typer
 
 from mondo.api.errors import MondoError
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -22,7 +23,7 @@ app = typer.Typer(
 _PROBE_QUERY = "query { me { id } }"
 
 
-@app.command("status")
+@app.command("status", epilog=epilog_for("complexity status"))
 def status_cmd(ctx: typer.Context) -> None:
     """Print the current monday complexity budget (fires one cheap query)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

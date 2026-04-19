@@ -25,6 +25,8 @@ from mondo.api.queries import (
     ITEM_MOVE_GROUP,
     ITEM_RENAME,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
@@ -52,16 +54,6 @@ def _dispatch_dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -
     """For `--dry-run`: emit the mutation + variables as structured data and exit 0."""
     opts.emit({"query": query, "variables": variables})
     raise typer.Exit(0)
-
-
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    """Interactive confirmation unless `--yes` is set. Exit 1 on refusal."""
-    if opts.yes:
-        return
-    ok = typer.confirm(prompt, default=False)
-    if not ok:
-        typer.echo("aborted.")
-        raise typer.Exit(1)
 
 
 def _execute_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -195,7 +187,7 @@ def _build_query_params(filters: list[str] | None, order_by: str | None) -> dict
 # ----- read commands -----
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("item get"))
 def get_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID."),
@@ -228,7 +220,7 @@ def get_cmd(
     opts.emit(items[0])
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("item list"))
 def list_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID to list items from."),
@@ -295,7 +287,7 @@ def list_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("item create"))
 def create_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID to create in."),
@@ -378,7 +370,7 @@ def create_cmd(
     opts.emit(data.get("create_item") or {})
 
 
-@app.command("rename")
+@app.command("rename", epilog=epilog_for("item rename"))
 def rename_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID."),
@@ -391,7 +383,7 @@ def rename_cmd(
     opts.emit(data.get("change_simple_column_value") or {})
 
 
-@app.command("duplicate")
+@app.command("duplicate", epilog=epilog_for("item duplicate"))
 def duplicate_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID to duplicate."),
@@ -410,7 +402,7 @@ def duplicate_cmd(
     opts.emit(data.get("duplicate_item") or {})
 
 
-@app.command("archive")
+@app.command("archive", epilog=epilog_for("item archive"))
 def archive_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID to archive."),
@@ -422,7 +414,7 @@ def archive_cmd(
     opts.emit(data.get("archive_item") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("item delete"))
 def delete_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID to delete."),
@@ -445,7 +437,7 @@ def delete_cmd(
     opts.emit(data.get("delete_item") or {})
 
 
-@app.command("move")
+@app.command("move", epilog=epilog_for("item move"))
 def move_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID to move."),
@@ -484,7 +476,7 @@ def _parse_column_mapping(tokens: list[str]) -> list[dict[str, Any]]:
     return out
 
 
-@app.command("move-to-board")
+@app.command("move-to-board", epilog=epilog_for("item move-to-board"))
 def move_to_board_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--id", help="Item ID to move."),

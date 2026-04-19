@@ -25,6 +25,8 @@ from mondo.api.queries import (
     FOLDER_UPDATE,
     FOLDERS_LIST_PAGE,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -58,18 +60,10 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
-
-
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("folder list"))
 def list_cmd(
     ctx: typer.Context,
     workspace: list[int] | None = typer.Option(
@@ -113,7 +107,7 @@ def list_cmd(
     opts.emit(items)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("folder get"))
 def get_cmd(
     ctx: typer.Context,
     folder_id: int = typer.Option(..., "--id", help="Folder ID."),
@@ -140,7 +134,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("folder create"))
 def create_cmd(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Folder name."),
@@ -178,7 +172,7 @@ def create_cmd(
     opts.emit(data.get("create_folder") or {})
 
 
-@app.command("update")
+@app.command("update", epilog=epilog_for("folder update"))
 def update_cmd(
     ctx: typer.Context,
     folder_id: int = typer.Option(..., "--id", help="Folder ID."),
@@ -231,7 +225,7 @@ def update_cmd(
     opts.emit(data.get("update_folder") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("folder delete"))
 def delete_cmd(
     ctx: typer.Context,
     folder_id: int = typer.Option(..., "--id", help="Folder ID."),

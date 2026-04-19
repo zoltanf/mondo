@@ -16,6 +16,7 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import BOARD_ACTIVITY_LOGS
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -44,7 +45,7 @@ def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -
     return result.get("data") or {}
 
 
-@app.command("board")
+@app.command("board", epilog=epilog_for("activity board"))
 def board_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),

@@ -215,7 +215,11 @@ class TestAggregate:
         q = body["variables"]["q"]
         assert q["from"] == {"type": "TABLE", "id": "42"}
         assert q["select"] == [
-            {"type": "FUNCTION", "function": {"function": "COUNT_ITEMS", "params": []}, "as": "count"}
+            {
+                "type": "FUNCTION",
+                "function": {"function": "COUNT_ITEMS", "params": []},
+                "as": "count",
+            }
         ]
         assert "group_by" not in q
 
@@ -277,7 +281,11 @@ class TestAggregate:
         assert q["group_by"] == [{"column_id": "status"}]
         assert q["select"] == [
             {"type": "COLUMN", "column": {"column_id": "status"}, "as": "status"},
-            {"type": "FUNCTION", "function": {"function": "COUNT_ITEMS", "params": []}, "as": "count"},
+            {
+                "type": "FUNCTION",
+                "function": {"function": "COUNT_ITEMS", "params": []},
+                "as": "count",
+            },
         ]
 
     def test_sum_and_average_wrap_column_as_function_param(self, httpx_mock: HTTPXMock) -> None:

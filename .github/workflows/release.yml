@@ -1,0 +1,218 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: darwin-arm64
+            os: macos-14
+          - name: darwin-x86_64
+            os: macos-13
+          - name: linux-x86_64
+            os: ubuntu-24.04
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+          - name: windows-x86_64
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Install runtime deps
+        run: uv sync --no-dev
+
+      - name: Install PyInstaller
+        run: uv pip install pyinstaller
+
+      - name: Derive version
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary (unix)
+        if: runner.os != 'Windows'
+        run: uv run pyinstaller --onefile --name mondo --paths src src/mondo/cli/main.py
+
+      - name: Build binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv run pyinstaller --onefile --name mondo --paths src src/mondo/cli/main.py
+
+      - name: Smoke test (unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./dist/mondo --version
+          ./dist/mondo --help > /dev/null
+
+      - name: Smoke test (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\dist\mondo.exe --version
+          .\dist\mondo.exe --help | Out-Null
+
+      - name: Archive (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          archive="mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz"
+          tar -czf "$archive" -C dist mondo
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Archive (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = "mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.zip"
+          Compress-Archive -Path dist\mondo.exe -DestinationPath $archive
+          "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mondo-${{ matrix.name }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag \
+            artifacts/mondo-*.tar.gz artifacts/mondo-*.zip
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Derive version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir assets
+          cd assets
+          v="${{ steps.ver.outputs.version }}"
+          for asset in \
+              "mondo-$v-darwin-arm64.tar.gz" \
+              "mondo-$v-darwin-x86_64.tar.gz" \
+              "mondo-$v-linux-arm64.tar.gz" \
+              "mondo-$v-linux-x86_64.tar.gz"; do
+            gh release download "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset"
+          done
+
+      - name: Compute SHA256s
+        id: sha
+        run: |
+          cd assets
+          v="${{ steps.ver.outputs.version }}"
+          {
+            echo "darwin_arm64=$(sha256sum "mondo-$v-darwin-arm64.tar.gz" | cut -d' ' -f1)"
+            echo "darwin_x86_64=$(sha256sum "mondo-$v-darwin-x86_64.tar.gz" | cut -d' ' -f1)"
+            echo "linux_arm64=$(sha256sum "mondo-$v-linux-arm64.tar.gz" | cut -d' ' -f1)"
+            echo "linux_x86_64=$(sha256sum "mondo-$v-linux-x86_64.tar.gz" | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: zoltanf/homebrew-mondo
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render formula
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
+          DARWIN_X86_64: ${{ steps.sha.outputs.darwin_x86_64 }}
+          LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+          LINUX_X86_64: ${{ steps.sha.outputs.linux_x86_64 }}
+        run: |
+          mkdir -p tap/Formula
+          cat > tap/Formula/mondo.rb <<EOF
+          class Mondo < Formula
+            desc "Power-user CLI for the monday.com GraphQL API"
+            homepage "https://github.com/zoltanf/mondo"
+            version "$VERSION"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-darwin-arm64.tar.gz"
+                sha256 "$DARWIN_ARM64"
+              else
+                url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-darwin-x86_64.tar.gz"
+                sha256 "$DARWIN_X86_64"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-linux-arm64.tar.gz"
+                sha256 "$LINUX_ARM64"
+              else
+                url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-linux-x86_64.tar.gz"
+                sha256 "$LINUX_X86_64"
+              end
+            end
+
+            def install
+              bin.install "mondo"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/mondo --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/mondo.rb
+          if git diff --cached --quiet; then
+            echo "formula unchanged"
+            exit 0
+          fi
+          git commit -m "mondo ${{ steps.ver.outputs.version }}"
+          git push

@@ -15,6 +15,7 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import FAVORITES_LIST
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -40,7 +41,7 @@ def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -
     return result.get("data") or {}
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("favorite list"))
 def list_cmd(ctx: typer.Context) -> None:
     """List the current user's favorites (boards, dashboards, workspaces, docs)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

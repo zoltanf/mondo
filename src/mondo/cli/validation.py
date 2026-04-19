@@ -17,6 +17,7 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import VALIDATIONS_LIST
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -59,7 +60,7 @@ def _mutation_removed() -> None:
     raise typer.Exit(code=2)
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("validation list"))
 def list_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -79,7 +80,7 @@ def list_cmd(
     opts.emit(data.get("validations") or {})
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("validation create"))
 def create_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -92,7 +93,7 @@ def create_cmd(
     _mutation_removed()
 
 
-@app.command("update")
+@app.command("update", epilog=epilog_for("validation update"))
 def update_cmd(
     ctx: typer.Context,
     rule_id: int = typer.Option(..., "--id", help="Validation rule ID."),
@@ -103,7 +104,7 @@ def update_cmd(
     _mutation_removed()
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("validation delete"))
 def delete_cmd(
     ctx: typer.Context,
     rule_id: int = typer.Option(..., "--id", help="Validation rule ID."),

@@ -26,6 +26,7 @@ from mondo.api.queries import (
     FILE_UPLOAD_ITEM,
     FILE_UPLOAD_UPDATE,
 )
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -58,7 +59,7 @@ def _dry_run(opts: GlobalOpts, payload: dict[str, Any]) -> None:
 # ----- upload -----
 
 
-@app.command("upload")
+@app.command("upload", epilog=epilog_for("file upload"))
 def upload_cmd(
     ctx: typer.Context,
     file_path: Path = typer.Option(
@@ -140,66 +141,101 @@ def upload_cmd(
 # ----- download -----
 
 
-@app.command("download")
+def _resolve_download_target(out: Path | None, asset: dict[str, Any], asset_id: int) -> Path:
+    """On-disk path for an asset: `out` verbatim, `out/name` if `out` is a dir, else `name` in CWD."""
+    asset_name = asset.get("name") or f"asset-{asset_id}"
+    if out is None:
+        return Path(asset_name)
+    if out.is_dir():
+        return out / asset_name
+    return out
+
+
+@app.command("download", epilog=epilog_for("file download"))
 def download_cmd(
     ctx: typer.Context,
-    asset_id: int = typer.Option(..., "--asset", help="Asset ID to download."),
+    asset_ids: list[int] = typer.Option(
+        ..., "--asset", help="Asset ID to download. Repeatable to fetch multiple assets."
+    ),
     out: Path | None = typer.Option(
         None,
         "--out",
-        help="Output path. Default: asset's original name in the CWD.",
+        help=(
+            "Output path. If it points at an existing directory, the asset's "
+            "original filename is appended. Default: asset's original name in the CWD. "
+            "When downloading multiple assets, --out must be an existing directory."
+        ),
     ),
 ) -> None:
-    """Download an asset by ID. Fetches its pre-signed URL via `assets(ids)` then streams the bytes."""
+    """Download one or more assets by ID.
+
+    Fetches pre-signed URLs via `assets(ids)` then streams the bytes to disk.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    variables = {"ids": [asset_id]}
+    variables = {"ids": asset_ids}
     if opts.dry_run:
         opts.emit({"query": ASSETS_GET, "variables": variables})
         raise typer.Exit(0)
 
+    if len(asset_ids) > 1 and out is not None and not out.is_dir():
+        typer.secho(
+            "error: --out must be an existing directory when downloading multiple assets.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
     client = _client_or_exit(opts)
+    results: list[dict[str, Any]] = []
     try:
         with client:
             result = client.execute(ASSETS_GET, variables=variables)
             assets = ((result.get("data") or {}).get("assets")) or []
-            if not assets:
+            found_ids = {int(a["id"]) for a in assets if a.get("id") is not None}
+            missing = [i for i in asset_ids if i not in found_ids]
+            if missing:
+                label = "asset" if len(missing) == 1 else "assets"
                 typer.secho(
-                    f"asset {asset_id} not found.",
+                    f"{label} not found: {', '.join(str(i) for i in missing)}",
                     fg=typer.colors.RED,
                     err=True,
                 )
                 raise typer.Exit(code=6)
-            asset = assets[0]
-            # Prefer the pre-signed S3 `public_url` — monday's `url` is a
-            # protected_static proxy that returns 406 to non-browser clients.
-            url = asset.get("public_url") or asset.get("url")
-            if not url:
-                typer.secho(
-                    f"asset {asset_id} has no url.",
-                    fg=typer.colors.RED,
-                    err=True,
+
+            by_id = {int(a["id"]): a for a in assets}
+            for aid in asset_ids:
+                asset = by_id[aid]
+                # Prefer the pre-signed S3 `public_url` — monday's `url` is a
+                # protected_static proxy that returns 406 to non-browser clients.
+                url = asset.get("public_url") or asset.get("url")
+                if not url:
+                    typer.secho(
+                        f"asset {aid} has no url.",
+                        fg=typer.colors.RED,
+                        err=True,
+                    )
+                    raise typer.Exit(code=6)
+                target = _resolve_download_target(out, asset, aid)
+                try:
+                    with httpx.stream("GET", url, follow_redirects=True) as resp:
+                        resp.raise_for_status()
+                        with target.open("wb") as fh:
+                            for chunk in resp.iter_bytes():
+                                fh.write(chunk)
+                except httpx.HTTPStatusError as e:
+                    raise NetworkError(f"download failed: HTTP {e.response.status_code}") from e
+                except httpx.RequestError as e:
+                    raise NetworkError(f"download failed: {e}") from e
+                results.append(
+                    {
+                        "asset_id": asset.get("id"),
+                        "name": asset.get("name"),
+                        "out": str(target),
+                        "bytes": target.stat().st_size,
+                    }
                 )
-                raise typer.Exit(code=6)
-            target = out if out is not None else Path(asset.get("name") or f"asset-{asset_id}")
-            try:
-                with httpx.stream("GET", url, follow_redirects=True) as resp:
-                    resp.raise_for_status()
-                    with target.open("wb") as fh:
-                        for chunk in resp.iter_bytes():
-                            fh.write(chunk)
-            except httpx.HTTPStatusError as e:
-                raise NetworkError(f"download failed: HTTP {e.response.status_code}") from e
-            except httpx.RequestError as e:
-                raise NetworkError(f"download failed: {e}") from e
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    opts.emit(
-        {
-            "asset_id": asset.get("id"),
-            "name": asset.get("name"),
-            "out": str(target),
-            "bytes": target.stat().st_size,
-        }
-    )
+    opts.emit(results[0] if len(results) == 1 else results)

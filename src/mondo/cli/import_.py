@@ -33,6 +33,7 @@ from mondo.api.queries import (
     CREATE_OR_GET_TAG,
     ITEM_CREATE,
 )
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 
@@ -172,7 +173,7 @@ def _encode_row(
 # ----- command -----
 
 
-@app.command("board")
+@app.command("board", epilog=epilog_for("import board"))
 def board_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID to import into."),

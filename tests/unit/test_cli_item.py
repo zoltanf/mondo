@@ -441,9 +441,7 @@ class TestItemMoveToBoard:
         }
 
     def test_basic_no_column_mapping(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(self._success_payload())
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(self._success_payload()))
         result = runner.invoke(
             app,
             [
@@ -466,9 +464,7 @@ class TestItemMoveToBoard:
         assert v["subitemColumns"] is None
 
     def test_column_mapping_parsed(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(self._success_payload())
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(self._success_payload()))
         result = runner.invoke(
             app,
             [
@@ -498,9 +494,7 @@ class TestItemMoveToBoard:
         assert v["subitemColumns"] is None
 
     def test_subitem_column_mapping(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(self._success_payload())
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(self._success_payload()))
         result = runner.invoke(
             app,
             [
@@ -518,9 +512,7 @@ class TestItemMoveToBoard:
         )
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
-        assert v["subitemColumns"] == [
-            {"source": "sub_status", "target": "sub_state"}
-        ]
+        assert v["subitemColumns"] == [{"source": "sub_status", "target": "sub_state"}]
 
     def test_missing_source_exits_2(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(

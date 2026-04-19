@@ -31,6 +31,8 @@ from mondo.api.queries import (
     UPDATES_FOR_ITEM,
     UPDATES_LIST_PAGE,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -67,14 +69,6 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
-
-
 def _load_body(body: str | None, from_file: Path | None, from_stdin: bool) -> str:
     sources = sum(x is not None and x is not False for x in (body, from_file, from_stdin))
     if sources == 0:
@@ -102,7 +96,7 @@ def _load_body(body: str | None, from_file: Path | None, from_stdin: bool) -> st
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("update list"))
 def list_cmd(
     ctx: typer.Context,
     item_id: int | None = typer.Option(
@@ -196,7 +190,7 @@ def list_cmd(
     opts.emit(items)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("update get"))
 def get_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID."),
@@ -223,7 +217,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("update create"))
 def create_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item to post the update on."),
@@ -249,7 +243,7 @@ def create_cmd(
     opts.emit(data.get("create_update") or {})
 
 
-@app.command("reply")
+@app.command("reply", epilog=epilog_for("update reply"))
 def reply_cmd(
     ctx: typer.Context,
     parent_id: int = typer.Option(
@@ -277,7 +271,7 @@ def reply_cmd(
     opts.emit(data.get("create_update") or {})
 
 
-@app.command("edit")
+@app.command("edit", epilog=epilog_for("update edit"))
 def edit_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID."),
@@ -303,7 +297,7 @@ def edit_cmd(
     opts.emit(data.get("edit_update") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("update delete"))
 def delete_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID to delete."),
@@ -324,7 +318,7 @@ def delete_cmd(
     opts.emit(data.get("delete_update") or {})
 
 
-@app.command("like")
+@app.command("like", epilog=epilog_for("update like"))
 def like_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID to like."),
@@ -344,7 +338,7 @@ def like_cmd(
     opts.emit(data.get("like_update") or {})
 
 
-@app.command("unlike")
+@app.command("unlike", epilog=epilog_for("update unlike"))
 def unlike_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID to unlike."),
@@ -364,7 +358,7 @@ def unlike_cmd(
     opts.emit(data.get("unlike_update") or {})
 
 
-@app.command("clear")
+@app.command("clear", epilog=epilog_for("update clear"))
 def clear_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item whose updates will be cleared."),
@@ -385,7 +379,7 @@ def clear_cmd(
     opts.emit(data.get("clear_item_updates") or {})
 
 
-@app.command("pin")
+@app.command("pin", epilog=epilog_for("update pin"))
 def pin_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID to pin."),
@@ -408,7 +402,7 @@ def pin_cmd(
     opts.emit(data.get("pin_to_top") or {})
 
 
-@app.command("unpin")
+@app.command("unpin", epilog=epilog_for("update unpin"))
 def unpin_cmd(
     ctx: typer.Context,
     update_id: int = typer.Option(..., "--id", help="Update ID to unpin."),

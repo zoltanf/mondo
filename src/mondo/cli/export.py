@@ -32,6 +32,7 @@ from mondo.api.queries import (
     ITEMS_PAGE_INITIAL_WITH_SUBITEMS,
     ITEMS_PAGE_NEXT_WITH_SUBITEMS,
 )
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -168,7 +169,7 @@ def _write_xlsx(
 # ----- command -----
 
 
-@app.command("board")
+@app.command("board", epilog=epilog_for("export board"))
 def board_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID to export."),

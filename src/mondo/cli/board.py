@@ -25,6 +25,8 @@ from mondo.api.queries import (
     BOARD_UPDATE,
     build_boards_list_query,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -70,15 +72,6 @@ class DuplicateType(StrEnum):
 def _dispatch_dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     opts.emit({"query": query, "variables": variables})
     raise typer.Exit(0)
-
-
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    ok = typer.confirm(prompt, default=False)
-    if not ok:
-        typer.echo("aborted.")
-        raise typer.Exit(1)
 
 
 def _execute_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -130,7 +123,7 @@ def _name_matches(
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("board list"))
 def list_cmd(
     ctx: typer.Context,
     state: BoardState | None = typer.Option(
@@ -229,7 +222,7 @@ def list_cmd(
     opts.emit(boards)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("board get"))
 def get_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--id", help="Board ID."),
@@ -247,7 +240,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("board create"))
 def create_cmd(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Board name."),
@@ -294,7 +287,7 @@ def create_cmd(
     opts.emit(data.get("create_board") or {})
 
 
-@app.command("update")
+@app.command("update", epilog=epilog_for("board update"))
 def update_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--id", help="Board ID."),
@@ -317,7 +310,7 @@ def update_cmd(
     opts.emit({"update_board": data.get("update_board")})
 
 
-@app.command("archive")
+@app.command("archive", epilog=epilog_for("board archive"))
 def archive_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--id", help="Board ID to archive."),
@@ -329,7 +322,7 @@ def archive_cmd(
     opts.emit(data.get("archive_board") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("board delete"))
 def delete_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--id", help="Board ID to delete."),
@@ -352,7 +345,7 @@ def delete_cmd(
     opts.emit(data.get("delete_board") or {})
 
 
-@app.command("duplicate")
+@app.command("duplicate", epilog=epilog_for("board duplicate"))
 def duplicate_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--id", help="Board ID to duplicate."),

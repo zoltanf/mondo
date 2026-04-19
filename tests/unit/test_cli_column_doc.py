@@ -108,6 +108,9 @@ class TestDocGet:
         out = result.stdout
         assert "# Spec" in out
         assert "Hello" in out
+        # Raw markdown, not JSON-encoded: no leading quote, no escaped newlines.
+        assert not out.lstrip().startswith('"')
+        assert "\\n" not in out
 
     def test_raw_blocks(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -155,8 +158,17 @@ class TestDocGet:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
         result = runner.invoke(app, ["column", "doc", "get", "--item", "1", "--column", "spec"])
         assert result.exit_code == 0
-        # Markdown path → empty string
-        assert result.stdout.strip() in ("", '""')
+        # Markdown path → raw empty line (not a JSON-quoted empty string).
+        assert result.stdout.strip() == ""
+
+    def test_empty_column_raw_blocks_emits_empty_list(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
+        result = runner.invoke(
+            app,
+            ["column", "doc", "get", "--item", "1", "--column", "spec", "--format", "raw-blocks"],
+        )
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == []
 
     def test_non_doc_column_rejected(self, httpx_mock: HTTPXMock) -> None:
         """Passing a non-`doc` column type should not issue docs() lookups."""

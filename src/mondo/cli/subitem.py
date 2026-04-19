@@ -33,6 +33,8 @@ from mondo.api.queries import (
     SUBITEM_CREATE,
     SUBITEMS_LIST,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
@@ -66,14 +68,6 @@ def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -
 def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     opts.emit({"query": query, "variables": variables})
     raise typer.Exit(0)
-
-
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
 
 
 def _parse_settings(raw: str | None) -> dict[str, Any]:
@@ -125,7 +119,7 @@ def _build_column_values(
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("subitem list"))
 def list_cmd(
     ctx: typer.Context,
     parent_id: int = typer.Option(..., "--parent", help="Parent item ID."),
@@ -149,7 +143,7 @@ def list_cmd(
     opts.emit(items[0].get("subitems") or [])
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("subitem get"))
 def get_cmd(
     ctx: typer.Context,
     subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
@@ -176,7 +170,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("subitem create"))
 def create_cmd(
     ctx: typer.Context,
     parent_id: int = typer.Option(..., "--parent", help="Parent item ID."),
@@ -245,7 +239,7 @@ def create_cmd(
     opts.emit(data.get("create_subitem") or {})
 
 
-@app.command("rename")
+@app.command("rename", epilog=epilog_for("subitem rename"))
 def rename_cmd(
     ctx: typer.Context,
     subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
@@ -267,7 +261,7 @@ def rename_cmd(
     opts.emit(data.get("change_simple_column_value") or {})
 
 
-@app.command("move")
+@app.command("move", epilog=epilog_for("subitem move"))
 def move_cmd(
     ctx: typer.Context,
     subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
@@ -295,7 +289,7 @@ def move_cmd(
     opts.emit(data.get("move_item_to_group") or {})
 
 
-@app.command("archive")
+@app.command("archive", epilog=epilog_for("subitem archive"))
 def archive_cmd(
     ctx: typer.Context,
     subitem_id: int = typer.Option(..., "--id", help="Subitem ID to archive."),
@@ -316,7 +310,7 @@ def archive_cmd(
     opts.emit(data.get("archive_item") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("subitem delete"))
 def delete_cmd(
     ctx: typer.Context,
     subitem_id: int = typer.Option(..., "--id", help="Subitem ID to delete."),

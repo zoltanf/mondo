@@ -12,16 +12,121 @@ workspaces, users, docs, webhooks, etc.
 > subitems, columns (+ structural CRUD), groups, boards, workspaces, users,
 > teams, workspace docs, webhooks, files, activity, folders, favorites, tags,
 > notifications, aggregations, validation rules, bulk import/export, raw
-> GraphQL, and session complexity metering.
+> GraphQL, and session complexity metering. Ships with an agent-facing help
+> system (`mondo help`, `mondo help --dump-spec`) bundled inside the binary.
 
 ---
 
 ## Installation
 
+### Homebrew (macOS, Linux) — recommended
+
 ```bash
-git clone https://github.com/marktguru/mondo.git
+brew install zoltanf/mondo/mondo
+```
+
+That single command is shorthand for:
+
+```bash
+brew tap zoltanf/mondo    # add the zoltanf/homebrew-mondo tap
+brew install mondo        # install the right binary for your OS/arch
+```
+
+Homebrew picks the correct artifact for your platform (Apple Silicon vs Intel,
+arm64 vs x86_64 on Linux), puts `mondo` on your `PATH`, and — importantly on
+macOS — **strips Apple's quarantine attribute automatically**, so you don't run
+into the Gatekeeper warning described below.
+
+Upgrade later with:
+
+```bash
+brew upgrade mondo
+```
+
+Uninstall:
+
+```bash
+brew uninstall mondo
+brew untap zoltanf/mondo   # optional
+```
+
+### Direct download (all platforms)
+
+Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
+
+| Platform           | Asset                                     |
+|--------------------|-------------------------------------------|
+| macOS (Apple Si.)  | `mondo-<ver>-darwin-arm64.tar.gz`         |
+| macOS (Intel)      | `mondo-<ver>-darwin-x86_64.tar.gz`        |
+| Linux (x86_64)     | `mondo-<ver>-linux-x86_64.tar.gz`         |
+| Linux (arm64)      | `mondo-<ver>-linux-arm64.tar.gz`          |
+| Windows (x86_64)   | `mondo-<ver>-windows-x86_64.zip`          |
+
+Then:
+
+```bash
+# macOS / Linux
+tar -xzf mondo-<ver>-<os>-<arch>.tar.gz
+sudo mv mondo /usr/local/bin/
+mondo --version
+```
+
+```powershell
+# Windows
+Expand-Archive mondo-<ver>-windows-x86_64.zip
+# move mondo.exe somewhere on your PATH
+mondo --version
+```
+
+#### macOS: working around Gatekeeper ("unidentified developer")
+
+The macOS binaries are currently **unsigned** and **unnotarized**. This is only
+an issue for **direct downloads** — `brew install` handles it for you, see
+above.
+
+When you run a directly-downloaded `mondo` for the first time you'll see one
+of these dialogs:
+
+- *"`mondo` cannot be opened because the developer cannot be verified."*
+- *"`mondo` is damaged and can't be opened. You should move it to the Trash."*
+  (confusingly, this is also Gatekeeper — it's not actually damaged)
+
+Pick one of the fixes below.
+
+**Fix 1 — one-liner in Terminal (recommended):**
+
+```bash
+xattr -d com.apple.quarantine ./mondo
+./mondo --version
+```
+
+The `com.apple.quarantine` xattr is what macOS sets on anything downloaded
+through a browser. Removing it tells Gatekeeper the binary is locally
+provenanced.
+
+**Fix 2 — GUI, per-binary:**
+
+1. In Finder, locate `mondo`, **Control-click** it, choose **Open**.
+2. Confirm **Open** in the dialog that appears.
+3. Subsequent runs from Terminal then work without further prompts.
+
+**Fix 3 — "damaged and can't be opened":**
+
+If Fix 2 doesn't offer an **Open** button and you only see the *damaged* error,
+Fix 1 is the answer — that message is how recent macOS versions surface the
+same quarantine check.
+
+**Why not sign the binary?** Signing + notarizing requires a $99/yr Apple
+Developer account. For now we ship unsigned binaries to keep releases free.
+If you want the friction gone entirely, `brew install` is the easy path.
+
+### From source
+
+```bash
+git clone https://github.com/zoltanf/mondo.git
 cd mondo
 uv sync --all-extras
+uv run mondo --version
 ```
 
 Quick smoke test:
@@ -31,8 +136,50 @@ export MONDAY_API_TOKEN="<paste your token>"
 uv run mondo auth status
 ```
 
-Native binaries via PyInstaller + a curl-pipe-bash installer + Homebrew tap are
-planned for v1.0 (see [plan.md §15](docs/plan.md)).
+[releases]: https://github.com/zoltanf/mondo/releases
+
+---
+
+## Help & discovery
+
+The binary is self-documenting — no internet or source checkout required:
+
+```bash
+mondo help                           # list every bundled topic
+mondo help agent-workflow            # AI / automation onboarding guide
+mondo help codecs                    # column-value shorthand reference
+mondo help exit-codes                # exit-code table + retry guidance
+mondo help --dump-spec -o json       # full command tree as JSON
+```
+
+Every subcommand carries runnable examples in its `--help` page:
+
+```bash
+mondo item create --help             # shows flag table + 4 runnable examples
+mondo column set --help              # codec shorthand examples
+mondo board duplicate --help         # schema-preserving + schema-renaming forms
+```
+
+**For AI agents and scripts:** `mondo help --dump-spec -o json` emits the
+entire command tree — every flag, type, required-ness, enum choices,
+docstring, example, and exit-code table — as one JSON blob. Ingest it once;
+plan many invocations without parsing terminal help text. Exit codes are
+narrow and stable (3=auth, 4=rate, 5=validation, 6=not-found, 7=network),
+so retry logic can branch on the code rather than scraping stderr.
+
+Bundled topics:
+
+| Topic             | What's inside                                           |
+|-------------------|---------------------------------------------------------|
+| `agent-workflow`  | Short onboarding for AI agents and CI pipelines         |
+| `auth`            | Token resolution chain + `mondo auth login`/`logout`    |
+| `codecs`          | `--column COL=VAL` parsing table for every column type  |
+| `complexity`      | monday's per-minute budget, retry guidance, debug logs  |
+| `exit-codes`      | Exit codes 0–7 with retry/retry-not guidance            |
+| `filters`         | Server-side `--filter` + client-side JMESPath recipes   |
+| `graphql`         | Using `mondo graphql` as the escape hatch               |
+| `output`          | `--output` / `--query` formatting + projection          |
+| `profiles`        | Multi-account `config.yaml` + env-var interpolation     |
 
 ---
 
@@ -618,12 +765,72 @@ uv run ruff format src tests # format
 uv run mypy src              # strict type-check
 ```
 
+## Releasing
+
+Releases are fully automated once you push a `v*` tag. The local driver script
+handles the version bump, commit, tag, and push — everything after that runs in
+GitHub Actions.
+
+### Cut a release
+
+From a clean `main` that is in sync with `origin`:
+
+```bash
+./scripts/release.sh 0.4.0
+```
+
+What this does, in order:
+
+1. Verifies the working tree is clean, you're on `main`, and you're in sync with `origin/main`.
+2. Rewrites `__version__` in [src/mondo/version.py](src/mondo/version.py) and `version = "..."` in [pyproject.toml](pyproject.toml).
+3. Runs `uv sync` and `uv run pytest -m "not integration"` (skip with `--skip-tests` if you know what you're doing).
+4. Commits the bump as `chore(release): v0.4.0`.
+5. Creates an annotated tag `v0.4.0`.
+6. Pushes `main` and the tag to `origin`.
+7. Prints the Actions URL so you can watch the build.
+
+### What runs in CI
+
+Pushing the tag triggers [.github/workflows/release.yml](.github/workflows/release.yml), which:
+
+1. **Builds five binaries in parallel** — macOS (arm64 + Intel), Linux (x86_64 + arm64), Windows (x86_64) — using PyInstaller on matching GitHub runners. Each binary is smoke-tested with `--version` and `--help` before being archived.
+2. **Creates the GitHub Release** — attaches all five archives to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
+3. **Updates the Homebrew tap** — regenerates `Formula/mondo.rb` in [zoltanf/homebrew-mondo][tap] with the new version and SHA256s, then pushes. Users get the new binary on their next `brew upgrade mondo`.
+
+End-to-end latency is roughly 6–10 minutes depending on runner availability.
+
+### Pre-releases
+
+For a dry-run before a real release, use a pre-release suffix:
+
+```bash
+./scripts/release.sh 0.4.0-rc1
+```
+
+The script accepts any semver-compatible pre-release identifier
+(`X.Y.Z-<anything>`). GitHub marks the release as a pre-release automatically
+when the tag contains a `-`, and the Homebrew formula is still updated — use an
+RC tag only when you don't mind `brew upgrade` picking it up.
+
+### Prerequisites (one-time, already set up)
+
+These are already in place for this repo — listed for reference in case you
+fork:
+
+- Public repo `zoltanf/homebrew-mondo` (the tap).
+- Fine-grained PAT with `contents: write` on the tap repo, stored as the
+  `HOMEBREW_TAP_TOKEN` secret on `zoltanf/mondo`.
+- [LICENSE](LICENSE) file at repo root (Homebrew's audit requires it).
+
+[tap]: https://github.com/zoltanf/homebrew-mondo
+
 ## Documentation
 
 Additional docs live under [`docs/`](docs/):
 
 - [docs/plan.md](docs/plan.md) — full product roadmap and phase breakdown.
 - [docs/monday-api.md](docs/monday-api.md) — monday.com GraphQL API reference this CLI targets.
+- [docs/help-system.md](docs/help-system.md) — design notes for `mondo help`, per-command epilogs, and `--dump-spec`.
 - [docs/project codename mondo.md](<docs/project codename mondo.md>) — original design doc / product vision.
 - [docs/implementation-phase-1.md](docs/implementation-phase-1.md) — Phase 1 implementation notes (auth, items, columns, `doc` columns).
 - [docs/implementation-phase-2.md](docs/implementation-phase-2.md) — Phase 2 implementation notes (boards, workspaces, users, teams, docs, webhooks, import/export).

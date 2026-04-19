@@ -30,6 +30,7 @@ from mondo.api.queries import (
     CREATE_DOC_ON_ITEM,
     DOCS_BY_OBJECT_ID,
 )
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 from mondo.docs import (
     blocks_to_markdown,
@@ -149,7 +150,7 @@ def _last_block_id(doc: dict[str, Any]) -> str | None:
 # ----- commands -----
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("column doc get"))
 def get_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -174,7 +175,10 @@ def get_cmd(
                     fg=typer.colors.YELLOW,
                     err=True,
                 )
-                opts.emit("" if fmt == DocFormat.markdown else [])
+                if fmt == DocFormat.markdown:
+                    typer.echo("")
+                else:
+                    opts.emit([])
                 return
 
             doc = _fetch_doc_blocks(client, object_ids[0])
@@ -189,11 +193,11 @@ def get_cmd(
 
     if fmt == DocFormat.raw_blocks:
         opts.emit(blocks)
-    else:
-        opts.emit(blocks_to_markdown(blocks))
+        return
+    typer.echo(blocks_to_markdown(blocks))
 
 
-@app.command("set")
+@app.command("set", epilog=epilog_for("column doc set"))
 def set_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -289,7 +293,7 @@ def set_cmd(
         raise typer.Exit(code=int(e.exit_code)) from e
 
 
-@app.command("append")
+@app.command("append", epilog=epilog_for("column doc append"))
 def append_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -343,7 +347,7 @@ def append_cmd(
     opts.emit({"doc_id": doc.get("id"), "blocks_created": len(blocks)})
 
 
-@app.command("clear")
+@app.command("clear", epilog=epilog_for("column doc clear"))
 def clear_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),

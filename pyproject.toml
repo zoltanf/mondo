@@ -44,15 +44,16 @@ dev = [
     "syrupy>=4.8.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "pyinstaller>=6.11",
 ]
 
 [project.scripts]
 mondo = "mondo.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/marktguru/mondo"
-Issues = "https://github.com/marktguru/mondo/issues"
-Documentation = "https://github.com/marktguru/mondo#readme"
+Homepage = "https://github.com/zoltanf/mondo"
+Issues = "https://github.com/zoltanf/mondo/issues"
+Documentation = "https://github.com/zoltanf/mondo#readme"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mondo"]

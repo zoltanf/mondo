@@ -142,9 +142,7 @@ class TestCreate:
         # Codec didn't run — string passthrough
         assert json.loads(v["values"]) == {"status9": "Done"}
 
-    def test_bad_label_returns_clean_error_not_traceback(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_bad_label_returns_clean_error_not_traceback(self, httpx_mock: HTTPXMock) -> None:
         """Codec validation errors on subitem create used to leak a Python
         traceback because the ValueError from parse_value wasn't caught.
         Now it surfaces as a clean stderr message with exit code 5."""

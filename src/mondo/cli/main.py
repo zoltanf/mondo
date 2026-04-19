@@ -11,6 +11,7 @@ from enum import StrEnum
 
 import typer
 
+from mondo.cli._examples import epilog_for
 from mondo.cli.activity import app as activity_app
 from mondo.cli.aggregate import app as aggregate_app
 from mondo.cli.argv import reorder_argv
@@ -26,6 +27,7 @@ from mondo.cli.file import app as file_app
 from mondo.cli.folder import app as folder_app
 from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
+from mondo.cli.help import help_command
 from mondo.cli.import_ import app as import_app
 from mondo.cli.item import app as item_app
 from mondo.cli.me import account_command, me_command
@@ -52,9 +54,34 @@ class OutputFormat(StrEnum):
     none = "none"
 
 
+_ROOT_EPILOG = "\n\n".join(
+    [
+        "[bold]Getting started[/bold]",
+        "[dim]# Authenticate (stores token in the OS keyring)[/dim]",
+        "  $ mondo auth login",
+        "[dim]# Confirm the token works[/dim]",
+        "  $ mondo auth status",
+        "\u200b",
+        "[bold]Built-in help[/bold]",
+        "[dim]# List every agent-facing topic shipped inside the binary[/dim]",
+        "  $ mondo help",
+        "[dim]# Read a topic (e.g. column-value codecs, exit codes, rate limits)[/dim]",
+        "  $ mondo help codecs",
+        "[dim]# Emit the full command tree as JSON — the contract for agents[/dim]",
+        "  $ mondo help --dump-spec -o json",
+        "\u200b",
+        "[bold]More[/bold]",
+        "[dim]# Per-command examples live in each subcommand's --help[/dim]",
+        "  $ mondo item create --help",
+        "[dim]# Read the AI/agent onboarding guide[/dim]",
+        "  $ mondo help agent-workflow",
+    ]
+)
+
 app = typer.Typer(
     name="mondo",
     help="Power-user CLI for the monday.com GraphQL API — az/gh/gam style.",
+    epilog=_ROOT_EPILOG,
     no_args_is_help=True,
     add_completion=True,
     rich_markup_mode="rich",
@@ -78,10 +105,16 @@ app.add_typer(activity_app, name="activity", help="Read a board's activity logs.
 app.add_typer(notify_app, name="notify", help="Send monday notifications.")
 app.add_typer(aggregate_app, name="aggregate", help="Run SUM/COUNT/AVG aggregations on a board.")
 app.add_typer(validation_app, name="validation", help="Manage server-side validation rules.")
-app.command(name="me", help="Print the authenticated user (id, name, teams, account).")(me_command)
-app.command(name="account", help="Print the current monday account (tier, plan, products).")(
-    account_command
-)
+app.command(
+    name="me",
+    help="Print the authenticated user (id, name, teams, account).",
+    epilog=epilog_for("me"),
+)(me_command)
+app.command(
+    name="account",
+    help="Print the current monday account (tier, plan, products).",
+    epilog=epilog_for("account"),
+)(account_command)
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")
@@ -99,7 +132,12 @@ app.add_typer(
 app.command(
     name="graphql",
     help="Send a raw GraphQL query/mutation to monday.com.",
+    epilog=epilog_for("graphql"),
 )(graphql_command)
+app.command(
+    name="help",
+    help="Show a bundled help topic, or dump the full CLI spec as JSON.",
+)(help_command)
 
 
 def _version_callback(value: bool) -> None:

@@ -29,6 +29,7 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import AGGREGATE_BOARD
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -80,14 +81,12 @@ def _parse_select_tokens(tokens: list[str]) -> list[tuple[str, str | None]]:
         col = col.strip()
         if fn not in _SELECT_FN_MAP:
             raise typer.BadParameter(
-                f"--select {tok!r}: unknown function {fn!r}. "
-                f"Valid: {sorted(_SELECT_FN_MAP)}."
+                f"--select {tok!r}: unknown function {fn!r}. Valid: {sorted(_SELECT_FN_MAP)}."
             )
         if col in ("", "*"):
             if fn != "COUNT":
                 raise typer.BadParameter(
-                    f"--select {tok!r}: only COUNT:* (count of rows) is valid "
-                    "without a column."
+                    f"--select {tok!r}: only COUNT:* (count of rows) is valid without a column."
                 )
             out.append((fn, None))
         else:
@@ -174,7 +173,7 @@ def _flatten_results(response: dict[str, Any]) -> list[dict[str, Any]]:
     return flattened
 
 
-@app.command("board")
+@app.command("board", epilog=epilog_for("aggregate board"))
 def board_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),

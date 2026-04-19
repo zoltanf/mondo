@@ -228,3 +228,106 @@ class TestDownload:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"assets": []}))
         result = runner.invoke(app, ["file", "download", "--asset", "999"])
         assert result.exit_code == 6
+
+    def test_with_out_directory(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        """--out pointing at an existing directory appends the asset's name (curl -O / wget -P)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "assets": [
+                        {
+                            "id": "42",
+                            "name": "report.pdf",
+                            "url": "https://files.example.com/r.pdf",
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url="https://files.example.com/r.pdf",
+            method="GET",
+            content=b"xyz",
+        )
+        result = runner.invoke(
+            app,
+            ["file", "download", "--asset", "42", "--out", str(tmp_path)],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "report.pdf").read_bytes() == b"xyz"
+
+    def test_download_multiple_to_directory(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "assets": [
+                        {
+                            "id": "1",
+                            "name": "a.txt",
+                            "url": "https://files.example.com/a.txt",
+                        },
+                        {
+                            "id": "2",
+                            "name": "b.txt",
+                            "url": "https://files.example.com/b.txt",
+                        },
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(url="https://files.example.com/a.txt", method="GET", content=b"AAA")
+        httpx_mock.add_response(
+            url="https://files.example.com/b.txt", method="GET", content=b"BBBB"
+        )
+        result = runner.invoke(
+            app,
+            ["file", "download", "--asset", "1", "--asset", "2", "--out", str(tmp_path)],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "a.txt").read_bytes() == b"AAA"
+        assert (tmp_path / "b.txt").read_bytes() == b"BBBB"
+        parsed = json.loads(result.stdout)
+        assert isinstance(parsed, list)
+        assert [p["asset_id"] for p in parsed] == ["1", "2"]
+
+    def test_download_multiple_rejects_file_out(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        bad = tmp_path / "not-a-dir.pdf"
+        result = runner.invoke(
+            app,
+            ["file", "download", "--asset", "1", "--asset", "2", "--out", str(bad)],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_download_multiple_one_missing_fails_fast(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "assets": [
+                        {
+                            "id": "1",
+                            "name": "a.txt",
+                            "url": "https://files.example.com/a.txt",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["file", "download", "--asset", "1", "--asset", "2", "--out", str(tmp_path)],
+        )
+        assert result.exit_code == 6
+        # Only the metadata lookup — no downloads attempted.
+        urls = [str(r.url) for r in httpx_mock.get_requests()]
+        assert urls == [ENDPOINT]

@@ -32,6 +32,8 @@ from mondo.api.queries import (
     USERS_UPDATE_AS_MEMBERS,
     USERS_UPDATE_AS_VIEWERS,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -87,18 +89,10 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
-
-
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("user list"))
 def list_cmd(
     ctx: typer.Context,
     kind: UserKind | None = typer.Option(
@@ -165,7 +159,7 @@ def list_cmd(
     opts.emit(items)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("user get"))
 def get_cmd(
     ctx: typer.Context,
     user_id: int = typer.Option(..., "--id", help="User ID."),
@@ -191,7 +185,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("deactivate")
+@app.command("deactivate", epilog=epilog_for("user deactivate"))
 def deactivate_cmd(
     ctx: typer.Context,
     user: list[int] = typer.Option(..., "--user", help="User ID to deactivate (repeatable)."),
@@ -212,7 +206,7 @@ def deactivate_cmd(
     opts.emit(data.get("deactivate_users") or {})
 
 
-@app.command("activate")
+@app.command("activate", epilog=epilog_for("user activate"))
 def activate_cmd(
     ctx: typer.Context,
     user: list[int] = typer.Option(..., "--user", help="User ID to reactivate (repeatable)."),
@@ -232,7 +226,7 @@ def activate_cmd(
     opts.emit(data.get("activate_users") or {})
 
 
-@app.command("update-role")
+@app.command("update-role", epilog=epilog_for("user update-role"))
 def update_role_cmd(
     ctx: typer.Context,
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
@@ -262,7 +256,7 @@ def update_role_cmd(
     opts.emit(data.get(response_key) or {})
 
 
-@app.command("add-to-team")
+@app.command("add-to-team", epilog=epilog_for("user add-to-team"))
 def add_to_team_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--team", help="Team ID."),
@@ -283,7 +277,7 @@ def add_to_team_cmd(
     opts.emit(data.get("add_users_to_team") or {})
 
 
-@app.command("remove-from-team")
+@app.command("remove-from-team", epilog=epilog_for("user remove-from-team"))
 def remove_from_team_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--team", help="Team ID."),

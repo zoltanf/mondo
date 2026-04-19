@@ -25,6 +25,8 @@ from mondo.api.queries import (
     WORKSPACE_UPDATE,
     WORKSPACES_LIST_PAGE,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -75,18 +77,10 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _confirm_or_abort(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
-
-
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("workspace list"))
 def list_cmd(
     ctx: typer.Context,
     kind: WorkspaceKind | None = typer.Option(
@@ -140,7 +134,7 @@ def list_cmd(
     opts.emit(items)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("workspace get"))
 def get_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
@@ -164,7 +158,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("workspace create"))
 def create_cmd(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Workspace name."),
@@ -196,7 +190,7 @@ def create_cmd(
     opts.emit(data.get("create_workspace") or {})
 
 
-@app.command("update")
+@app.command("update", epilog=epilog_for("workspace update"))
 def update_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
@@ -235,7 +229,7 @@ def update_cmd(
     opts.emit(data.get("update_workspace") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("workspace delete"))
 def delete_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID to delete."),
@@ -250,7 +244,7 @@ def delete_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
-    _confirm_or_abort(opts, f"PERMANENTLY delete workspace {workspace_id}?")
+    _confirm(opts, f"PERMANENTLY delete workspace {workspace_id}?")
     variables = {"id": workspace_id}
     if opts.dry_run:
         _dry_run(opts, WORKSPACE_DELETE, variables)
@@ -267,7 +261,7 @@ def delete_cmd(
 # ----- membership -----
 
 
-@app.command("add-user")
+@app.command("add-user", epilog=epilog_for("workspace add-user"))
 def add_user_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
@@ -294,7 +288,7 @@ def add_user_cmd(
     opts.emit(data.get("add_users_to_workspace") or [])
 
 
-@app.command("remove-user")
+@app.command("remove-user", epilog=epilog_for("workspace remove-user"))
 def remove_user_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
@@ -315,7 +309,7 @@ def remove_user_cmd(
     opts.emit(data.get("delete_users_from_workspace") or [])
 
 
-@app.command("add-team")
+@app.command("add-team", epilog=epilog_for("workspace add-team"))
 def add_team_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
@@ -342,7 +336,7 @@ def add_team_cmd(
     opts.emit(data.get("add_teams_to_workspace") or [])
 
 
-@app.command("remove-team")
+@app.command("remove-team", epilog=epilog_for("workspace remove-team"))
 def remove_team_cmd(
     ctx: typer.Context,
     workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),

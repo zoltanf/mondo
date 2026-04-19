@@ -20,6 +20,7 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_NOTIFICATION
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -50,7 +51,7 @@ def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -
     return result.get("data") or {}
 
 
-@app.command("send")
+@app.command("send", epilog=epilog_for("notify send"))
 def send_cmd(
     ctx: typer.Context,
     user_id: int = typer.Option(..., "--user", help="Recipient user ID."),

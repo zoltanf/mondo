@@ -17,6 +17,7 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_OR_GET_TAG, TAG_BY_BOARD, TAGS_LIST
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -47,7 +48,7 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("tag list"))
 def list_cmd(
     ctx: typer.Context,
     tag_id: list[int] | None = typer.Option(
@@ -69,7 +70,7 @@ def list_cmd(
     opts.emit(data.get("tags") or [])
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("tag get"))
 def get_cmd(
     ctx: typer.Context,
     tag_id: int = typer.Option(..., "--id", help="Tag ID."),
@@ -112,7 +113,7 @@ def get_cmd(
     opts.emit(tags[0])
 
 
-@app.command("create-or-get")
+@app.command("create-or-get", epilog=epilog_for("tag create-or-get"))
 def create_or_get_cmd(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Tag name."),

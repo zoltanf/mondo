@@ -11,6 +11,7 @@ import typer
 from mondo.api.auth import ENV_VAR
 from mondo.api.errors import AuthError, MondoError
 from mondo.api.queries import ME_QUERY
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 KEYRING_SERVICE = "mondo"
@@ -21,7 +22,7 @@ app = typer.Typer(
 )
 
 
-@app.command()
+@app.command(epilog=epilog_for("auth whoami"))
 def whoami(ctx: typer.Context) -> None:
     """Print the currently authenticated user and account."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -42,7 +43,7 @@ def whoami(ctx: typer.Context) -> None:
     opts.emit(me)
 
 
-@app.command()
+@app.command(epilog=epilog_for("auth status"))
 def status(ctx: typer.Context) -> None:
     """Show token source, profile, API version, and the authenticated identity."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -87,7 +88,7 @@ def status(ctx: typer.Context) -> None:
     opts.emit(payload)
 
 
-@app.command()
+@app.command(epilog=epilog_for("auth login"))
 def login(
     ctx: typer.Context,
     token: str | None = typer.Option(
@@ -134,7 +135,7 @@ def login(
     )
 
 
-@app.command()
+@app.command(epilog=epilog_for("auth logout"))
 def logout(ctx: typer.Context) -> None:
     """Remove the stored token for this profile from the keyring."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

@@ -22,6 +22,8 @@ from mondo.api.queries import (
     GROUP_UPDATE,
     GROUPS_LIST,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -114,7 +116,7 @@ def _validate_color(color: str | None) -> str | None:
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("group list"))
 def list_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -138,7 +140,7 @@ def list_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("group create"))
 def create_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -185,7 +187,7 @@ def create_cmd(
     opts.emit(data.get("create_group") or {})
 
 
-@app.command("rename")
+@app.command("rename", epilog=epilog_for("group rename"))
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -212,7 +214,7 @@ def rename_cmd(
     opts.emit(data.get("update_group") or {})
 
 
-@app.command("update")
+@app.command("update", epilog=epilog_for("group update"))
 def update_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -257,7 +259,7 @@ def update_cmd(
     opts.emit(data.get("update_group") or {})
 
 
-@app.command("reorder")
+@app.command("reorder", epilog=epilog_for("group reorder"))
 def reorder_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -308,7 +310,7 @@ def reorder_cmd(
     opts.emit(data.get("update_group") or {})
 
 
-@app.command("duplicate")
+@app.command("duplicate", epilog=epilog_for("group duplicate"))
 def duplicate_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -338,7 +340,7 @@ def duplicate_cmd(
     opts.emit(data.get("duplicate_group") or {})
 
 
-@app.command("archive")
+@app.command("archive", epilog=epilog_for("group archive"))
 def archive_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -346,11 +348,7 @@ def archive_cmd(
 ) -> None:
     """Archive a group."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    if not opts.yes:
-        ok = typer.confirm(f"Archive group {group_id!r} on board {board_id}?", default=False)
-        if not ok:
-            typer.echo("aborted.")
-            raise typer.Exit(1)
+    _confirm(opts, f"Archive group {group_id!r} on board {board_id}?")
     variables = {"board": board_id, "group": group_id}
     if opts.dry_run:
         _dry_run(opts, GROUP_ARCHIVE, variables)
@@ -364,7 +362,7 @@ def archive_cmd(
     opts.emit(data.get("archive_group") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("group delete"))
 def delete_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -387,14 +385,10 @@ def delete_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
-    if not opts.yes:
-        ok = typer.confirm(
-            f"PERMANENTLY delete group {group_id!r} and all its items on board {board_id}?",
-            default=False,
-        )
-        if not ok:
-            typer.echo("aborted.")
-            raise typer.Exit(1)
+    _confirm(
+        opts,
+        f"PERMANENTLY delete group {group_id!r} and all its items on board {board_id}?",
+    )
     variables = {"board": board_id, "group": group_id}
     if opts.dry_run:
         _dry_run(opts, GROUP_DELETE, variables)

@@ -17,6 +17,7 @@
 | **1 (MVP)** | Item CRUD (create, archive, delete, move, get), column value read/write including the **`doc` column type** (pointer to a workspace doc), `graphql` raw passthrough, auth & config, output formatters, shell completion |
 | **2** | Board/column/group/workspace CRUD; data export to CSV/JSON/XLSX/Markdown; bulk import; board templating |
 | **3** | Users/teams CRUD, subitems, updates/comments, activity logs, favorites, folders, workspace docs CRUD, webhooks, notifications, tags, file uploads, aggregation API, validation rules, multi-level boards |
+| **3h (help system)** | Agent-facing help surface: per-command runnable examples in Typer epilogs, `mondo help <topic>` with bundled markdown, `mondo help --dump-spec -o json` machine contract. See [help-system.md](help-system.md). |
 
 ## 3. Technology choices
 
@@ -575,6 +576,6 @@ deb/rpm via `nfpm` from the same tarballs; Arch AUR PKGBUILD; optional Snap if d
 ## 18. Open questions for implementer
 
 1. Which Python version to target as PyInstaller floor — 3.11 (supports through Oct 2027) is recommended; 3.13 for Nuitka-preview builds.
-2. Whether to embed a vendored MCP server mode (`mondo mcp serve`) so the binary doubles as an MCP provider for agents — logical Phase 3 bonus given monday already ships one (https://monday.com/w/mcp).
+2. Whether to embed a vendored MCP server mode (`mondo mcp serve`) so the binary doubles as an MCP provider for agents — logical Phase 3 bonus given monday already ships one (https://monday.com/w/mcp). (Partial resolution: `mondo help --dump-spec -o json` already gives agents a consumable machine contract; MCP wraps this for tighter Claude/OpenAI tool-calling integration.)
 3. File-upload streaming: stream from stdin when `--file -` to support large uploads without temp files.
 4. Cache schema introspection (`/v2/get_schema?version=...`) in `~/.cache/mondo/` and use it for client-side arg validation.

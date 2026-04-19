@@ -27,6 +27,8 @@ from mondo.api.queries import (
     TEAM_DELETE,
     TEAMS_LIST,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -60,18 +62,10 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
-
-
 # ----- read commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("team list"))
 def list_cmd(
     ctx: typer.Context,
     team_id: list[int] | None = typer.Option(
@@ -93,7 +87,7 @@ def list_cmd(
     opts.emit(data.get("teams") or [])
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("team get"))
 def get_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--id", help="Team ID."),
@@ -120,7 +114,7 @@ def get_cmd(
 # ----- write commands -----
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("team create"))
 def create_cmd(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Team name."),
@@ -158,7 +152,7 @@ def create_cmd(
     opts.emit(data.get("create_team") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("team delete"))
 def delete_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--id", help="Team ID to delete."),
@@ -187,7 +181,7 @@ def delete_cmd(
     opts.emit(data.get("delete_team") or {})
 
 
-@app.command("add-users")
+@app.command("add-users", epilog=epilog_for("team add-users"))
 def add_users_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--id", help="Team ID."),
@@ -208,7 +202,7 @@ def add_users_cmd(
     opts.emit(data.get("add_users_to_team") or {})
 
 
-@app.command("remove-users")
+@app.command("remove-users", epilog=epilog_for("team remove-users"))
 def remove_users_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--id", help="Team ID."),
@@ -229,7 +223,7 @@ def remove_users_cmd(
     opts.emit(data.get("remove_users_from_team") or {})
 
 
-@app.command("assign-owners")
+@app.command("assign-owners", epilog=epilog_for("team assign-owners"))
 def assign_owners_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--id", help="Team ID."),
@@ -250,7 +244,7 @@ def assign_owners_cmd(
     opts.emit(data.get("assign_team_owners") or {})
 
 
-@app.command("remove-owners")
+@app.command("remove-owners", epilog=epilog_for("team remove-owners"))
 def remove_owners_cmd(
     ctx: typer.Context,
     team_id: int = typer.Option(..., "--id", help="Team ID."),

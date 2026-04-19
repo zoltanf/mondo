@@ -26,6 +26,8 @@ from mondo.api.queries import (
     WEBHOOK_DELETE,
     WEBHOOKS_LIST,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -59,18 +61,10 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _confirm(opts: GlobalOpts, prompt: str) -> None:
-    if opts.yes:
-        return
-    if not typer.confirm(prompt, default=False):
-        typer.echo("aborted.")
-        raise typer.Exit(1)
-
-
 # ----- commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("webhook list"))
 def list_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -95,7 +89,7 @@ def list_cmd(
     opts.emit(data.get("webhooks") or [])
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("webhook create"))
 def create_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -155,7 +149,7 @@ def create_cmd(
     opts.emit(data.get("create_webhook") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("webhook delete"))
 def delete_cmd(
     ctx: typer.Context,
     webhook_id: int = typer.Option(..., "--id", help="Webhook ID to delete."),

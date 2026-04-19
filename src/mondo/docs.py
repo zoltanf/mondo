@@ -147,9 +147,7 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
         m = _BULLET_RE.match(line)
         if m:
             flush_paragraph()
-            blocks.append(
-                {"type": _BULLET_LIST_TYPE, "content": _text_content(m.group(1).strip())}
-            )
+            blocks.append({"type": _BULLET_LIST_TYPE, "content": _text_content(m.group(1).strip())})
             i += 1
             continue
 

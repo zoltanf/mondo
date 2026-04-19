@@ -28,6 +28,8 @@ from mondo.api.queries import (
     COLUMNS_ON_BOARD,
     CREATE_OR_GET_TAG,
 )
+from mondo.cli._confirm import confirm_or_abort as _confirm
+from mondo.cli._examples import epilog_for
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
@@ -146,7 +148,7 @@ def _load_value(value: str | None, from_file: Path | None, from_stdin: bool) -> 
 # ----- commands -----
 
 
-@app.command("list")
+@app.command("list", epilog=epilog_for("column list"))
 def list_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -178,7 +180,7 @@ def list_cmd(
     opts.emit(simplified)
 
 
-@app.command("get")
+@app.command("get", epilog=epilog_for("column get"))
 def get_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -228,7 +230,7 @@ def get_cmd(
     opts.emit(rendered)
 
 
-@app.command("set")
+@app.command("set", epilog=epilog_for("column set"))
 def set_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -328,7 +330,7 @@ def set_cmd(
     opts.emit(data.get("change_column_value") or {})
 
 
-@app.command("set-many")
+@app.command("set-many", epilog=epilog_for("column set-many"))
 def set_many_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -395,7 +397,7 @@ def set_many_cmd(
     opts.emit(data.get("change_multiple_column_values") or {})
 
 
-@app.command("clear")
+@app.command("clear", epilog=epilog_for("column clear"))
 def clear_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item ID."),
@@ -491,7 +493,7 @@ def _parse_defaults(raw: str | None) -> str | None:
     return json.dumps(parsed)
 
 
-@app.command("create")
+@app.command("create", epilog=epilog_for("column create"))
 def create_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID to add the column to."),
@@ -551,7 +553,7 @@ def create_cmd(
     opts.emit(data.get("create_column") or {})
 
 
-@app.command("rename")
+@app.command("rename", epilog=epilog_for("column rename"))
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -573,7 +575,7 @@ def rename_cmd(
     opts.emit(data.get("change_column_title") or {})
 
 
-@app.command("change-metadata")
+@app.command("change-metadata", epilog=epilog_for("column change-metadata"))
 def change_metadata_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -606,7 +608,7 @@ def change_metadata_cmd(
     opts.emit(data.get("change_column_metadata") or {})
 
 
-@app.command("delete")
+@app.command("delete", epilog=epilog_for("column delete"))
 def delete_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
@@ -614,14 +616,7 @@ def delete_cmd(
 ) -> None:
     """Delete a column (permanent — destroys all values stored in it)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    if not opts.yes:
-        ok = typer.confirm(
-            f"PERMANENTLY delete column {column_id!r} on board {board_id}?",
-            default=False,
-        )
-        if not ok:
-            typer.echo("aborted.")
-            raise typer.Exit(1)
+    _confirm(opts, f"PERMANENTLY delete column {column_id!r} on board {board_id}?")
     variables = {"board": board_id, "col": column_id}
     if opts.dry_run:
         _dry_run_mutation(opts, COLUMN_DELETE, variables)
