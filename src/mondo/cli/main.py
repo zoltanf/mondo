@@ -27,6 +27,7 @@ from mondo.cli.subitem import app as subitem_app
 from mondo.cli.team import app as team_app
 from mondo.cli.update import app as update_app
 from mondo.cli.user import app as user_app
+from mondo.cli.webhook import app as webhook_app
 from mondo.cli.workspace import app as workspace_app
 from mondo.logging_ import configure_logging
 from mondo.version import __version__
@@ -59,6 +60,7 @@ app.add_typer(
     update_app, name="update", help="Post, edit, like, pin, and delete item updates (comments)."
 )
 app.add_typer(doc_app, name="doc", help="Workspace-level docs (distinct from the `doc` column).")
+app.add_typer(webhook_app, name="webhook", help="Manage monday webhook subscriptions.")
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")

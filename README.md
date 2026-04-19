@@ -9,8 +9,8 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
-> teams (3b), subitems (3c), updates (3d), and workspace docs (3e) shipped;
-> webhooks, files, aggregation, and validation queued.
+> teams (3b), subitems (3c), updates (3d), workspace docs (3e), and
+> webhooks (3f) shipped; files, aggregation, and validation queued.
 
 ---
 
@@ -167,6 +167,27 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Webhooks
+
+```bash
+mondo webhook list   --board 1234567890 [--app-only]
+mondo webhook create --board 1234567890 --url https://example.com/hook \
+                     --event create_item [--config '{"columnId":"status"}']
+mondo webhook delete --id 123 --yes
+```
+
+Events: `change_column_value`, `change_specific_column_value`, `change_status_
+column_value`, `change_subitem_column_value`, `change_name`, `create_item`,
+`item_archived`, `item_deleted`, `item_moved_to_any_group`, `item_moved_to_
+specific_group`, `item_restored`, `create_subitem`, `change_subitem_name`,
+`move_subitem`, `subitem_archived`, `subitem_deleted`, `create_update`,
+`edit_update`, `delete_update`, `create_subitem_update`.
+
+monday performs a one-time challenge handshake against `--url` when the
+webhook is created — your endpoint must echo the `challenge` JSON field or
+creation fails. mondo just sends the mutation; the handshake is your
+server's responsibility.
 
 ### Workspace docs
 
@@ -475,7 +496,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 599 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 606 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
