@@ -169,19 +169,89 @@ class TestAccount:
 
 
 class TestAggregate:
-    def test_basic(self, httpx_mock: HTTPXMock) -> None:
+    def test_ungrouped_count_flattens_response(self, httpx_mock: HTTPXMock) -> None:
+        """Simplest shape: COUNT:* with no grouping. Result is flattened into
+        a single {alias: value} dict."""
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
             json=_ok(
                 {
-                    "aggregate": [
-                        {
-                            "group_by_values": {"status": "Done"},
-                            "values": {"COUNT": 5},
-                            "value": None,
-                        }
-                    ]
+                    "aggregate": {
+                        "results": [
+                            {
+                                "entries": [
+                                    {
+                                        "alias": "count",
+                                        "value": {
+                                            "__typename": "AggregateBasicAggregationResult",
+                                            "result": 5,
+                                        },
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "aggregate",
+                "board",
+                "--board",
+                "42",
+                "--select",
+                "COUNT:*",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == [{"count": 5}]
+
+        body = _last_body(httpx_mock)
+        q = body["variables"]["q"]
+        assert q["from"] == {"type": "TABLE", "id": "42"}
+        assert q["select"] == [
+            {"type": "FUNCTION", "function": {"function": "COUNT_ITEMS", "params": []}, "as": "count"}
+        ]
+        assert "group_by" not in q
+
+    def test_group_by_auto_adds_column_select(self, httpx_mock: HTTPXMock) -> None:
+        """Monday rejects the query unless every `group_by` column also
+        appears in `select` — we add the COLUMN select automatically."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "aggregate": {
+                        "results": [
+                            {
+                                "entries": [
+                                    {
+                                        "alias": "status",
+                                        "value": {
+                                            "__typename": "AggregateGroupByResult",
+                                            "value_string": "Done",
+                                            "value_int": None,
+                                            "value_float": None,
+                                            "value_boolean": None,
+                                            "value": "Done",
+                                        },
+                                    },
+                                    {
+                                        "alias": "count",
+                                        "value": {
+                                            "__typename": "AggregateBasicAggregationResult",
+                                            "result": 3,
+                                        },
+                                    },
+                                ]
+                            }
+                        ]
+                    }
                 }
             ),
         )
@@ -199,13 +269,22 @@ class TestAggregate:
             ],
         )
         assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
-        assert v["board"] == 42
-        assert v["groupBy"] == [{"column_id": "status"}]
-        assert v["select"] == [{"function": "COUNT"}]
+        parsed = json.loads(result.stdout)
+        assert parsed == [{"status": "Done", "count": 3}]
 
-    def test_multi_select(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"aggregate": []}))
+        q = _last_body(httpx_mock)["variables"]["q"]
+        assert q["group_by"] == [{"column_id": "status"}]
+        assert q["select"] == [
+            {"type": "COLUMN", "column": {"column_id": "status"}, "as": "status"},
+            {"type": "FUNCTION", "function": {"function": "COUNT_ITEMS", "params": []}, "as": "count"},
+        ]
+
+    def test_sum_and_average_wrap_column_as_function_param(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"aggregate": {"results": []}}),
+        )
         result = runner.invoke(
             app,
             [
@@ -220,11 +299,37 @@ class TestAggregate:
             ],
         )
         assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
-        assert v["select"] == [
-            {"function": "SUM", "column_id": "price"},
-            {"function": "AVERAGE", "column_id": "price"},
+        q = _last_body(httpx_mock)["variables"]["q"]
+        assert q["select"] == [
+            {
+                "type": "FUNCTION",
+                "function": {
+                    "function": "SUM",
+                    "params": [
+                        {"type": "COLUMN", "column": {"column_id": "price"}, "as": "_price"}
+                    ],
+                },
+                "as": "sum_price",
+            },
+            {
+                "type": "FUNCTION",
+                "function": {
+                    "function": "AVERAGE",
+                    "params": [
+                        {"type": "COLUMN", "column": {"column_id": "price"}, "as": "_price"}
+                    ],
+                },
+                "as": "average_price",
+            },
         ]
+
+    def test_wildcard_rejected_for_non_count(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["aggregate", "board", "--board", "42", "--select", "SUM:*"],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
 
     def test_invalid_function(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
@@ -249,8 +354,12 @@ class TestAggregate:
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
-    def test_rules_json(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"aggregate": []}))
+    def test_filter_json_passthrough(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"aggregate": {"results": []}}),
+        )
         result = runner.invoke(
             app,
             [
@@ -260,13 +369,13 @@ class TestAggregate:
                 "42",
                 "--select",
                 "COUNT:*",
-                "--rules",
-                '[{"column_id":"status","operator":"any_of","compare_value":["Done"]}]',
+                "--filter",
+                '{"rules":[{"column_id":"status","operator":"any_of","compare_value":["Done"]}]}',
             ],
         )
         assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
-        assert v["rules"][0]["column_id"] == "status"
+        q = _last_body(httpx_mock)["variables"]["q"]
+        assert q["query"]["rules"][0]["column_id"] == "status"
 
 
 # --- validation ---

@@ -194,11 +194,14 @@ case-sensitive: `Project` for item/board IDs, `Post` for updates/replies.
 mondo aggregate board --board 1234567890 --select COUNT:*
 mondo aggregate board --board 1234567890 --group-by status --select COUNT:* --select SUM:price
 mondo aggregate board --board 1234567890 --group-by owner --select AVERAGE:duration \
-  --rules '[{"column_id":"status","operator":"any_of","compare_value":["Done"]}]'
+  --filter '{"rules":[{"column_id":"status","operator":"any_of","compare_value":["Done"]}]}'
 ```
 
 Requires API version 2026-01+. Functions: `SUM | AVERAGE | COUNT |
-COUNT_DISTINCT | MIN | MAX | MEDIAN`. Use instead of pulling every item when
+COUNT_DISTINCT | MIN | MAX | MEDIAN`. `COUNT:*` counts all rows (translated
+to monday's `COUNT_ITEMS`); any other `FUNCTION:*` is rejected client-side.
+Output is a list of flattened `{alias: value}` dicts — one per group (or one
+total when `--group-by` is omitted). Use instead of pulling every item when
 you only need totals.
 
 ### Validation rules (Pro/Enterprise)

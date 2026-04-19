@@ -668,7 +668,16 @@ Mutations:
 Block types: `normal_text, heading, sub_heading, small_heading, bullet_list, numbered_list, quote, code, divider, image, layout, table, ...`.
 
 ### Aggregation API (2026-01)
-Root `aggregate(board_id: ID!, group_by: [GroupByInput!], select: [SelectInput!], rules, limit)` → `[AggregateGroupByResult { group_by_values, values, value: JSON }]`. Functions: `SUM, AVERAGE, COUNT, COUNT_DISTINCT, MIN, MAX, MEDIAN`. Use for dashboards/reports without pulling all items.
+Root `aggregate(query: AggregateQueryInput!) → AggregateQueryResult { results: [AggregateResultSet { entries: [AggregateResultEntry { alias, value: AggregateResult }] }] }`. `AggregateResult` is a union of `AggregateBasicAggregationResult { result: Float }` and `AggregateGroupByResult { value_string | value_int | value_float | value_boolean | value: JSON }`.
+
+`AggregateQueryInput`:
+- `from: AggregateFromTableInput!` — `{ type: TABLE, id: <board_id> }`. (The only `AggregateFromElementType` value today is `TABLE`; `BOARD` from older doc versions is gone.)
+- `select: [AggregateSelectElementInput!]!` — tagged union `{ type: COLUMN, column: { column_id }, as: "..." }` or `{ type: FUNCTION, function: { function: <AggregateSelectFunctionName>, params: [<AggregateSelectElementInput>] }, as: "..." }`. Every group_by column **must** also appear here (server rejects otherwise). `COUNT_ITEMS` takes no params; `SUM / AVERAGE / COUNT / COUNT_DISTINCT / MIN / MAX / MEDIAN` wrap their target column as a `params` COLUMN.
+- `group_by: [AggregateGroupByElementInput!]` — each `{ column_id, limit? }`. Optional.
+- `query: ItemsQuery` — optional filter (same shape as `items_page`).
+- `limit: Int` — max result sets returned.
+
+Use for dashboards/reports without pulling all items.
 
 ### Validation rules (2025-04+)
 Gradually rolling out to Pro/Enterprise. Server-side enforcement — violating item creates/edits are rejected with `RecordInvalidException`. Not supported on multi-level subitem boards.

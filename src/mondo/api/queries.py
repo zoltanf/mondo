@@ -869,23 +869,24 @@ query {
 
 # Aggregation API (2026-01+). Returns [AggregateGroupByResult { ... }].
 AGGREGATE_BOARD = """
-query (
-  $board: ID!
-  $groupBy: [GroupByInput!]
-  $select: [SelectInput!]
-  $rules: [AggregateRuleInput!]
-  $limit: Int
-) {
-  aggregate(
-    board_id: $board
-    group_by: $groupBy
-    select: $select
-    rules: $rules
-    limit: $limit
-  ) {
-    group_by_values
-    values
-    value
+query ($q: AggregateQueryInput!) {
+  aggregate(query: $q) {
+    results {
+      entries {
+        alias
+        value {
+          __typename
+          ... on AggregateBasicAggregationResult { result }
+          ... on AggregateGroupByResult {
+            value_string
+            value_int
+            value_float
+            value_boolean
+            value
+          }
+        }
+      }
+    }
   }
 }
 """.strip()
