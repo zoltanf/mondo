@@ -45,6 +45,7 @@ credentials.yaml
 .env
 .env.*
 !.env.example
+_local_*
 *api-key*
 *-secret.sh
 *-token.sh

@@ -32,7 +32,7 @@ uv run mondo auth status
 ```
 
 Native binaries via PyInstaller + a curl-pipe-bash installer + Homebrew tap are
-planned for v1.0 (see [plan.md §15](plan.md)).
+planned for v1.0 (see [plan.md §15](docs/plan.md)).
 
 ---
 
@@ -607,8 +607,16 @@ uv run ruff format src tests # format
 uv run mypy src              # strict type-check
 ```
 
-See [plan.md](plan.md) for the full roadmap and [monday-api.md](monday-api.md)
-for the API reference this CLI targets.
+## Documentation
+
+Additional docs live under [`docs/`](docs/):
+
+- [docs/plan.md](docs/plan.md) — full product roadmap and phase breakdown.
+- [docs/monday-api.md](docs/monday-api.md) — monday.com GraphQL API reference this CLI targets.
+- [docs/project codename mondo.md](<docs/project codename mondo.md>) — original design doc / product vision.
+- [docs/implementation-phase-1.md](docs/implementation-phase-1.md) — Phase 1 implementation notes (auth, items, columns, `doc` columns).
+- [docs/implementation-phase-2.md](docs/implementation-phase-2.md) — Phase 2 implementation notes (boards, workspaces, users, teams, docs, webhooks, import/export).
+- [docs/implementation-phase-3.md](docs/implementation-phase-3.md) — Phase 3 implementation notes (files, activity, folders, favorites, tags, notifications, aggregations, validation).
 
 ## License
 
