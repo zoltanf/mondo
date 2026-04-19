@@ -32,10 +32,14 @@ brew tap zoltanf/mondo    # add the zoltanf/homebrew-mondo tap
 brew install mondo        # install the right binary for your OS/arch
 ```
 
-Homebrew picks the correct artifact for your platform (Apple Silicon vs Intel,
-arm64 vs x86_64 on Linux), puts `mondo` on your `PATH`, and — importantly on
-macOS — **strips Apple's quarantine attribute automatically**, so you don't run
-into the Gatekeeper warning described below.
+Homebrew picks the correct artifact for your platform (Apple Silicon macOS, or
+arm64/x86_64 on Linux), puts `mondo` on your `PATH`, and — importantly on macOS
+— **strips Apple's quarantine attribute automatically**, so you don't run into
+the Gatekeeper warning described below.
+
+> **Intel Macs are not supported** by the binary builds. `brew install` will
+> refuse with a clean "requires arm64 architecture" message. If you're still on
+> Intel hardware, install from source (see [From source](#from-source) below).
 
 Upgrade later with:
 
@@ -57,10 +61,11 @@ Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
 | Platform           | Asset                                     |
 |--------------------|-------------------------------------------|
 | macOS (Apple Si.)  | `mondo-<ver>-darwin-arm64.tar.gz`         |
-| macOS (Intel)      | `mondo-<ver>-darwin-x86_64.tar.gz`        |
 | Linux (x86_64)     | `mondo-<ver>-linux-x86_64.tar.gz`         |
 | Linux (arm64)      | `mondo-<ver>-linux-arm64.tar.gz`          |
 | Windows (x86_64)   | `mondo-<ver>-windows-x86_64.zip`          |
+
+Intel Mac users: no pre-built binary — install [from source](#from-source).
 
 Then:
 

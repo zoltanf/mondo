@@ -17,8 +17,6 @@ jobs:
         include:
           - name: darwin-arm64
             os: macos-14
-          - name: darwin-x86_64
-            os: macos-13
           - name: linux-x86_64
             os: ubuntu-24.04
           - name: linux-arm64
@@ -131,7 +129,6 @@ jobs:
           v="${{ steps.ver.outputs.version }}"
           for asset in \
               "mondo-$v-darwin-arm64.tar.gz" \
-              "mondo-$v-darwin-x86_64.tar.gz" \
               "mondo-$v-linux-arm64.tar.gz" \
               "mondo-$v-linux-x86_64.tar.gz"; do
             gh release download "$GITHUB_REF_NAME" \
@@ -146,7 +143,6 @@ jobs:
           v="${{ steps.ver.outputs.version }}"
           {
             echo "darwin_arm64=$(sha256sum "mondo-$v-darwin-arm64.tar.gz" | cut -d' ' -f1)"
-            echo "darwin_x86_64=$(sha256sum "mondo-$v-darwin-x86_64.tar.gz" | cut -d' ' -f1)"
             echo "linux_arm64=$(sha256sum "mondo-$v-linux-arm64.tar.gz" | cut -d' ' -f1)"
             echo "linux_x86_64=$(sha256sum "mondo-$v-linux-x86_64.tar.gz" | cut -d' ' -f1)"
           } >> "$GITHUB_OUTPUT"
@@ -162,7 +158,6 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
           DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
-          DARWIN_X86_64: ${{ steps.sha.outputs.darwin_x86_64 }}
           LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
           LINUX_X86_64: ${{ steps.sha.outputs.linux_x86_64 }}
         run: |
@@ -175,13 +170,9 @@ jobs:
             license "MIT"
 
             on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-darwin-arm64.tar.gz"
-                sha256 "$DARWIN_ARM64"
-              else
-                url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-darwin-x86_64.tar.gz"
-                sha256 "$DARWIN_X86_64"
-              end
+              depends_on arch: :arm64
+              url "https://github.com/zoltanf/mondo/releases/download/v$VERSION/mondo-$VERSION-darwin-arm64.tar.gz"
+              sha256 "$DARWIN_ARM64"
             end
 
             on_linux do
