@@ -63,10 +63,11 @@ class TestNotify:
             "target": 100,
             "targetType": "Project",
             "text": "hi",
-            "internal": None,
         }
 
-    def test_internal_flag(self, httpx_mock: HTTPXMock) -> None:
+    def test_internal_flag_is_no_op(self, httpx_mock: HTTPXMock) -> None:
+        """monday dropped the `internal` arg in API 2026-01; the CLI keeps
+        the flag for back-compat but doesn't send it to the server."""
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -91,7 +92,7 @@ class TestNotify:
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
         assert v["targetType"] == "Post"
-        assert v["internal"] is True
+        assert "internal" not in v  # dropped, not sent
 
     def test_invalid_target_type(self, httpx_mock: HTTPXMock) -> None:
         # NotificationTargetType is case-sensitive; lowercase should fail.
@@ -382,53 +383,44 @@ class TestAggregate:
 
 
 class TestValidationList:
-    def test_basic(self, httpx_mock: HTTPXMock) -> None:
+    def test_returns_required_columns_and_rules(self, httpx_mock: HTTPXMock) -> None:
+        """monday's new root `validations(id, type)` returns a single object
+        with required_column_ids + rules (JSON). No more per-rule array."""
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
             json=_ok(
                 {
-                    "boards": [
-                        {
-                            "id": "42",
-                            "validations": [
-                                {
-                                    "id": "1",
-                                    "column_id": "status",
-                                    "rule_type": "REQUIRED",
-                                }
-                            ],
-                        }
-                    ]
+                    "validations": {
+                        "required_column_ids": ["status"],
+                        "rules": {"status": {"rule_type": "REQUIRED"}},
+                    }
                 }
             ),
         )
         result = runner.invoke(app, ["validation", "list", "--board", "42"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
-        assert [r["id"] for r in parsed] == ["1"]
+        assert parsed["required_column_ids"] == ["status"]
+        v = _last_body(httpx_mock)["variables"]
+        assert v == {"id": 42}
 
-    def test_board_not_found(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
-        result = runner.invoke(app, ["validation", "list", "--board", "999"])
-        assert result.exit_code == 6
-
-
-class TestValidationCreate:
-    def test_basic(self, httpx_mock: HTTPXMock) -> None:
+    def test_empty_validations(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "create_validation_rule": {
-                        "id": "1",
-                        "column_id": "status",
-                        "rule_type": "REQUIRED",
-                    }
-                }
-            ),
+            json=_ok({"validations": None}),
         )
+        result = runner.invoke(app, ["validation", "list", "--board", "999"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == {}
+
+
+class TestValidationMutationsRemoved:
+    """Since API 2026-01, the create/update/delete validation mutations are
+    gone. The CLI surfaces a clean error pointing to the UI."""
+
+    def test_create_surfaces_removed_error(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
             [
@@ -442,90 +434,19 @@ class TestValidationCreate:
                 "REQUIRED",
             ],
         )
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 2
+        assert "removed" in (result.output + result.stderr).lower()
+        assert httpx_mock.get_requests() == []
 
-    def test_with_value_json(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"create_validation_rule": {"id": "1"}}),
-        )
+    def test_update_surfaces_removed_error(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
-            [
-                "validation",
-                "create",
-                "--board",
-                "42",
-                "--column",
-                "numbers",
-                "--rule-type",
-                "MIN_VALUE",
-                "--value",
-                '{"min":10}',
-            ],
-        )
-        assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
-        assert v["value"] == {"min": 10}
-
-    def test_invalid_value_json_exit_2(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "validation",
-                "create",
-                "--board",
-                "42",
-                "--column",
-                "x",
-                "--rule-type",
-                "T",
-                "--value",
-                "{not json",
-            ],
+            ["validation", "update", "--id", "1", "--description", "x"],
         )
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
-
-class TestValidationUpdate:
-    def test_requires_one_attr(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(app, ["validation", "update", "--id", "1"])
+    def test_delete_surfaces_removed_error(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["validation", "delete", "--id", "1"])
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
-
-    def test_update_description(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"update_validation_rule": {"id": "1"}}),
-        )
-        result = runner.invoke(
-            app,
-            [
-                "validation",
-                "update",
-                "--id",
-                "1",
-                "--description",
-                "new desc",
-            ],
-        )
-        assert result.exit_code == 0, result.stdout
-
-
-class TestValidationDelete:
-    def test_requires_confirmation(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(app, ["validation", "delete", "--id", "1"], input="n\n")
-        assert result.exit_code == 1
-        assert httpx_mock.get_requests() == []
-
-    def test_yes(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"delete_validation_rule": {"id": "1"}}),
-        )
-        result = runner.invoke(app, ["--yes", "validation", "delete", "--id", "1"])
-        assert result.exit_code == 0, result.stdout

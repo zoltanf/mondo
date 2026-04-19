@@ -1,7 +1,9 @@
 """`mondo notify` — send monday notifications (Phase 3i).
 
 Per monday-api.md §14:
-- `create_notification(user_id, target_id, target_type, text, internal)`
+- `create_notification(user_id, target_id, target_type, text)`. Note: the
+  `internal` arg was dropped in API 2026-01 — the CLI still accepts
+  `--internal` as a harmless no-op for backward-compat.
 - `target_type`: `Post` (for an update/reply ID) or `Project` (for item/board ID).
 - Delivery is async — the returned `id` is often `-1` and NOT queryable.
 - Single-user per call. Multi-user notifications need a loop (we surface
@@ -65,17 +67,19 @@ def send_cmd(
     ),
     text: str = typer.Option(..., "--text", help="Notification body."),
     internal: bool = typer.Option(
-        False, "--internal", help="Mark as internal (monday-only, not emailed)."
+        False,
+        "--internal",
+        help="(Deprecated no-op; monday dropped the `internal` arg in API 2026-01.)",
     ),
 ) -> None:
     """Send a single notification. (monday's mutation is single-user; loop for batches.)"""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    _ = internal  # accepted but no longer sent to monday
     variables = {
         "user": user_id,
         "target": target_id,
         "targetType": target_type.value,
         "text": text,
-        "internal": True if internal else None,
     }
     if opts.dry_run:
         opts.emit({"query": CREATE_NOTIFICATION, "variables": variables})

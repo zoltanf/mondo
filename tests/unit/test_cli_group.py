@@ -199,7 +199,41 @@ class TestGroupRename:
 
 
 class TestGroupUpdate:
-    def test_color_validated(self, httpx_mock: HTTPXMock) -> None:
+    def test_color_value_passes_through_unchanged(self, httpx_mock: HTTPXMock) -> None:
+        """Monday's `update_group` mutation wants color NAMES ('green'), not
+        hex codes — divergent from `create_group`/`rename_group` which take
+        hex. The CLI passes the user's value through unchanged; the server
+        does the validation."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_group": {"id": "topics", "color": "#00c875"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group",
+                "update",
+                "--board",
+                "42",
+                "--id",
+                "topics",
+                "--attribute",
+                "color",
+                "--value",
+                "green",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["attribute"] == "color"
+        assert v["value"] == "green"
+
+    def test_color_hex_also_passes_through(self, httpx_mock: HTTPXMock) -> None:
+        """Even if the user passes hex (invalid for update_group), the CLI
+        does NOT reject client-side anymore — we let monday respond so the
+        user sees the authoritative error. Previously we rejected hex that
+        wasn't in the palette, which is wrong for update_group."""
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -220,26 +254,9 @@ class TestGroupUpdate:
                 "#00c875",
             ],
         )
+        # No client-side rejection — the request actually goes out
         assert result.exit_code == 0, result.stdout
-
-    def test_invalid_color_exits_2(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "group",
-                "update",
-                "--board",
-                "42",
-                "--id",
-                "topics",
-                "--attribute",
-                "color",
-                "--value",
-                "#deadbeef",
-            ],
-        )
-        assert result.exit_code == 2
-        assert httpx_mock.get_requests() == []
+        assert len(httpx_mock.get_requests()) == 1
 
 
 class TestGroupReorder:

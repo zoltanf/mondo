@@ -403,7 +403,9 @@ def update_block_cmd(
     except json.JSONDecodeError as e:
         typer.secho(f"error: --content is not valid JSON: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
-    variables = {"block": block_id, "content": parsed_content}
+    # monday's JSON scalar wants the content as a JSON-encoded string (matches
+    # what create_doc_block does). We validated the JSON above; now re-stringify.
+    variables = {"block": block_id, "content": json.dumps(parsed_content)}
     if opts.dry_run:
         _dry_run(opts, UPDATE_DOC_BLOCK, variables)
     client = _client_or_exit(opts)

@@ -223,12 +223,22 @@ def update_cmd(
         help="Attribute to change (title/color/position/relative_position_after/_before).",
         case_sensitive=False,
     ),
-    value: str = typer.Option(..., "--value", help="New value."),
+    value: str = typer.Option(
+        ...,
+        "--value",
+        help=(
+            "New value. NOTE: for `--attribute color`, monday's `update_group` "
+            "mutation rejects hex codes and requires lowercase color NAMES "
+            "(e.g. 'green', not '#00c875'). This diverges from `group create` / "
+            "`group rename` which accept hex. Pass the name here."
+        ),
+    ),
 ) -> None:
     """Update a group attribute (color, position, relative position, or title)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    if attribute is GroupAttribute.color:
-        value = _validate_color(value) or value
+    # NOTE: intentionally skip the hex-palette check for attribute=color on
+    # update_group — monday wants color NAMES here, not hex codes, unlike
+    # create/rename which take hex. Pass the user's value through as-is.
     variables = {
         "board": board_id,
         "group": group_id,

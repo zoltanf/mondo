@@ -408,7 +408,10 @@ class TestBlocks:
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
         assert v["block"] == "b1"
-        assert v["content"] == {"deltaFormat": [{"insert": "new"}]}
+        # content must be a JSON-encoded STRING for monday's JSON scalar, not
+        # a raw object (matches the create_doc_block pattern).
+        assert isinstance(v["content"], str)
+        assert json.loads(v["content"]) == {"deltaFormat": [{"insert": "new"}]}
 
     def test_delete_block(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(

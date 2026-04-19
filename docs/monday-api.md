@@ -650,7 +650,7 @@ Mutations: `create_webhook(board_id, url, event, config: JSON)` and `delete_webh
 **Webhook handshake:** on `create_webhook`, monday POSTs a one-time JSON `{"challenge":"..."}` to your URL; your endpoint must echo `challenge` back within a short window or the webhook creation fails.
 
 ### Notifications
-`create_notification(user_id: ID!, target_id: ID!, text: String!, target_type: NotificationTargetType!, internal: Boolean)` → `Notification { id text }`. `target_type`: `Post` (update/reply id) or `Project` (item or board id). Delivery is async; returned `id` is often `-1` and not queryable. Single user per call — loop for multi-user.
+`create_notification(user_id: ID!, target_id: ID!, text: String!, target_type: NotificationTargetType!)` → `Notification { id text }`. `target_type`: `Post` (update/reply id) or `Project` (item or board id). Delivery is async; returned `id` is often `-1` and not queryable. Single user per call — loop for multi-user. (The `internal: Boolean` arg present in older docs was dropped in API 2026-01.)
 
 ### Activity logs
 Nested only: `boards(ids:) { activity_logs(limit, page, user_ids, column_ids, group_ids, item_ids, from, to) { id event data entity user_id created_at account_id } }`. `data` is a JSON string with before/after details. Retention: ~1 week on non-Enterprise; longer on Enterprise. No mutations. Audit-level events use separate admin-only `audit_logs`.
@@ -679,10 +679,10 @@ Root `aggregate(query: AggregateQueryInput!) → AggregateQueryResult { results:
 
 Use for dashboards/reports without pulling all items.
 
-### Validation rules (2025-04+)
-Gradually rolling out to Pro/Enterprise. Server-side enforcement — violating item creates/edits are rejected with `RecordInvalidException`. Not supported on multi-level subitem boards.
+### Validation rules (Pro/Enterprise)
+Server-side enforcement — violating item creates/edits are rejected with `RecordInvalidException`. Not supported on multi-level subitem boards.
 
-Query: `validations`. Mutations: `create_validation_rule`, `update_validation_rule`, `delete_validation_rule`.
+Query: `validations(id: ID!, type: ValidationsEntityType) → { required_column_ids: [String!], rules: JSON }`. In API 2026-01 monday dropped the per-rule CRUD mutations (`create_validation_rule`, `update_validation_rule`, `delete_validation_rule`) that existed in the 2025-04+ rollout — rule management is UI-only now; the API is read-only.
 
 ### Multi-level boards (GA Oct 2025; default 2026-04 RC)
 Up to 5 subitem levels, rollup columns, `hierarchy_type: multi_level` on Board. Shares board_id across levels (no separate subitems board). `parent_item` field traverses up.

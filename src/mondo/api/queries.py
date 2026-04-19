@@ -707,7 +707,7 @@ mutation (
   $name: String
   $color: FolderColor
   $productId: ID
-  $position: FolderPosition
+  $position: DynamicPosition
 ) {
   update_folder(
     folder_id: $id
@@ -796,14 +796,12 @@ mutation (
   $target: ID!
   $targetType: NotificationTargetType!
   $text: String!
-  $internal: Boolean
 ) {
   create_notification(
     user_id: $user
     target_id: $target
     target_type: $targetType
     text: $text
-    internal: $internal
   ) {
     id
     text
@@ -892,64 +890,16 @@ query ($q: AggregateQueryInput!) {
 """.strip()
 
 
-# Validation rules (2025-04+ Pro/Enterprise rollout).
+# Validation rules — read-only since API 2026-01. The per-rule CRUD
+# mutations (`create_validation_rule`, `update_validation_rule`,
+# `delete_validation_rule`) were dropped from the schema; rule
+# management is UI-only now. The root `validations(id, type)` query
+# returns `{required_column_ids, rules: JSON}`.
 VALIDATIONS_LIST = """
-query ($board: ID!) {
-  boards(ids: [$board]) {
-    id
-    validations {
-      id
-      column_id
-      rule_type
-      value
-      description
-    }
-  }
-}
-""".strip()
-
-
-VALIDATION_CREATE = """
-mutation (
-  $board: ID!
-  $columnId: String!
-  $ruleType: String!
-  $value: JSON
-  $description: String
-) {
-  create_validation_rule(
-    board_id: $board
-    column_id: $columnId
-    rule_type: $ruleType
-    value: $value
-    description: $description
-  ) {
-    id
-    column_id
-    rule_type
-  }
-}
-""".strip()
-
-
-VALIDATION_UPDATE = """
-mutation (
-  $id: ID!
-  $value: JSON
-  $description: String
-) {
-  update_validation_rule(id: $id, value: $value, description: $description) {
-    id
-    rule_type
-  }
-}
-""".strip()
-
-
-VALIDATION_DELETE = """
-mutation ($id: ID!) {
-  delete_validation_rule(id: $id) {
-    id
+query ($id: ID!) {
+  validations(id: $id, type: board) {
+    required_column_ids
+    rules
   }
 }
 """.strip()
