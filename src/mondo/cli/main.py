@@ -11,6 +11,7 @@ from enum import StrEnum
 
 import typer
 
+from mondo.cli.activity import app as activity_app
 from mondo.cli.argv import reorder_argv
 from mondo.cli.auth import app as auth_app
 from mondo.cli.board import app as board_app
@@ -19,12 +20,15 @@ from mondo.cli.complexity import app as complexity_app
 from mondo.cli.context import GlobalOpts
 from mondo.cli.doc import app as doc_app
 from mondo.cli.export import app as export_app
+from mondo.cli.favorite import app as favorite_app
 from mondo.cli.file import app as file_app
+from mondo.cli.folder import app as folder_app
 from mondo.cli.graphql import graphql_command
 from mondo.cli.group import app as group_app
 from mondo.cli.import_ import app as import_app
 from mondo.cli.item import app as item_app
 from mondo.cli.subitem import app as subitem_app
+from mondo.cli.tag import app as tag_app
 from mondo.cli.team import app as team_app
 from mondo.cli.update import app as update_app
 from mondo.cli.user import app as user_app
@@ -63,6 +67,10 @@ app.add_typer(
 app.add_typer(doc_app, name="doc", help="Workspace-level docs (distinct from the `doc` column).")
 app.add_typer(webhook_app, name="webhook", help="Manage monday webhook subscriptions.")
 app.add_typer(file_app, name="file", help="Upload files to item columns/updates; download assets.")
+app.add_typer(folder_app, name="folder", help="Manage workspace folders.")
+app.add_typer(tag_app, name="tag", help="Read account-level tags; create-or-get for a board.")
+app.add_typer(favorite_app, name="favorite", help="List the current user's favorites.")
+app.add_typer(activity_app, name="activity", help="Read a board's activity logs.")
 app.add_typer(group_app, name="group", help="Manage groups within a board.")
 app.add_typer(column_app, name="column", help="Read and write monday column values.")
 app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")

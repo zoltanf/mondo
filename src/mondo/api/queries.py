@@ -583,6 +583,173 @@ query ($ids: [ID!]!) {
 """.strip()
 
 
+# --- activity logs (3h) ---
+
+# Nested-only query (§14). `from`/`to` are ISO-8601 strings. `data` is a
+# JSON-encoded string with before/after values.
+BOARD_ACTIVITY_LOGS = """
+query (
+  $board: ID!
+  $limit: Int!
+  $page: Int!
+  $userIds: [ID!]
+  $columnIds: [String!]
+  $groupIds: [String!]
+  $itemIds: [ID!]
+  $fromDate: ISO8601DateTime
+  $toDate: ISO8601DateTime
+) {
+  boards(ids: [$board]) {
+    id
+    activity_logs(
+      limit: $limit
+      page: $page
+      user_ids: $userIds
+      column_ids: $columnIds
+      group_ids: $groupIds
+      item_ids: $itemIds
+      from: $fromDate
+      to: $toDate
+    ) {
+      id
+      event
+      entity
+      user_id
+      created_at
+      account_id
+      data
+    }
+  }
+}
+""".strip()
+
+
+# --- folders (3h) ---
+
+FOLDERS_LIST_PAGE = """
+query ($limit: Int!, $page: Int!, $ids: [ID!], $workspaceIds: [ID]) {
+  folders(limit: $limit, page: $page, ids: $ids, workspace_ids: $workspaceIds) {
+    id
+    name
+    color
+    parent { id name }
+    workspace { id name }
+    children { id name }
+  }
+}
+""".strip()
+
+
+FOLDER_GET = """
+query ($ids: [ID!]!) {
+  folders(ids: $ids) {
+    id
+    name
+    color
+    parent { id name }
+    workspace { id name }
+    children { id name }
+  }
+}
+""".strip()
+
+
+FOLDER_CREATE = """
+mutation (
+  $name: String!
+  $workspace: ID!
+  $color: FolderColor
+  $parent: ID
+  $icon: FolderCustomIcon
+  $fontWeight: FolderFontWeight
+) {
+  create_folder(
+    name: $name
+    workspace_id: $workspace
+    color: $color
+    parent_folder_id: $parent
+    custom_icon: $icon
+    font_weight: $fontWeight
+  ) {
+    id
+    name
+    color
+  }
+}
+""".strip()
+
+
+FOLDER_UPDATE = """
+mutation (
+  $id: ID!
+  $name: String
+  $color: FolderColor
+  $productId: ID
+  $position: FolderPosition
+) {
+  update_folder(
+    folder_id: $id
+    name: $name
+    color: $color
+    account_product_id: $productId
+    position: $position
+  ) {
+    id
+    name
+    color
+  }
+}
+""".strip()
+
+
+FOLDER_DELETE = """
+mutation ($id: ID!) {
+  delete_folder(folder_id: $id) {
+    id
+    name
+  }
+}
+""".strip()
+
+
+# --- favorites (3h, read-only) ---
+
+# monday-api.md §14 mentions favorites but not exact mutation names, so
+# we expose read-only for now. Expand if monday's SDL confirms the
+# add/remove mutation shape.
+FAVORITES_LIST = """
+query {
+  favorites {
+    id
+    type
+    created_at
+    entity_id
+    entity_details {
+      ... on Board { id name }
+      ... on Dashboard { id name }
+      ... on Workspace { id name }
+      ... on Document { id name }
+    }
+  }
+}
+""".strip()
+
+
+# --- tags (3h) ---
+
+# Account-level public tags; private/shareable tags live nested under
+# boards (see `mondo board get` for board.tags).
+TAGS_LIST = """
+query ($ids: [ID!]) {
+  tags(ids: $ids) {
+    id
+    name
+    color
+  }
+}
+""".strip()
+
+
 # --- boards ---
 
 # Page-based (limit+page) list of boards — monday's `boards` query has no cursor.

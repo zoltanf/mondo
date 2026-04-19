@@ -42,6 +42,7 @@ def _json_dumps(obj: Any) -> str:
 def _basename(path: str) -> str:
     return _os_module.path.basename(path)
 
+
 DEFAULT_ENDPOINT = "https://api.monday.com/v2"
 DEFAULT_FILE_ENDPOINT = "https://api.monday.com/v2/file"
 DEFAULT_TIMEOUT = 60.0

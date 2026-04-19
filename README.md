@@ -10,8 +10,8 @@ workspaces, users, docs, webhooks, etc.
 
 > Status: Phase 1 + Phase 2 complete. **Phase 3 in progress**: users (3a),
 > teams (3b), subitems (3c), updates (3d), workspace docs (3e), webhooks
-> (3f), and file upload/download (3g) shipped; aggregation and validation
-> queued.
+> (3f), files (3g), and activity/folders/favorites/tags (3h) shipped;
+> notify + me/account + aggregate + validation queued for 3i.
 
 ---
 
@@ -168,6 +168,51 @@ mondo user remove-from-team --team 7 --user 1
 / `_members` / `_guests` / `_viewers`). `--email` is case-sensitive (monday
 quirk). Each of the mass-change mutations returns `{successful_users, failed_users}`
 — mondo surfaces the full partial-success payload.
+
+### Activity logs
+
+```bash
+mondo activity board --board 1234567890 \
+  [--since 2026-04-01T00:00:00Z] [--until 2026-04-18T23:59:59Z] \
+  [--user 42 --user 43] [--item 100] [--group topics] [--column status] \
+  [--limit 100] [--max-items 5000]
+```
+
+Activity logs are nested under `boards` — no root query. Retention is
+~1 week on non-Enterprise tiers.
+
+### Folders
+
+```bash
+mondo folder list     [--workspace 42]
+mondo folder get      --id 7
+mondo folder create   --workspace 42 --name "Eng" [--color DONE_GREEN] [--parent 3]
+mondo folder update   --id 7 [--name …] [--color …] \
+                      [--position '{"object_id":8,"object_type":"Folder","is_after":true}']
+mondo folder delete   --id 7 --hard --yes     # archives contained boards
+```
+
+Max 3 nesting levels per monday. Only the creator can delete a folder.
+
+### Favorites
+
+```bash
+mondo favorite list   # boards, dashboards, workspaces, docs the current user has favorited
+```
+
+Read-only in mondo today; add/remove mutations are queued for 3i pending
+SDL verification.
+
+### Tags
+
+```bash
+mondo tag list   [--id 123 --id 456]
+mondo tag get    --id 123
+mondo tag create-or-get --name urgent --board 1234567890   # idempotent
+```
+
+`tags(ids)` is account-scoped (public tags). Board-private tags live on
+`board.tags` — use `mondo board get --id <board>` to see them.
 
 ### Files
 
@@ -510,7 +555,7 @@ machine-parseable JSON when stdout isn't a TTY.
 
 ```bash
 uv sync --all-extras         # install deps + dev tools
-uv run pytest                # 615 tests, includes CLI E2E via pytest-httpx
+uv run pytest                # 636 tests, includes CLI E2E via pytest-httpx
 uv run ruff check src tests  # lint
 uv run ruff format src tests # format
 uv run mypy src              # strict type-check
