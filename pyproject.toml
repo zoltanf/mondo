@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mondo"
-version = "0.3.0"
+version = "0.3.1-rc1"
 description = "Power-user CLI for the monday.com GraphQL API — az/gh/gam style."
 readme = "README.md"
 requires-python = ">=3.14"
