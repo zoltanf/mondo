@@ -170,7 +170,9 @@ def download_cmd(
                 )
                 raise typer.Exit(code=6)
             asset = assets[0]
-            url = asset.get("url")
+            # Prefer the pre-signed S3 `public_url` — monday's `url` is a
+            # protected_static proxy that returns 406 to non-browser clients.
+            url = asset.get("public_url") or asset.get("url")
             if not url:
                 typer.secho(
                     f"asset {asset_id} has no url.",

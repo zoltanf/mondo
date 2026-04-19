@@ -263,7 +263,13 @@ def add_block_cmd(
         "quote, code, divider, …).",
     ),
     content: str = typer.Option(..., "--content", metavar="JSON", help="Block content as JSON."),
-    after: str | None = typer.Option(None, "--after", help="Insert after this block ID."),
+    after: str | None = typer.Option(
+        None,
+        "--after",
+        help="Insert after this block ID. Default: append to end of doc "
+        "(monday treats a missing after_block_id as top-insert, so we "
+        "pre-fetch the doc's last block for append semantics).",
+    ),
     parent_block: str | None = typer.Option(
         None, "--parent-block", help="Nest under this block ID."
     ),
@@ -275,19 +281,39 @@ def add_block_cmd(
     except json.JSONDecodeError as e:
         typer.secho(f"error: --content is not valid JSON: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
-    variables: dict[str, Any] = {
-        "doc": doc_id,
-        "type": block_type,
-        "content": json.dumps(parsed_content),
-        "after": after,
-        "parent": parent_block,
-    }
     if opts.dry_run:
-        _dry_run(opts, CREATE_DOC_BLOCK, variables)
+        _dry_run(
+            opts,
+            CREATE_DOC_BLOCK,
+            {
+                "doc": doc_id,
+                "type": block_type,
+                "content": json.dumps(parsed_content),
+                "after": after,
+                "parent": parent_block,
+            },
+        )
     client = _client_or_exit(opts)
     try:
         with client:
-            data = _exec_or_exit(client, CREATE_DOC_BLOCK, variables)
+            effective_after = after
+            if effective_after is None:
+                pre = _exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
+                docs_list = pre.get("docs") or []
+                existing = (docs_list[0].get("blocks") or []) if docs_list else []
+                if existing:
+                    effective_after = str(existing[-1].get("id"))
+            data = _exec_or_exit(
+                client,
+                CREATE_DOC_BLOCK,
+                {
+                    "doc": doc_id,
+                    "type": block_type,
+                    "content": json.dumps(parsed_content),
+                    "after": effective_after,
+                    "parent": parent_block,
+                },
+            )
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e

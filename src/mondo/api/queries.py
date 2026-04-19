@@ -493,7 +493,7 @@ query ($ids: [ID!]!) {
 # Create a new doc inside a workspace (vs. the already-shipped
 # CREATE_DOC_ON_ITEM which creates one attached to a doc-column on an item).
 CREATE_DOC_IN_WORKSPACE = """
-mutation ($workspace: ID!, $name: String, $kind: BoardKind) {
+mutation ($workspace: ID!, $name: String!, $kind: BoardKind) {
   create_doc(
     location: {
       workspace: { workspace_id: $workspace, name: $name, kind: $kind }

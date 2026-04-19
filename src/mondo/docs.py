@@ -102,11 +102,12 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
             i += 1
             continue
 
-        # Fenced code block
+        # Fenced code block. Monday's create_doc_block rejects a `language`
+        # key in content (2026-01: "bad request") — so we drop it on write.
+        # The language hint is still recovered on read via blocks_to_markdown.
         fence = _CODE_FENCE_RE.match(line)
         if fence:
             flush_paragraph()
-            language = fence.group(1) or ""
             i += 1
             code_lines: list[str] = []
             while i < len(lines) and not _CODE_FENCE_RE.match(lines[i]):
@@ -114,8 +115,6 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
                 i += 1
             i += 1  # skip closing fence
             content: dict[str, Any] = {"deltaFormat": [{"insert": "\n".join(code_lines)}]}
-            if language:
-                content["language"] = language
             blocks.append({"type": "code", "content": content})
             continue
 

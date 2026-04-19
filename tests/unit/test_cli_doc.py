@@ -203,7 +203,13 @@ class TestCreate:
 
 
 class TestBlocks:
-    def test_add_block_single(self, httpx_mock: HTTPXMock) -> None:
+    def test_add_block_single_on_empty_doc(self, httpx_mock: HTTPXMock) -> None:
+        # Pre-fetch: empty doc → no `after` seed
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": []}]}),
+        )
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -230,7 +236,37 @@ class TestBlocks:
         assert v["after"] is None
         assert v["parent"] is None
 
+    def test_add_block_single_seeds_from_last_block(self, httpx_mock: HTTPXMock) -> None:
+        # Pre-fetch: doc has blocks → `after` seeds from last block id
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "last-block"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "b1", "type": "divider"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "add-block",
+                "--doc",
+                "10",
+                "--type",
+                "divider",
+                "--content",
+                "{}",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["after"] == "last-block"
+
     def test_add_block_with_after_and_parent(self, httpx_mock: HTTPXMock) -> None:
+        # Explicit --after skips the pre-fetch
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -257,6 +293,8 @@ class TestBlocks:
         v = _last_body(httpx_mock)["variables"]
         assert v["after"] == "pre"
         assert v["parent"] == "parent"
+        # Only one HTTP request (no pre-fetch when --after is explicit)
+        assert len(httpx_mock.get_requests()) == 1
 
     def test_add_block_invalid_json(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
