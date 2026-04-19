@@ -307,7 +307,7 @@ items(ids: [ID!], limit: Int = 25, page: Int = 1,
 - `delete_item(item_id: ID!)`
 - `move_item_to_group(item_id: ID!, group_id: String!)`
 - `move_item_to_board(item_id: ID!, board_id: ID!, group_id, columns_mapping: [ColumnMappingInput!], subitems_columns_mapping: [ColumnMappingInput!])` — mapping tells monday how to translate source column IDs to dest column IDs.
-- `change_item_name(board_id: ID!, item_id: ID!, new_name: String!)`
+- Rename an item: monday's current schema exposes no dedicated rename mutation (the item name is just a column). Use `change_simple_column_value(board_id, item_id, column_id: "name", value: "<new name>")`. Older docs referenced `change_item_name`, which has been removed.
 - `set_item_description_content(item_id: ID!, markdown: String!)` → `{ success, error, block_ids }` (2026-04)
 
 **Gotchas:**

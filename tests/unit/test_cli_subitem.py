@@ -196,7 +196,7 @@ class TestMoveRenameArchive:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"change_item_name": {"id": "10", "name": "Newname"}}),
+            json=_ok({"change_simple_column_value": {"id": "10", "name": "Newname"}}),
         )
         result = runner.invoke(
             app,

@@ -208,7 +208,12 @@ mutation (
 
 ITEM_RENAME = """
 mutation ($board: ID!, $id: ID!, $name: String!) {
-  change_item_name(board_id: $board, item_id: $id, new_name: $name) {
+  change_simple_column_value(
+    board_id: $board
+    item_id: $id
+    column_id: "name"
+    value: $name
+  ) {
     id
     name
   }

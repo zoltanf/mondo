@@ -244,12 +244,10 @@ def create_cmd(
 def rename_cmd(
     ctx: typer.Context,
     subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
-    board_id: int = typer.Option(
-        ..., "--board", help="Subitems board ID (required by change_item_name)."
-    ),
+    board_id: int = typer.Option(..., "--board", help="Parent subitems board ID."),
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
-    """Rename a subitem (shortcut for change_item_name against the subitems board)."""
+    """Rename a subitem (writes the `name` column via change_simple_column_value)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"board": board_id, "id": subitem_id, "name": name}
     if opts.dry_run:
@@ -261,7 +259,7 @@ def rename_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    opts.emit(data.get("change_item_name") or {})
+    opts.emit(data.get("change_simple_column_value") or {})
 
 
 @app.command("move")

@@ -342,7 +342,7 @@ class TestItemRename:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"change_item_name": {"id": "1", "name": "New name"}}),
+            json=_ok({"change_simple_column_value": {"id": "1", "name": "New name"}}),
         )
         result = runner.invoke(
             app, ["item", "rename", "--id", "1", "--board", "42", "--name", "New name"]
@@ -350,6 +350,9 @@ class TestItemRename:
         assert result.exit_code == 0
         body = _last_body(httpx_mock)
         assert body["variables"] == {"board": 42, "id": 1, "name": "New name"}
+        assert "change_simple_column_value" in body["query"]
+        assert 'column_id: "name"' in body["query"]
+        assert "change_item_name" not in body["query"]
 
 
 class TestItemDuplicate:

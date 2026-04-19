@@ -387,7 +387,7 @@ def rename_cmd(
     """Rename an item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = _execute_mutation(opts, ITEM_RENAME, {"board": board_id, "id": item_id, "name": name})
-    opts.emit(data.get("change_item_name") or {})
+    opts.emit(data.get("change_simple_column_value") or {})
 
 
 @app.command("duplicate")
