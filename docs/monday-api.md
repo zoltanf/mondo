@@ -525,10 +525,10 @@ This is the Phase 1 focus. It stores a **pointer** to a monday Doc.
   mutation { create_doc(location: { board: { item_id: 123, column_id: "spec" } }) { id object_id } }
 ```
   This also populates the column value server-side.
-- **Append content** to an existing doc:
+- **Append content** to an existing doc: monday's current schema (2026-01) no longer exposes a bulk `create_doc_blocks` mutation. Use the singular form and loop, chaining `after_block_id` to preserve order:
 ```graphql
-  mutation ($docId: ID!, $blocks: [CreateBlockInput!]!) {
-    create_doc_blocks(doc_id: $docId, blocks: $blocks) { id }
+  mutation ($doc: ID!, $type: DocBlockContentType!, $content: JSON!, $after: String) {
+    create_doc_block(doc_id: $doc, type: $type, content: $content, after_block_id: $after) { id type }
   }
 ```
   Blocks are structured (`type: normal_text | heading | bullet_list | numbered_list | quote | code | divider | image | ...`) with JSON `content`.
@@ -662,8 +662,7 @@ Nested only: `boards(ids:) { activity_logs(limit, page, user_ids, column_ids, gr
 
 Mutations:
 - `create_doc(location: CreateDocInput!)` where `CreateDocInput` is oneOf `{ workspace: { workspace_id, name, kind } }` or `{ board: { item_id, column_id } }`.
-- `create_doc_block(type, doc_id, content: JSON, after_block_id, parent_block_id)` — single block
-- `create_doc_blocks(doc_id, blocks: [CreateBlockInput!]!)` (2025-04+) — bulk; each `CreateBlockInput = { type, content, after_block_id, parent_block_id }`
+- `create_doc_block(type, doc_id, content: JSON, after_block_id, parent_block_id)` — single block. Chain via `after_block_id` when appending multiple blocks in order. (The bulk `create_doc_blocks` / `CreateBlockInput` variants documented in earlier monday versions have been removed from the 2026-01 schema.)
 - `update_doc_block(block_id, content: JSON)` · `delete_doc_block(block_id)`
 
 Block types: `normal_text, heading, sub_heading, small_heading, bullet_list, numbered_list, quote, code, divider, image, layout, table, ...`.

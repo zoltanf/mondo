@@ -212,11 +212,11 @@ class TestDocSet:
                 }
             ),
         )
-        # create_doc_blocks
+        # create_doc_block (singular, monday removed the bulk variant)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"create_doc_blocks": [{"id": "b1", "type": "heading"}]}),
+            json=_ok({"create_doc_block": {"id": "b1", "type": "heading"}}),
         )
         result = runner.invoke(
             app,
@@ -248,11 +248,11 @@ class TestDocSet:
             method="POST",
             json=_ok({"docs": [{"id": "700", "object_id": 5000, "blocks": []}]}),
         )
-        # create_doc_blocks
+        # create_doc_block (singular, monday removed the bulk variant)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"create_doc_blocks": [{"id": "b1", "type": "normal_text"}]}),
+            json=_ok({"create_doc_block": {"id": "b1", "type": "normal_text"}}),
         )
         result = runner.invoke(
             app,
@@ -281,10 +281,16 @@ class TestDocSet:
             method="POST",
             json=_ok({"create_doc": {"id": "700", "object_id": 5000, "url": "u"}}),
         )
+        # 2 blocks → 2 create_doc_block calls
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"create_doc_blocks": [{"id": "b1", "type": "heading"}]}),
+            json=_ok({"create_doc_block": {"id": "b1", "type": "heading"}}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "b2", "type": "normal_text"}}),
         )
         result = runner.invoke(
             app,
@@ -320,7 +326,7 @@ class TestDocSet:
             ],
         )
         assert result.exit_code == 0
-        # Only the preflight, no create_doc / create_doc_blocks
+        # Only the preflight, no create_doc / create_doc_block
         assert len(httpx_mock.get_requests()) == 1
         parsed = json.loads(result.stdout)
         assert "steps" in parsed
@@ -342,7 +348,7 @@ class TestDocAppend:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"create_doc_blocks": [{"id": "b1", "type": "bullet_list"}]}),
+            json=_ok({"create_doc_block": {"id": "b1", "type": "bullet_list"}}),
         )
         result = runner.invoke(
             app,

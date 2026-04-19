@@ -47,22 +47,22 @@ class TestMarkdownToBlocks:
         assert blocks[0]["type"] == "normal_text"
         assert "Hello world" in str(blocks[0]["content"])
 
-    def test_h1_is_heading(self) -> None:
+    def test_h1_is_large_title(self) -> None:
         blocks = markdown_to_blocks("# Title")
-        assert blocks[0]["type"] == "heading"
+        assert blocks[0]["type"] == "large_title"
         assert "Title" in str(blocks[0]["content"])
 
-    def test_h2_is_sub_heading(self) -> None:
-        assert markdown_to_blocks("## Sub")[0]["type"] == "sub_heading"
+    def test_h2_is_medium_title(self) -> None:
+        assert markdown_to_blocks("## Sub")[0]["type"] == "medium_title"
 
-    def test_h3_is_small_heading(self) -> None:
-        assert markdown_to_blocks("### Small")[0]["type"] == "small_heading"
+    def test_h3_is_small_title(self) -> None:
+        assert markdown_to_blocks("### Small")[0]["type"] == "small_title"
 
     def test_bullet_list(self) -> None:
         md = "- one\n- two\n- three"
         blocks = markdown_to_blocks(md)
         assert len(blocks) == 3
-        assert all(b["type"] == "bullet_list" for b in blocks)
+        assert all(b["type"] == "bulleted_list" for b in blocks)
 
     def test_numbered_list(self) -> None:
         blocks = markdown_to_blocks("1. one\n2. two")
@@ -86,7 +86,7 @@ class TestMarkdownToBlocks:
         md = "# Heading\n\nParagraph text.\n\n- bullet 1\n- bullet 2"
         blocks = markdown_to_blocks(md)
         types = [b["type"] for b in blocks]
-        assert types == ["heading", "normal_text", "bullet_list", "bullet_list"]
+        assert types == ["large_title", "normal_text", "bulleted_list", "bulleted_list"]
 
     def test_empty_returns_empty(self) -> None:
         assert markdown_to_blocks("") == []
@@ -107,20 +107,37 @@ class TestBlocksToMarkdown:
     def test_heading_levels(self) -> None:
         out = blocks_to_markdown(
             [
-                self._block("heading", "H1"),
-                self._block("sub_heading", "H2"),
-                self._block("small_heading", "H3"),
+                self._block("large_title", "H1"),
+                self._block("medium_title", "H2"),
+                self._block("small_title", "H3"),
             ]
         )
         assert "# H1" in out
         assert "## H2" in out
         assert "### H3" in out
 
+    def test_heading_legacy_names_still_render(self) -> None:
+        """Back-compat: older monday docs may still carry the renamed types
+        (`heading`, `sub_heading`, `small_heading`, `bullet_list`) — reads
+        normalize them via _READ_ALIASES so existing content stays renderable."""
+        out = blocks_to_markdown(
+            [
+                self._block("heading", "H1"),
+                self._block("sub_heading", "H2"),
+                self._block("small_heading", "H3"),
+                self._block("bullet_list", "legacy"),
+            ]
+        )
+        assert "# H1" in out
+        assert "## H2" in out
+        assert "### H3" in out
+        assert "- legacy" in out
+
     def test_bullet_list(self) -> None:
         out = blocks_to_markdown(
             [
-                self._block("bullet_list", "a"),
-                self._block("bullet_list", "b"),
+                self._block("bulleted_list", "a"),
+                self._block("bulleted_list", "b"),
             ]
         )
         assert "- a" in out
@@ -166,7 +183,7 @@ class TestRealMondayShapes:
 
     def test_handles_json_string_content(self) -> None:
         # Delta content arrives as a string that must be re-parsed.
-        block = {"type": "heading", "content": '{"deltaFormat":[{"insert":"Big"}]}'}
+        block = {"type": "large_title", "content": '{"deltaFormat":[{"insert":"Big"}]}'}
         assert "# Big" in blocks_to_markdown([block])
 
     def test_empty_delta_renders_empty(self) -> None:

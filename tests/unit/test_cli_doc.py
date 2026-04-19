@@ -207,7 +207,7 @@ class TestBlocks:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"create_doc_blocks": [{"id": "b1", "type": "normal_text"}]}),
+            json=_ok({"create_doc_block": {"id": "b1", "type": "normal_text"}}),
         )
         result = runner.invoke(
             app,
@@ -225,15 +225,16 @@ class TestBlocks:
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
         assert v["doc"] == 10
-        assert v["blocks"] == [
-            {"type": "normal_text", "content": {"deltaFormat": [{"insert": "hi"}]}}
-        ]
+        assert v["type"] == "normal_text"
+        assert json.loads(v["content"]) == {"deltaFormat": [{"insert": "hi"}]}
+        assert v["after"] is None
+        assert v["parent"] is None
 
     def test_add_block_with_after_and_parent(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"create_doc_blocks": [{"id": "b1"}]}),
+            json=_ok({"create_doc_block": {"id": "b1"}}),
         )
         result = runner.invoke(
             app,
@@ -254,8 +255,8 @@ class TestBlocks:
         )
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
-        assert v["blocks"][0]["after_block_id"] == "pre"
-        assert v["blocks"][0]["parent_block_id"] == "parent"
+        assert v["after"] == "pre"
+        assert v["parent"] == "parent"
 
     def test_add_block_invalid_json(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
@@ -277,20 +278,19 @@ class TestBlocks:
     def test_add_content_from_markdown(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         src = tmp_path / "spec.md"
         src.write_text("# Title\n\nParagraph.\n\n- one\n- two\n")
+        # Pre-fetch for existing doc blocks (empty doc → first append has after=None)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "create_doc_blocks": [
-                        {"id": "b1", "type": "heading"},
-                        {"id": "b2", "type": "normal_text"},
-                        {"id": "b3", "type": "bullet_list"},
-                        {"id": "b4", "type": "bullet_list"},
-                    ]
-                }
-            ),
+            json=_ok({"docs": [{"id": "10", "blocks": []}]}),
         )
+        # 4 blocks → 4 singular create_doc_block calls. Chain via after_block_id.
+        for block_id in ("b1", "b2", "b3", "b4"):
+            httpx_mock.add_response(
+                url=ENDPOINT,
+                method="POST",
+                json=_ok({"create_doc_block": {"id": block_id, "type": "normal_text"}}),
+            )
         result = runner.invoke(
             app,
             [
@@ -303,8 +303,42 @@ class TestBlocks:
             ],
         )
         assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
-        assert len(v["blocks"]) >= 3
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        # 1 pre-fetch + one request per block
+        assert len(bodies) == 5
+        # First create call has no `after` (empty doc); subsequent chain
+        assert bodies[1]["variables"]["after"] is None
+        assert bodies[2]["variables"]["after"] == "b1"
+        assert bodies[3]["variables"]["after"] == "b2"
+        assert bodies[4]["variables"]["after"] == "b3"
+
+    def test_add_content_seeds_from_last_block_on_nonempty_doc(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """Append semantics: if the doc already has blocks, the first new
+        block goes after the existing last one (monday's default for
+        after=null is TOP insert, which breaks append)."""
+        src = tmp_path / "spec.md"
+        src.write_text("Paragraph\n")
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "10", "blocks": [{"id": "existing-last", "type": "quote"}]}]}
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "new-b1", "type": "normal_text"}}),
+        )
+        result = runner.invoke(
+            app,
+            ["doc", "add-content", "--doc", "10", "--from-file", str(src)],
+        )
+        assert result.exit_code == 0, result.stdout
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        assert bodies[1]["variables"]["after"] == "existing-last"
 
     def test_add_content_empty_input_exit_5(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         empty = tmp_path / "e.md"

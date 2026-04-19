@@ -56,7 +56,12 @@ def extract_doc_ids_from_column_value(raw: str | None) -> list[int]:
 
 # --- markdown → blocks ------------------------------------------------------
 
-_HEADING_TYPES = {1: "heading", 2: "sub_heading", 3: "small_heading"}
+# Monday's `DocBlockContentType` enum (API 2026-01) — note that the old
+# `heading`/`sub_heading`/`small_heading`/`bullet_list` names were renamed;
+# we emit the current names but `blocks_to_markdown` accepts both for
+# back-compat when reading older docs.
+_HEADING_TYPES = {1: "large_title", 2: "medium_title", 3: "small_title"}
+_BULLET_LIST_TYPE = "bulleted_list"
 
 _BULLET_RE = re.compile(r"^\s*[-*+]\s+(.*)$")
 _NUMBERED_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
@@ -143,7 +148,9 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
         m = _BULLET_RE.match(line)
         if m:
             flush_paragraph()
-            blocks.append({"type": "bullet_list", "content": _text_content(m.group(1).strip())})
+            blocks.append(
+                {"type": _BULLET_LIST_TYPE, "content": _text_content(m.group(1).strip())}
+            )
             i += 1
             continue
 
@@ -198,10 +205,22 @@ def _extract_text(content: Any) -> str:
     return ""
 
 
+_READ_ALIASES = {
+    # old name → normalized-for-dispatch name
+    "heading": "large_title",
+    "sub_heading": "medium_title",
+    "small_heading": "small_title",
+    "bullet_list": "bulleted_list",
+}
+
+
 def _normalize_type(btype: str) -> str:
-    """monday returns block types as "normal text" but accepts "normal_text" on
-    write. Normalize spaces to underscores so our dispatch works either way."""
-    return btype.replace(" ", "_")
+    """Normalize a block type read from monday so dispatch works regardless
+    of schema age. Strips spaces (monday sometimes returns "normal text"
+    rather than "normal_text") and maps deprecated names to their current
+    `DocBlockContentType` enum values."""
+    normalized = btype.replace(" ", "_")
+    return _READ_ALIASES.get(normalized, normalized)
 
 
 def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
@@ -219,13 +238,13 @@ def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
 
         if btype == "divider":
             lines.append("---")
-        elif btype == "heading":
+        elif btype == "large_title":
             lines.append(f"# {text}")
-        elif btype == "sub_heading":
+        elif btype == "medium_title":
             lines.append(f"## {text}")
-        elif btype == "small_heading":
+        elif btype == "small_title":
             lines.append(f"### {text}")
-        elif btype == "bullet_list":
+        elif btype == "bulleted_list":
             lines.append(f"- {text}")
         elif btype == "numbered_list":
             numbered_counter += 1

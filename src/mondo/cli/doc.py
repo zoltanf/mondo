@@ -29,7 +29,7 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.pagination import iter_boards_page
 from mondo.api.queries import (
-    CREATE_DOC_BLOCKS,
+    CREATE_DOC_BLOCK,
     CREATE_DOC_IN_WORKSPACE,
     DELETE_DOC_BLOCK,
     DOC_GET_BY_ID,
@@ -255,11 +255,7 @@ def create_cmd(
 @app.command("add-block")
 def add_block_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(
-        ...,
-        "--doc",
-        help="Doc ID (internal id, NOT object_id — matches create_doc_blocks' arg).",
-    ),
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id, NOT object_id)."),
     block_type: str = typer.Option(
         ...,
         "--type",
@@ -279,23 +275,23 @@ def add_block_cmd(
     except json.JSONDecodeError as e:
         typer.secho(f"error: --content is not valid JSON: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
-    block: dict[str, Any] = {"type": block_type, "content": parsed_content}
-    if after is not None:
-        block["after_block_id"] = after
-    if parent_block is not None:
-        block["parent_block_id"] = parent_block
-    variables = {"doc": doc_id, "blocks": [block]}
+    variables: dict[str, Any] = {
+        "doc": doc_id,
+        "type": block_type,
+        "content": json.dumps(parsed_content),
+        "after": after,
+        "parent": parent_block,
+    }
     if opts.dry_run:
-        _dry_run(opts, CREATE_DOC_BLOCKS, variables)
+        _dry_run(opts, CREATE_DOC_BLOCK, variables)
     client = _client_or_exit(opts)
     try:
         with client:
-            data = _exec_or_exit(client, CREATE_DOC_BLOCKS, variables)
+            data = _exec_or_exit(client, CREATE_DOC_BLOCK, variables)
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    created = data.get("create_doc_blocks") or []
-    opts.emit(created[0] if created else {})
+    opts.emit(data.get("create_doc_block") or {})
 
 
 @app.command("add-content")
@@ -306,7 +302,11 @@ def add_content_cmd(
     from_file: Path | None = typer.Option(None, "--from-file", help="Load markdown from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
 ) -> None:
-    """Append markdown to a doc as a bulk `create_doc_blocks` call.
+    """Append markdown to a doc by looping `create_doc_block` per block.
+
+    Monday removed the bulk `create_doc_blocks` mutation; we chain
+    `after_block_id` so the rendered doc preserves the input order even
+    under concurrent edits.
 
     Block types supported via `mondo.docs.markdown_to_blocks`: headings h1-h3,
     paragraphs, bullet / numbered lists, blockquotes, fenced code, horizontal rules.
@@ -321,17 +321,45 @@ def add_content_cmd(
             err=True,
         )
         raise typer.Exit(code=5)
-    variables = {"doc": doc_id, "blocks": blocks}
     if opts.dry_run:
-        _dry_run(opts, CREATE_DOC_BLOCKS, variables)
+        _dry_run(
+            opts,
+            f"{CREATE_DOC_BLOCK} (looped per block)",
+            {"doc": doc_id, "blocks": blocks},
+        )
     client = _client_or_exit(opts)
+    created: list[dict[str, Any]] = []
     try:
         with client:
-            data = _exec_or_exit(client, CREATE_DOC_BLOCKS, variables)
+            # Seed `after_block_id` from the doc's current last block so blocks
+            # land at the end (monday's default for `after=null` is TOP insert).
+            pre = _exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
+            docs_list = pre.get("docs") or []
+            existing_blocks = (docs_list[0].get("blocks") or []) if docs_list else []
+            prev_id: str | None = (
+                str(existing_blocks[-1].get("id")) if existing_blocks else None
+            )
+            for block in blocks:
+                data = _exec_or_exit(
+                    client,
+                    CREATE_DOC_BLOCK,
+                    {
+                        "doc": doc_id,
+                        "type": block["type"],
+                        "content": json.dumps(block.get("content") or {}),
+                        "after": prev_id,
+                        "parent": None,
+                    },
+                )
+                result = data.get("create_doc_block") or {}
+                created.append(result)
+                new_id = result.get("id")
+                if new_id:
+                    prev_id = str(new_id)
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    opts.emit(data.get("create_doc_blocks") or [])
+    opts.emit(created)
 
 
 @app.command("update-block")

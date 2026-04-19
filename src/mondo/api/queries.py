@@ -403,10 +403,25 @@ mutation ($item: ID!, $col: String!) {
 """.strip()
 
 
-# Bulk-create blocks at the end of a doc.
-CREATE_DOC_BLOCKS = """
-mutation ($doc: ID!, $blocks: [CreateBlockInput!]!) {
-  create_doc_blocks(doc_id: $doc, blocks: $blocks) {
+# Create a single block at the end of a doc. Monday's schema no longer exposes
+# a bulk `create_doc_blocks` — callers loop this singular mutation, preserving
+# the order by chaining `after_block_id` (first insertion has no predecessor;
+# each subsequent one uses the previous block's id).
+CREATE_DOC_BLOCK = """
+mutation (
+  $doc: ID!
+  $type: DocBlockContentType!
+  $content: JSON!
+  $after: String
+  $parent: String
+) {
+  create_doc_block(
+    doc_id: $doc
+    type: $type
+    content: $content
+    after_block_id: $after
+    parent_block_id: $parent
+  ) {
     id
     type
   }
@@ -1023,10 +1038,10 @@ mutation (
   $folder: ID
   $workspace: ID
   $template: ID
-  $ownerIds: [ID]
-  $ownerTeamIds: [ID]
-  $subscriberIds: [ID]
-  $subscriberTeamIds: [ID]
+  $ownerIds: [ID!]
+  $ownerTeamIds: [ID!]
+  $subscriberIds: [ID!]
+  $subscriberTeamIds: [ID!]
   $empty: Boolean
 ) {
   create_board(
@@ -1307,7 +1322,7 @@ WORKSPACES_LIST_PAGE = """
 query (
   $limit: Int!
   $page: Int!
-  $ids: [ID]
+  $ids: [ID!]
   $kind: WorkspaceKind
   $state: State
 ) {
@@ -1816,7 +1831,7 @@ mutation ($item: ID!) {
 
 UPDATE_PIN = """
 mutation ($item: ID, $update: ID!) {
-  pin_to_top(item_id: $item, update_id: $update) {
+  pin_to_top(item_id: $item, id: $update) {
     id
     item_id
   }
@@ -1826,7 +1841,7 @@ mutation ($item: ID, $update: ID!) {
 
 UPDATE_UNPIN = """
 mutation ($item: ID, $update: ID!) {
-  unpin_from_top(item_id: $item, update_id: $update) {
+  unpin_from_top(item_id: $item, id: $update) {
     id
     item_id
   }

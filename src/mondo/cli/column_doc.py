@@ -6,7 +6,9 @@ then query `docs(object_ids:...)` for the block tree.
 
 Writing means either creating a new doc attached to the column
 (`create_doc(location: { board: { item_id, column_id } })`) or appending
-blocks to an existing doc (`create_doc_blocks`).
+blocks to an existing doc (monday dropped the bulk `create_doc_blocks`; we
+loop `create_doc_block` singular calls, chaining `after_block_id` so order
+is preserved under concurrent edits).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     CHANGE_COLUMN_VALUE,
     COLUMN_CONTEXT,
-    CREATE_DOC_BLOCKS,
+    CREATE_DOC_BLOCK,
     CREATE_DOC_ON_ITEM,
     DOCS_BY_OBJECT_ID,
 )
@@ -96,6 +98,54 @@ def _fetch_doc_blocks(client: MondayClient, object_id: int) -> dict[str, Any]:
     return doc
 
 
+def _create_blocks(
+    client: MondayClient,
+    doc_id: int,
+    blocks: list[dict[str, Any]],
+    *,
+    after_block_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Append `blocks` to `doc_id` in order, chaining via `after_block_id`.
+
+    monday removed the bulk `create_doc_blocks` mutation; a loop of
+    `create_doc_block` is the canonical replacement. Chaining keeps the
+    user-specified order stable even if other clients are writing concurrently.
+
+    Without an `after_block_id`, monday inserts at the *top* of the doc; pass
+    the existing last block's id to get true append semantics.
+    """
+    created: list[dict[str, Any]] = []
+    prev_id: str | None = after_block_id
+    for block in blocks:
+        data = _exec(
+            client,
+            CREATE_DOC_BLOCK,
+            {
+                "doc": doc_id,
+                "type": block["type"],
+                "content": json.dumps(block.get("content") or {}),
+                "after": prev_id,
+                "parent": None,
+            },
+        )
+        result = data.get("create_doc_block") or {}
+        created.append(result)
+        new_id = result.get("id")
+        if new_id:
+            prev_id = str(new_id)
+    return created
+
+
+def _last_block_id(doc: dict[str, Any]) -> str | None:
+    """Pluck the id of the last top-level block on a doc, or None if empty."""
+    blocks = doc.get("blocks") or []
+    if not blocks:
+        return None
+    last = blocks[-1]
+    last_id = last.get("id") if isinstance(last, dict) else None
+    return str(last_id) if last_id else None
+
+
 # ----- commands -----
 
 
@@ -157,8 +207,8 @@ def set_cmd(
     """Create the doc (if empty) and populate it from markdown. If the column
     already points to a doc, the new blocks are appended (use `doc clear` first
     to replace). Workflow:
-    1. Empty column: `create_doc(board={item_id,column_id})` → `create_doc_blocks`
-    2. Existing doc: `create_doc_blocks`
+    1. Empty column: `create_doc(board={item_id,column_id})` → loop `create_doc_block`
+    2. Existing doc: loop `create_doc_block`
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
@@ -184,7 +234,7 @@ def set_cmd(
                                     "variables": {"item": item_id, "col": column_id},
                                 },
                                 {
-                                    "query": CREATE_DOC_BLOCKS,
+                                    "query": f"{CREATE_DOC_BLOCK} (looped per block)",
                                     "variables": {"doc": "<new-doc-id>", "blocks": blocks},
                                 },
                             ]
@@ -196,7 +246,7 @@ def set_cmd(
                 doc_id = doc.get("id")
                 if not doc_id:
                     raise MondoError("create_doc returned no id")
-                _exec(client, CREATE_DOC_BLOCKS, {"doc": int(doc_id), "blocks": blocks})
+                _create_blocks(client, int(doc_id), blocks)
                 opts.emit(
                     {
                         "doc_id": doc_id,
@@ -208,7 +258,7 @@ def set_cmd(
                 )
                 return
 
-            # Existing doc: append blocks
+            # Existing doc: append blocks (after the current last block)
             doc = _fetch_doc_blocks(client, object_ids[0])
             doc_id = doc.get("id")
             if not doc_id:
@@ -216,12 +266,12 @@ def set_cmd(
             if opts.dry_run:
                 opts.emit(
                     {
-                        "query": CREATE_DOC_BLOCKS,
+                        "query": f"{CREATE_DOC_BLOCK} (looped per block)",
                         "variables": {"doc": int(doc_id), "blocks": blocks},
                     }
                 )
                 raise typer.Exit(0)
-            _exec(client, CREATE_DOC_BLOCKS, {"doc": int(doc_id), "blocks": blocks})
+            _create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
             opts.emit(
                 {
                     "doc_id": doc_id,
@@ -277,12 +327,12 @@ def append_cmd(
             if opts.dry_run:
                 opts.emit(
                     {
-                        "query": CREATE_DOC_BLOCKS,
+                        "query": f"{CREATE_DOC_BLOCK} (looped per block)",
                         "variables": {"doc": int(doc_id), "blocks": blocks},
                     }
                 )
                 raise typer.Exit(0)
-            _exec(client, CREATE_DOC_BLOCKS, {"doc": int(doc_id), "blocks": blocks})
+            _create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
     except NotFoundError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from e

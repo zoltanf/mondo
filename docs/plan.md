@@ -211,7 +211,7 @@ mondo column doc get --item <id> --column <col-id> [--format markdown|raw-blocks
     Reads the doc column, extracts object_id, fetches docs(object_ids:[...]) { id object_id blocks { id type content } },
     and either serializes blocks to Markdown (default) or returns raw JSON block array.
 mondo column doc set --item <id> --column <col-id> --from-file spec.md
-    If column already points to a doc: append markdown via create_doc_block / create_doc_blocks.
+    If column already points to a doc: loop `create_doc_block` per markdown block (monday no longer exposes a bulk `create_doc_blocks`), chaining `after_block_id` to preserve order.
     If empty: create_doc(location: { board: { item_id, column_id } }) then import markdown as blocks.
 mondo column doc append --item <id> --column <col-id> --markdown "- new bullet"
 mondo column doc clear --item <id> --column <col-id>
