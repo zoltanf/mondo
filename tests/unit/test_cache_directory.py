@@ -181,8 +181,8 @@ def test_get_teams_warm_cache(tmp_path: Path) -> None:
 def test_get_docs_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
     store = _store(tmp_path, "docs")
     client = FakeClient([
+        {"data": {"workspaces": [{"id": "42"}]}},
         {"data": {"docs": [{"id": "1", "object_id": "100", "name": "Spec"}]}},
-        {"data": {"docs": []}},  # stop signal
     ])
 
     result = get_docs(client, store=store)
@@ -207,8 +207,8 @@ def test_get_docs_refresh_overrides_cache(tmp_path: Path) -> None:
     store = _store(tmp_path, "docs")
     store.write([{"id": "1", "object_id": "100", "name": "Stale"}])
     client = FakeClient([
+        {"data": {"workspaces": [{"id": "42"}]}},
         {"data": {"docs": [{"id": "2", "object_id": "200", "name": "Fresh"}]}},
-        {"data": {"docs": []}},
     ])
 
     result = get_docs(client, store=store, refresh=True)
@@ -217,21 +217,46 @@ def test_get_docs_refresh_overrides_cache(tmp_path: Path) -> None:
     assert client.calls, "refresh=True must call the API"
 
 
-def test_get_docs_primes_without_workspace_filter(tmp_path: Path) -> None:
-    """Monday silently scopes docs() to one workspace when workspace_ids is
-    null; the priming query must omit the filter entirely."""
+def test_get_docs_primes_per_workspace_and_merges(tmp_path: Path) -> None:
+    """Monday's unfiltered `docs(...)` silently undercounts (especially recent
+    docs). Priming must enumerate workspaces and fan out one
+    `docs(workspace_ids: [X])` query per workspace, merging the results."""
     store = _store(tmp_path, "docs")
-    client = FakeClient([{"data": {"docs": []}}])
+    client = FakeClient([
+        # workspaces list — single page (< page size stops pagination)
+        {"data": {"workspaces": [{"id": "10"}, {"id": "20"}]}},
+        # docs for workspace 10 — single page
+        {"data": {"docs": [{"id": "1", "object_id": "100", "name": "A",
+                            "workspace_id": "10"}]}},
+        # docs for workspace 20 — single page
+        {"data": {"docs": [{"id": "2", "object_id": "200", "name": "B",
+                            "workspace_id": "20"}]}},
+    ])
 
-    get_docs(client, store=store)
+    result = get_docs(client, store=store)
 
-    assert client.calls, "expected an API call"
-    query, variables = client.calls[0]
-    assert variables is not None
-    assert "workspace_ids:" not in query
-    assert "object_ids:" not in query
-    assert "ids: $ids" not in query
-    assert "order_by:" not in query
+    assert {e["id"] for e in result.entries} == {"1", "2"}
+    # Every docs() query must be scoped: workspace_ids is the whole point.
+    docs_calls = [(q, v) for q, v in client.calls if "docs(" in q]
+    assert len(docs_calls) == 2, client.calls
+    seen_ws = sorted(v["workspaceIds"] for _, v in docs_calls if v)
+    assert seen_ws == [[10], [20]]
+
+
+def test_get_docs_dedupes_across_workspaces(tmp_path: Path) -> None:
+    """If the same doc id appears under two workspaces (shouldn't happen in
+    practice but monday has surprised us before), dedupe by id."""
+    store = _store(tmp_path, "docs")
+    duplicate = {"id": "7", "object_id": "77", "name": "Shared"}
+    client = FakeClient([
+        {"data": {"workspaces": [{"id": "10"}, {"id": "20"}]}},
+        {"data": {"docs": [duplicate]}},
+        {"data": {"docs": [duplicate]}},
+    ])
+
+    result = get_docs(client, store=store)
+
+    assert len(result.entries) == 1
 
 
 # -- columns (per-board scoped cache) ----------------------------------------

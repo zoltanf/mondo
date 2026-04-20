@@ -7,6 +7,7 @@ cache. Callers apply any filtering client-side after this returns.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from mondo.api.client import MondayClient
@@ -21,6 +22,17 @@ from mondo.api.queries import (
     build_docs_list_query,
 )
 from mondo.cache.store import CachedDirectory, CacheStore
+
+
+def _dedup_by_id(entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse entries to one-per-id, preserving the last occurrence. Entries
+    without a usable id are skipped so callers don't have to pre-filter."""
+    by_id: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        key = str(entry.get("id") or "")
+        if key:
+            by_id[key] = entry
+    return list(by_id.values())
 
 
 def get_boards(
@@ -149,12 +161,7 @@ def _fetch_all_users(client: MondayClient) -> list[dict[str, Any]]:
             limit=MAX_BOARDS_PAGE_SIZE,
         )
     )
-    by_id: dict[str, dict[str, Any]] = {}
-    for entry in active + disabled:
-        uid = str(entry.get("id") or "")
-        if uid:
-            by_id[uid] = entry
-    return list(by_id.values())
+    return _dedup_by_id(active + disabled)
 
 
 def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:
@@ -168,18 +175,25 @@ def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:
 
 
 def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
-    # Omit filters explicitly — a null workspace_ids triggers monday's
-    # default-workspace scoping (see build_docs_list_query).
-    query, variables = build_docs_list_query()
-    return list(
-        iter_boards_page(
-            client,
-            query=query,
-            variables=variables,
-            collection_key="docs",
-            limit=MAX_BOARDS_PAGE_SIZE,
-        )
-    )
+    # Monday's `docs(...)` without `workspace_ids` silently undercounts —
+    # recent docs in particular go missing. Fan out one scoped query per
+    # workspace and dedupe on merge (defensive; ids are globally unique).
+    def _iter_all() -> Iterable[dict[str, Any]]:
+        for ws in _fetch_all_workspaces(client):
+            try:
+                ws_id = int(ws.get("id"))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            query, variables = build_docs_list_query(workspace_ids=[ws_id])
+            yield from iter_boards_page(
+                client,
+                query=query,
+                variables=variables,
+                collection_key="docs",
+                limit=MAX_BOARDS_PAGE_SIZE,
+            )
+
+    return _dedup_by_id(_iter_all())
 
 
 def get_columns(

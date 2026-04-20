@@ -98,6 +98,12 @@ class TestCacheRefresh:
         assert result.exit_code == 2
 
     def test_refresh_docs_via_cache_cmd(self, httpx_mock: HTTPXMock) -> None:
+        # Priming fans out one docs() call per workspace; queue both stages.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"workspaces": [{"id": "42"}]}),
+        )
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
