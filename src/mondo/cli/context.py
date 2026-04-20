@@ -12,6 +12,8 @@ from typing import Any, TextIO
 
 from mondo.api.auth import ResolvedToken, resolve_token
 from mondo.api.client import MondayClient
+from mondo.cache import CacheStore, ResolvedCacheConfig, resolve_cache_config
+from mondo.cache.store import EntityType
 from mondo.config.loader import config_path, load_config
 from mondo.output import choose_default_format, format_output
 from mondo.output.query import apply_query
@@ -76,3 +78,29 @@ class GlobalOpts:
         )
         api_version = self.flag_api_version or profile.api_version or cfg.api_version
         return MondayClient(token=resolved.token, api_version=api_version)
+
+    def resolve_cache_config(self) -> ResolvedCacheConfig:
+        """Resolve the fully-merged cache configuration for this invocation."""
+        cfg = load_config()
+        return resolve_cache_config(cfg, profile_name=self.profile_name)
+
+    def api_endpoint(self) -> str:
+        """Effective monday API endpoint for the current profile.
+
+        Used as the `api_endpoint` key for cache envelopes so switching profiles
+        (e.g. to a different monday account) doesn't serve stale data.
+        """
+        cfg = load_config()
+        profile = cfg.get_profile(self.profile_name)
+        return profile.api_url
+
+    def build_cache_store(self, entity_type: EntityType) -> CacheStore:
+        """Build a CacheStore for the given entity type, wired with the
+        resolved TTL + endpoint + cache directory."""
+        resolved = self.resolve_cache_config()
+        return CacheStore(
+            entity_type=entity_type,
+            cache_dir=resolved.directory,
+            api_endpoint=self.api_endpoint(),
+            ttl_seconds=resolved.ttl_for(entity_type),
+        )

@@ -27,6 +27,8 @@ from mondo.api.queries import (
     TEAM_DELETE,
     TEAMS_LIST,
 )
+from mondo.cache.directory import get_teams as cache_get_teams
+from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
@@ -62,6 +64,29 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
+def _invalidate_teams_cache(opts: GlobalOpts) -> None:
+    if opts.dry_run:
+        return
+    try:
+        opts.build_cache_store("teams").invalidate()
+    except Exception:
+        pass
+
+
+def _apply_fuzzy(
+    entries: list[dict[str, Any]],
+    query: str,
+    *,
+    threshold: int,
+    include_score: bool,
+) -> list[dict[str, Any]]:
+    scored = fuzzy_score(query, entries, threshold=threshold)
+    if include_score:
+        return [{**entry, "_fuzzy_score": score} for entry, score in scored]
+    matching_ids = {id(entry) for entry, _ in scored}
+    return [e for e in entries if id(e) in matching_ids]
+
+
 # ----- read commands -----
 
 
@@ -71,9 +96,55 @@ def list_cmd(
     team_id: list[int] | None = typer.Option(
         None, "--id", help="Filter to specific team IDs (repeatable)."
     ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Client-side fuzzy filter on team name."
+    ),
+    fuzzy_threshold: int | None = typer.Option(
+        None, "--fuzzy-threshold", help="Minimum fuzzy score (0-100)."
+    ),
+    fuzzy_score_flag: bool = typer.Option(
+        False, "--fuzzy-score", help="Include `_fuzzy_score` field; sort by score desc."
+    ),
+    max_items: int | None = typer.Option(
+        None, "--max-items", help="Stop after this many teams."
+    ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Skip the local directory cache; fetch live."
+    ),
+    refresh_cache: bool = typer.Option(
+        False, "--refresh-cache", help="Force-refresh the local directory cache."
+    ),
 ) -> None:
-    """List teams (optionally filtered to specific IDs)."""
+    """List teams (optionally filtered to specific IDs or by fuzzy name)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if no_cache and refresh_cache:
+        typer.secho(
+            "error: --no-cache and --refresh-cache are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    cache_cfg = opts.resolve_cache_config()
+    use_cache = cache_cfg.enabled and not no_cache
+    effective_fuzzy_threshold = (
+        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
+    )
+
+    if use_cache and not team_id:
+        # `--id` pins to specific IDs → the live query is more targeted than
+        # filtering a full cached directory, so skip cache in that case.
+        _list_teams_via_cache(
+            opts,
+            name_fuzzy=name_fuzzy,
+            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_score_flag=fuzzy_score_flag,
+            max_items=max_items,
+            refresh=refresh_cache,
+        )
+        return
+
     variables = {"ids": team_id or None}
     if opts.dry_run:
         _dry_run(opts, TEAMS_LIST, variables)
@@ -84,7 +155,67 @@ def list_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    opts.emit(data.get("teams") or [])
+    teams = data.get("teams") or []
+    if name_fuzzy is not None:
+        teams = _apply_fuzzy(
+            teams,
+            name_fuzzy,
+            threshold=effective_fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+    if max_items is not None:
+        teams = teams[:max_items]
+    opts.emit(teams)
+
+
+def _list_teams_via_cache(
+    opts: GlobalOpts,
+    *,
+    name_fuzzy: str | None,
+    fuzzy_threshold: int,
+    fuzzy_score_flag: bool,
+    max_items: int | None,
+    refresh: bool,
+) -> None:
+    if opts.dry_run:
+        opts.emit(
+            {
+                "cache": "teams",
+                "refresh": refresh,
+                "filters": {
+                    "name_fuzzy": name_fuzzy,
+                    "fuzzy_threshold": fuzzy_threshold,
+                    "max_items": max_items,
+                },
+            }
+        )
+        raise typer.Exit(0)
+
+    client = _client_or_exit(opts)
+    try:
+        store = opts.build_cache_store("teams")
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    try:
+        with client:
+            cached = cache_get_teams(client, store=store, refresh=refresh)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    entries = cached.entries
+    if name_fuzzy is not None:
+        entries = _apply_fuzzy(
+            entries,
+            name_fuzzy,
+            threshold=fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+    if max_items is not None:
+        entries = entries[:max_items]
+    opts.emit(entries)
 
 
 @app.command("get", epilog=epilog_for("team get"))
@@ -149,6 +280,7 @@ def create_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("create_team") or {})
 
 
@@ -178,6 +310,7 @@ def delete_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("delete_team") or {})
 
 
@@ -199,6 +332,7 @@ def add_users_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("add_users_to_team") or {})
 
 
@@ -220,6 +354,7 @@ def remove_users_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("remove_users_from_team") or {})
 
 
@@ -241,6 +376,7 @@ def assign_owners_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("assign_team_owners") or {})
 
 
@@ -264,4 +400,5 @@ def remove_owners_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("remove_team_owners") or {})

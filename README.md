@@ -8,12 +8,13 @@ Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
 *apps*). `mondo` is a wrapper for the *platform API*: boards, items, columns,
 workspaces, users, docs, webhooks, etc.
 
-> Status: **Phases 1, 2, and 3 complete.** Full command surface: auth, items,
+> Status: **Phases 1, 2, 3, and 4 complete.** Full command surface: auth, items,
 > subitems, columns (+ structural CRUD), groups, boards, workspaces, users,
 > teams, workspace docs, webhooks, files, activity, folders, favorites, tags,
 > notifications, aggregations, validation rules, bulk import/export, raw
-> GraphQL, and session complexity metering. Ships with an agent-facing help
-> system (`mondo help`, `mondo help --dump-spec`) bundled inside the binary.
+> GraphQL, session complexity metering, and a local directory cache with
+> fuzzy name search. Ships with an agent-facing help system (`mondo help`,
+> `mondo help --dump-spec`) bundled inside the binary.
 
 ---
 
@@ -724,6 +725,26 @@ profiles:
 ```
 
 Pick a profile with `--profile work` or `MONDO_PROFILE=work`.
+
+---
+
+## Caching
+
+`mondo` caches the boards / workspaces / users / teams directory on disk so
+repeat `list` calls and name filters don't re-walk the monday API. The cache
+lives at `$XDG_CACHE_HOME/mondo/<profile>/` with per-entity TTLs (boards 8h,
+others 24h). Inspect or manage it:
+
+```bash
+mondo cache status            # age, freshness, entry count per type
+mondo cache refresh boards    # force-refetch the boards directory
+mondo cache clear             # drop every cache file
+```
+
+Per-command escape hatches: `--no-cache` (skip) and `--refresh-cache` (force
+refetch). Fuzzy name matching (`--name-fuzzy "prodct launc"`) is available on
+all four list commands now that the directory is resident. Full contract:
+[`docs/caching.md`](docs/caching.md).
 
 ---
 

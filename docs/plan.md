@@ -262,6 +262,14 @@ mondo me
 mondo account
 ```
 
+**Phase 4 — local directory cache (performance)**
+```
+mondo cache status|refresh|clear [boards|workspaces|users|teams|all]
+# Transparent serving of `mondo {board,workspace,user,team} list` from a
+# per-profile on-disk cache, plus `--name-fuzzy` matching.
+# Full contract: docs/caching.md
+```
+
 ## 8. GraphQL client architecture
 
 ### 8.1 Client (`api/client.py`)

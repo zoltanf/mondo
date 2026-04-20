@@ -32,6 +32,8 @@ from mondo.api.queries import (
     USERS_UPDATE_AS_MEMBERS,
     USERS_UPDATE_AS_VIEWERS,
 )
+from mondo.cache.directory import get_users as cache_get_users
+from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
@@ -89,6 +91,38 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
+def _invalidate_users_cache(opts: GlobalOpts) -> None:
+    if opts.dry_run:
+        return
+    try:
+        opts.build_cache_store("users").invalidate()
+    except Exception:
+        pass
+
+
+def _invalidate_teams_cache(opts: GlobalOpts) -> None:
+    if opts.dry_run:
+        return
+    try:
+        opts.build_cache_store("teams").invalidate()
+    except Exception:
+        pass
+
+
+def _apply_fuzzy(
+    entries: list[dict[str, Any]],
+    query: str,
+    *,
+    threshold: int,
+    include_score: bool,
+) -> list[dict[str, Any]]:
+    scored = fuzzy_score(query, entries, threshold=threshold)
+    if include_score:
+        return [{**entry, "_fuzzy_score": score} for entry, score in scored]
+    matching_ids = {id(entry) for entry, _ in scored}
+    return [e for e in entries if id(e) in matching_ids]
+
+
 # ----- read commands -----
 
 
@@ -106,7 +140,16 @@ def list_cmd(
         "--email",
         help="Filter by email (case-sensitive exact match, repeatable).",
     ),
-    name: str | None = typer.Option(None, "--name", help="Server-side substring filter on name."),
+    name: str | None = typer.Option(None, "--name", help="Substring filter on name."),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Client-side fuzzy filter on user name."
+    ),
+    fuzzy_threshold: int | None = typer.Option(
+        None, "--fuzzy-threshold", help="Minimum fuzzy score (0-100)."
+    ),
+    fuzzy_score_flag: bool = typer.Option(
+        False, "--fuzzy-score", help="Include `_fuzzy_score` field; sort by score desc."
+    ),
     non_active: bool = typer.Option(False, "--non-active", help="Include deactivated users."),
     newest_first: bool = typer.Option(
         False, "--newest-first", help="Sort by most recently created."
@@ -114,14 +157,51 @@ def list_cmd(
     limit: int = typer.Option(
         MAX_BOARDS_PAGE_SIZE,
         "--limit",
-        help=f"Page size (max {MAX_BOARDS_PAGE_SIZE}).",
+        help=f"Page size for live fetches (max {MAX_BOARDS_PAGE_SIZE}); ignored when served from cache.",
     ),
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many users total."
     ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Skip the local directory cache; fetch live."
+    ),
+    refresh_cache: bool = typer.Option(
+        False, "--refresh-cache", help="Force-refresh the local directory cache."
+    ),
 ) -> None:
-    """List users (page-based pagination)."""
+    """List users. Served from the local directory cache when available."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if no_cache and refresh_cache:
+        typer.secho(
+            "error: --no-cache and --refresh-cache are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    cache_cfg = opts.resolve_cache_config()
+    use_cache = cache_cfg.enabled and not no_cache
+    effective_fuzzy_threshold = (
+        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
+    )
+
+    if use_cache:
+        _list_users_via_cache(
+            opts,
+            kind=kind,
+            emails=email,
+            name=name,
+            name_fuzzy=name_fuzzy,
+            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_score_flag=fuzzy_score_flag,
+            non_active=non_active,
+            newest_first=newest_first,
+            max_items=max_items,
+            refresh=refresh_cache,
+        )
+        return
+
     variables: dict[str, Any] = {
         "ids": None,
         "kind": kind.value if kind else None,
@@ -150,13 +230,106 @@ def list_cmd(
                     variables=variables,
                     collection_key="users",
                     limit=limit,
-                    max_items=max_items,
+                    max_items=None if name_fuzzy else max_items,
                 )
             )
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    if name_fuzzy is not None:
+        items = _apply_fuzzy(
+            items,
+            name_fuzzy,
+            threshold=effective_fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+        if max_items is not None:
+            items = items[:max_items]
     opts.emit(items)
+
+
+def _list_users_via_cache(
+    opts: GlobalOpts,
+    *,
+    kind: UserKind | None,
+    emails: list[str] | None,
+    name: str | None,
+    name_fuzzy: str | None,
+    fuzzy_threshold: int,
+    fuzzy_score_flag: bool,
+    non_active: bool,
+    newest_first: bool,
+    max_items: int | None,
+    refresh: bool,
+) -> None:
+    if opts.dry_run:
+        opts.emit(
+            {
+                "cache": "users",
+                "refresh": refresh,
+                "filters": {
+                    "kind": kind.value if kind else None,
+                    "emails": emails or None,
+                    "name": name,
+                    "name_fuzzy": name_fuzzy,
+                    "fuzzy_threshold": fuzzy_threshold,
+                    "non_active": non_active,
+                    "newest_first": newest_first,
+                    "max_items": max_items,
+                },
+            }
+        )
+        raise typer.Exit(0)
+
+    client = _client_or_exit(opts)
+    try:
+        store = opts.build_cache_store("users")
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    try:
+        with client:
+            cached = cache_get_users(client, store=store, refresh=refresh)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    entries = cached.entries
+    if not non_active:
+        entries = [u for u in entries if u.get("enabled") is not False]
+    if kind is not None:
+        match kind:
+            case UserKind.all:
+                pass
+            case UserKind.non_guests:
+                entries = [u for u in entries if not u.get("is_guest")]
+            case UserKind.guests:
+                entries = [u for u in entries if u.get("is_guest")]
+            case UserKind.non_pending:
+                entries = [u for u in entries if not u.get("is_pending")]
+    if emails:
+        allowed = set(emails)
+        entries = [u for u in entries if u.get("email") in allowed]
+    if name is not None:
+        needle = name.lower()
+        entries = [u for u in entries if needle in (u.get("name") or "").lower()]
+    if newest_first:
+        entries = sorted(
+            entries, key=lambda u: u.get("created_at") or "", reverse=True
+        )
+
+    if name_fuzzy is not None:
+        entries = _apply_fuzzy(
+            entries,
+            name_fuzzy,
+            threshold=fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+
+    if max_items is not None:
+        entries = entries[:max_items]
+    opts.emit(entries)
 
 
 @app.command("get", epilog=epilog_for("user get"))
@@ -203,6 +376,7 @@ def deactivate_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_users_cache(opts)
     opts.emit(data.get("deactivate_users") or {})
 
 
@@ -223,6 +397,7 @@ def activate_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_users_cache(opts)
     opts.emit(data.get("activate_users") or {})
 
 
@@ -253,6 +428,7 @@ def update_role_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_users_cache(opts)
     opts.emit(data.get(response_key) or {})
 
 
@@ -274,6 +450,7 @@ def add_to_team_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("add_users_to_team") or {})
 
 
@@ -295,4 +472,5 @@ def remove_from_team_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_teams_cache(opts)
     opts.emit(data.get("remove_users_from_team") or {})

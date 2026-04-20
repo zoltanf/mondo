@@ -267,6 +267,10 @@ boards(ids: [ID!], limit: Int = 25, page: Int = 1,
 `State`: `active | archived | deleted | all`.
 `BoardsOrderBy`: `used_at | created_at`.
 
+> No server-side name filter. For repeat client-side filtering perf, `mondo`
+> caches the board directory locally (same for workspaces/users/teams). See
+> `docs/caching.md`.
+
 **Board type — key fields:**
 ```
 id, name, description, state, board_kind, board_folder_id, workspace_id,

@@ -25,6 +25,8 @@ from mondo.api.queries import (
     WORKSPACE_UPDATE,
     WORKSPACES_LIST_PAGE,
 )
+from mondo.cache.directory import get_workspaces as cache_get_workspaces
+from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli.context import GlobalOpts
@@ -77,6 +79,30 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
+def _invalidate_workspaces_cache(opts: GlobalOpts) -> None:
+    """Drop the workspaces cache file after a successful mutation."""
+    if opts.dry_run:
+        return
+    try:
+        opts.build_cache_store("workspaces").invalidate()
+    except Exception:
+        pass
+
+
+def _apply_fuzzy(
+    entries: list[dict[str, Any]],
+    query: str,
+    *,
+    threshold: int,
+    include_score: bool,
+) -> list[dict[str, Any]]:
+    scored = fuzzy_score(query, entries, threshold=threshold)
+    if include_score:
+        return [{**entry, "_fuzzy_score": score} for entry, score in scored]
+    matching_ids = {id(entry) for entry, _ in scored}
+    return [e for e in entries if id(e) in matching_ids]
+
+
 # ----- read commands -----
 
 
@@ -89,17 +115,60 @@ def list_cmd(
     state: WorkspaceState | None = typer.Option(
         None, "--state", help="Filter by state (default: active).", case_sensitive=False
     ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Client-side fuzzy filter on workspace name."
+    ),
+    fuzzy_threshold: int | None = typer.Option(
+        None, "--fuzzy-threshold", help="Minimum fuzzy score (0-100)."
+    ),
+    fuzzy_score_flag: bool = typer.Option(
+        False, "--fuzzy-score", help="Include `_fuzzy_score` field; sort by score desc."
+    ),
     limit: int = typer.Option(
         MAX_BOARDS_PAGE_SIZE,
         "--limit",
-        help=f"Page size (max {MAX_BOARDS_PAGE_SIZE}).",
+        help=f"Page size for live fetches (max {MAX_BOARDS_PAGE_SIZE}); ignored when served from cache.",
     ),
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many workspaces total."
     ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Skip the local directory cache; fetch live."
+    ),
+    refresh_cache: bool = typer.Option(
+        False, "--refresh-cache", help="Force-refresh the local directory cache."
+    ),
 ) -> None:
-    """List workspaces (page-based pagination)."""
+    """List workspaces. Served from the local directory cache when available."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if no_cache and refresh_cache:
+        typer.secho(
+            "error: --no-cache and --refresh-cache are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    cache_cfg = opts.resolve_cache_config()
+    use_cache = cache_cfg.enabled and not no_cache
+    effective_fuzzy_threshold = (
+        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
+    )
+
+    if use_cache:
+        _list_workspaces_via_cache(
+            opts,
+            kind=kind,
+            state=state,
+            name_fuzzy=name_fuzzy,
+            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_score_flag=fuzzy_score_flag,
+            max_items=max_items,
+            refresh=refresh_cache,
+        )
+        return
+
     variables: dict[str, Any] = {
         "ids": None,
         "kind": kind.value if kind else None,
@@ -125,13 +194,83 @@ def list_cmd(
                     variables=variables,
                     collection_key="workspaces",
                     limit=limit,
-                    max_items=max_items,
+                    max_items=None if name_fuzzy else max_items,
                 )
             )
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    if name_fuzzy is not None:
+        items = _apply_fuzzy(
+            items,
+            name_fuzzy,
+            threshold=effective_fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+        if max_items is not None:
+            items = items[:max_items]
     opts.emit(items)
+
+
+def _list_workspaces_via_cache(
+    opts: GlobalOpts,
+    *,
+    kind: WorkspaceKind | None,
+    state: WorkspaceState | None,
+    name_fuzzy: str | None,
+    fuzzy_threshold: int,
+    fuzzy_score_flag: bool,
+    max_items: int | None,
+    refresh: bool,
+) -> None:
+    if opts.dry_run:
+        opts.emit(
+            {
+                "cache": "workspaces",
+                "refresh": refresh,
+                "filters": {
+                    "kind": kind.value if kind else None,
+                    "state": state.value if state else None,
+                    "name_fuzzy": name_fuzzy,
+                    "fuzzy_threshold": fuzzy_threshold,
+                    "max_items": max_items,
+                },
+            }
+        )
+        raise typer.Exit(0)
+
+    client = _client_or_exit(opts)
+    try:
+        store = opts.build_cache_store("workspaces")
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    try:
+        with client:
+            cached = cache_get_workspaces(client, store=store, refresh=refresh)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    requested_state = state.value if state else "active"
+    entries = cached.entries
+    if requested_state != "all":
+        entries = [w for w in entries if (w.get("state") or "active") == requested_state]
+    if kind is not None:
+        entries = [w for w in entries if (w.get("kind") or "") == kind.value]
+
+    if name_fuzzy is not None:
+        entries = _apply_fuzzy(
+            entries,
+            name_fuzzy,
+            threshold=fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+
+    if max_items is not None:
+        entries = entries[:max_items]
+    opts.emit(entries)
 
 
 @app.command("get", epilog=epilog_for("workspace get"))
@@ -187,6 +326,7 @@ def create_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_workspaces_cache(opts)
     opts.emit(data.get("create_workspace") or {})
 
 
@@ -226,6 +366,7 @@ def update_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_workspaces_cache(opts)
     opts.emit(data.get("update_workspace") or {})
 
 
@@ -255,6 +396,7 @@ def delete_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    _invalidate_workspaces_cache(opts)
     opts.emit(data.get("delete_workspace") or {})
 
 

@@ -21,6 +21,10 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    # Default these tests to the live (non-cache) path; cache-specific tests
+    # opt back in by re-setting MONDO_CACHE_ENABLED=true.
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MONDO_CACHE_ENABLED", "false")
 
 
 def _ok(data: dict) -> dict:
@@ -372,7 +376,14 @@ class TestBoardDelete:
 
 
 class TestBoardDuplicate:
-    def test_default_type(self, httpx_mock: HTTPXMock) -> None:
+    def test_default_type_resolves_source_workspace(self, httpx_mock: HTTPXMock) -> None:
+        # No --workspace → CLI looks up the source board first, then duplicates
+        # into the same workspace.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "workspace_id": "1999837"}]}),
+        )
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -380,11 +391,26 @@ class TestBoardDuplicate:
         )
         result = runner.invoke(app, ["board", "duplicate", "--id", "42"])
         assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
+        bodies = _bodies(httpx_mock)
+        assert len(bodies) == 2
+        assert bodies[0]["variables"] == {"id": 42}
+        v = bodies[1]["variables"]
         assert v["board"] == 42
         assert v["duplicateType"] == "duplicate_board_with_structure"
+        assert v["workspace"] == 1999837
+
+    def test_missing_source_board_errors(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": []}),
+        )
+        result = runner.invoke(app, ["board", "duplicate", "--id", "42"])
+        assert result.exit_code == 1
+        assert "source board 42 not found" in result.stderr
 
     def test_with_pulses_and_options(self, httpx_mock: HTTPXMock) -> None:
+        # Explicit --workspace → no source lookup, only the mutation.
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -407,7 +433,9 @@ class TestBoardDuplicate:
             ],
         )
         assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
+        bodies = _bodies(httpx_mock)
+        assert len(bodies) == 1
+        v = bodies[0]["variables"]
         assert v["duplicateType"] == "duplicate_board_with_pulses_and_updates"
         assert v["name"] == "Cloned"
         assert v["workspace"] == 7

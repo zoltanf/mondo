@@ -67,9 +67,23 @@ EXAMPLES: dict[str, list[Example]] = {
     "auth logout": [
         Example("Remove the stored keyring entry", "mondo auth logout"),
     ],
+    # --- cache -------------------------------------------------------------
+    "cache status": [
+        Example("Age and entry counts for every cache file", "mondo cache status"),
+        Example("Just the boards cache", "mondo cache status boards"),
+        Example("Machine-readable output", "mondo cache status -o json"),
+    ],
+    "cache refresh": [
+        Example("Force-refresh every cached entity type", "mondo cache refresh"),
+        Example("Refresh just the users directory", "mondo cache refresh users"),
+    ],
+    "cache clear": [
+        Example("Delete every cache file (idempotent)", "mondo cache clear"),
+        Example("Clear the workspaces cache only", "mondo cache clear workspaces"),
+    ],
     # --- board -------------------------------------------------------------
     "board list": [
-        Example("First page of active boards", "mondo board list"),
+        Example("First page of active boards (served from cache when fresh)", "mondo board list"),
         Example(
             "Filter by name (client-side) and cap the walk",
             "mondo board list --name-contains pager --max-items 500",
@@ -82,6 +96,12 @@ EXAMPLES: dict[str, list[Example]] = {
             "Regex-match names, most-recently-used first",
             "mondo board list --name-matches '^team-\\w+$' --order-by used_at",
         ),
+        Example(
+            "Fuzzy name search — tolerates typos",
+            'mondo board list --name-fuzzy "prodct launc" --fuzzy-score --max-items 5',
+        ),
+        Example("Bypass local cache for this call", "mondo board list --no-cache"),
+        Example("Force-refresh the cache before serving", "mondo board list --refresh-cache"),
     ],
     "board get": [
         Example("Fetch one board by id", "mondo board get --id 1234567890"),
@@ -737,11 +757,16 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     # --- workspace ---------------------------------------------------------
     "workspace list": [
-        Example("All workspaces", "mondo workspace list"),
+        Example("All workspaces (served from cache when fresh)", "mondo workspace list"),
         Example(
             "Only open workspaces, active state",
             "mondo workspace list --kind open --state active",
         ),
+        Example(
+            "Fuzzy name search",
+            'mondo workspace list --name-fuzzy "marketng"',
+        ),
+        Example("Bypass local cache", "mondo workspace list --no-cache"),
     ],
     "workspace get": [
         Example("One workspace", "mondo workspace get --id 7"),
@@ -799,7 +824,7 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     # --- user --------------------------------------------------------------
     "user list": [
-        Example("All non-guest users", "mondo user list --kind non_guests"),
+        Example("All non-guest users (served from cache when fresh)", "mondo user list --kind non_guests"),
         Example(
             "Search by email (case-sensitive per monday)",
             "mondo user list --email a@example.com",
@@ -808,6 +833,11 @@ EXAMPLES: dict[str, list[Example]] = {
             "Deactivated users only",
             "mondo user list --non-active --limit 100",
         ),
+        Example(
+            "Fuzzy name search",
+            'mondo user list --name-fuzzy "jon smth" --fuzzy-score --max-items 3',
+        ),
+        Example("Force-refresh the cache", "mondo user list --refresh-cache"),
     ],
     "user get": [
         Example("One user", "mondo user get --id 42"),
@@ -848,8 +878,12 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     # --- team --------------------------------------------------------------
     "team list": [
-        Example("All teams", "mondo team list"),
-        Example("Specific teams", "mondo team list --id 1 --id 2"),
+        Example("All teams (served from cache when fresh)", "mondo team list"),
+        Example("Specific teams (bypasses cache)", "mondo team list --id 1 --id 2"),
+        Example(
+            "Fuzzy name search",
+            'mondo team list --name-fuzzy "platfrm"',
+        ),
     ],
     "team get": [
         Example("One team", "mondo team get --id 7"),

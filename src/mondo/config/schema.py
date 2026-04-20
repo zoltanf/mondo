@@ -8,6 +8,40 @@ from pydantic import BaseModel, ConfigDict, Field
 
 OutputFormat = Literal["table", "json", "jsonc", "yaml", "tsv", "csv", "none"]
 
+# Built-in cache TTL defaults (seconds). Spec §10.1.
+DEFAULT_CACHE_TTL_BOARDS = 28800  # 8h
+DEFAULT_CACHE_TTL_WORKSPACES = 86400  # 24h
+DEFAULT_CACHE_TTL_USERS = 86400
+DEFAULT_CACHE_TTL_TEAMS = 86400
+DEFAULT_CACHE_FUZZY_THRESHOLD = 70
+
+
+class CacheTTLConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    boards: int | None = None
+    workspaces: int | None = None
+    users: int | None = None
+    teams: int | None = None
+
+
+class CacheFuzzyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    threshold: int | None = None
+
+
+class CacheConfig(BaseModel):
+    """User-facing `cache:` section. All fields are optional; absent fields
+    fall back to built-in defaults via `resolve_cache_config()`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    dir: str | None = None
+    ttl: CacheTTLConfig | None = None
+    fuzzy: CacheFuzzyConfig | None = None
+
 
 class Profile(BaseModel):
     """A named configuration profile (see plan §10)."""
@@ -24,6 +58,7 @@ class Profile(BaseModel):
     default_board_id: int | None = None
     default_workspace_id: int | None = None
     output: OutputFormat | None = None
+    cache: CacheConfig | None = None
 
 
 class Config(BaseModel):
@@ -34,6 +69,7 @@ class Config(BaseModel):
     default_profile: str = "default"
     api_version: str = "2026-01"
     profiles: dict[str, Profile] = Field(default_factory=dict)
+    cache: CacheConfig | None = None
 
     def get_profile(self, name: str | None) -> Profile:
         """Return the named profile, or the default one, or an empty Profile.

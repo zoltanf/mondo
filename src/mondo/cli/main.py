@@ -17,6 +17,7 @@ from mondo.cli.aggregate import app as aggregate_app
 from mondo.cli.argv import reorder_argv
 from mondo.cli.auth import app as auth_app
 from mondo.cli.board import app as board_app
+from mondo.cli.cache import app as cache_app
 from mondo.cli.column import app as column_app
 from mondo.cli.complexity import app as complexity_app
 from mondo.cli.context import GlobalOpts
@@ -89,6 +90,7 @@ app = typer.Typer(
 )
 
 app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
+app.add_typer(cache_app, name="cache", help="Inspect, refresh, and clear the local directory cache.")
 app.add_typer(board_app, name="board", help="Create, read, update, delete monday boards.")
 app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
 app.add_typer(subitem_app, name="subitem", help="Create, read, update, delete subitems.")

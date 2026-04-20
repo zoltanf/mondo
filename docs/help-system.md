@@ -42,6 +42,11 @@ mondo.cli._examples import epilog_for` import when missing.
 every example's command string contains `"mondo "` so agents can copy-paste
 them verbatim.
 
+> New command groups (e.g. `mondo cache` from the phase-4 directory cache)
+> and new flags (`--name-fuzzy`, `--no-cache`, `--refresh-cache` on the four
+> `list` commands) are surfaced the same way — registered in `_examples.py`,
+> visible in both `mondo help <path>` and `mondo help --dump-spec`.
+
 ---
 
 ## Layer 2 — `mondo help <topic>`
