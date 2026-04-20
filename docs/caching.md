@@ -1,10 +1,11 @@
 # Local directory cache
 
 `mondo` keeps a small on-disk cache of slowly-changing entity directories —
-boards, workspaces, users, teams, and per-board column definitions — so that
-`list` commands and column-aware mutation paths don't re-walk the monday API on
-every invocation. This is a **performance optimization**, never a data store:
-any cache-path failure degrades silently to the live API.
+boards, workspaces, users, teams, workspace docs, and per-board column
+definitions — so that `list` commands and column-aware mutation paths don't
+re-walk the monday API on every invocation. This is a **performance
+optimization**, never a data store: any cache-path failure degrades silently to
+the live API.
 
 ## What's cached
 
@@ -14,6 +15,7 @@ any cache-path failure degrades silently to the live API.
 | workspaces | id, name, kind, description, state, created_at |
 | users | id, name, email, enabled, is_admin, is_guest, is_pending, is_view_only, created_at, title |
 | teams | id, name, picture_url, is_guest (plus nested `users` and `owners`) |
+| docs | id, object_id, name, doc_kind, workspace_id, created_at, url, relative_url, created_by |
 | columns (per-board) | id, title, type, description, archived, settings_str — which includes status/dropdown label sets |
 
 ## What's NOT cached
@@ -30,9 +32,9 @@ any cache-path failure degrades silently to the live API.
 
 Files live at `$XDG_CACHE_HOME/mondo/<profile>/` (falling back to
 `~/.cache/mondo/<profile>/`). One file per entity type: `boards.json`,
-`workspaces.json`, `users.json`, `teams.json`. Per-board column caches live
-one-file-per-board under `columns/<board_id>.json`. The profile subdirectory
-keeps caches from different monday accounts from colliding.
+`workspaces.json`, `users.json`, `teams.json`, `docs.json`. Per-board column
+caches live one-file-per-board under `columns/<board_id>.json`. The profile
+subdirectory keeps caches from different monday accounts from colliding.
 
 Directory mode is `0700`; file mode is `0600`. Writes go through a temp file +
 `os.replace()` so a concurrent reader never sees a torn file.
@@ -67,6 +69,7 @@ dropped if corrupt).
 | workspaces | 86400 s (24h) |
 | users | 86400 s (24h) |
 | teams | 86400 s (24h) |
+| docs | 28800 s (8h) |
 | columns | 1200 s (20m) |
 
 Override via `~/.config/mondo/config.yaml`:
@@ -80,6 +83,7 @@ cache:
     workspaces: 86400
     users: 86400
     teams: 86400
+    docs: 28800
     columns: 1200
   fuzzy:
     threshold: 70               # default --fuzzy-threshold (0-100)
@@ -98,7 +102,7 @@ Or via environment variables (highest non-CLI precedence):
 - `MONDO_CACHE_ENABLED` — `true|false|0|1`
 - `MONDO_CACHE_DIR` — absolute directory; the per-profile subdir is appended
 - `MONDO_CACHE_TTL_BOARDS`, `MONDO_CACHE_TTL_WORKSPACES`,
-  `MONDO_CACHE_TTL_USERS`, `MONDO_CACHE_TTL_TEAMS`,
+  `MONDO_CACHE_TTL_USERS`, `MONDO_CACHE_TTL_TEAMS`, `MONDO_CACHE_TTL_DOCS`,
   `MONDO_CACHE_TTL_COLUMNS` — integer seconds
 - `MONDO_CACHE_FUZZY_THRESHOLD` — integer 0-100
 
@@ -168,7 +172,7 @@ mondo cache refresh [<type>] [--board ID ...]
 mondo cache clear   [<type>] [--board ID ...]
 ```
 
-Where `<type>` ∈ `boards | workspaces | users | teams | columns | all`.
+Where `<type>` ∈ `boards | workspaces | users | teams | docs | columns | all`.
 Default: `all`.
 
 - **`cache status`** — one row per type (and, for `columns`, one row per

@@ -11,6 +11,7 @@ from mondo.api.errors import NotFoundError
 from mondo.cache.directory import (
     get_boards,
     get_columns,
+    get_docs,
     get_teams,
     get_users,
     get_workspaces,
@@ -172,6 +173,65 @@ def test_get_teams_warm_cache(tmp_path: Path) -> None:
 
     assert [t["name"] for t in result.entries] == ["Cached Team"]
     assert client.calls == []
+
+
+# -- docs --------------------------------------------------------------------
+
+
+def test_get_docs_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
+    store = _store(tmp_path, "docs")
+    client = FakeClient([
+        {"data": {"docs": [{"id": "1", "object_id": "100", "name": "Spec"}]}},
+        {"data": {"docs": []}},  # stop signal
+    ])
+
+    result = get_docs(client, store=store)
+
+    assert [e["name"] for e in result.entries] == ["Spec"]
+    assert store.path.exists()
+    assert store.read() is not None
+
+
+def test_get_docs_warm_cache_skips_api(tmp_path: Path) -> None:
+    store = _store(tmp_path, "docs")
+    store.write([{"id": "1", "object_id": "100", "name": "Cached"}])
+    client = FakeClient([])
+
+    result = get_docs(client, store=store)
+
+    assert [e["name"] for e in result.entries] == ["Cached"]
+    assert client.calls == []
+
+
+def test_get_docs_refresh_overrides_cache(tmp_path: Path) -> None:
+    store = _store(tmp_path, "docs")
+    store.write([{"id": "1", "object_id": "100", "name": "Stale"}])
+    client = FakeClient([
+        {"data": {"docs": [{"id": "2", "object_id": "200", "name": "Fresh"}]}},
+        {"data": {"docs": []}},
+    ])
+
+    result = get_docs(client, store=store, refresh=True)
+
+    assert [e["name"] for e in result.entries] == ["Fresh"]
+    assert client.calls, "refresh=True must call the API"
+
+
+def test_get_docs_primes_without_workspace_filter(tmp_path: Path) -> None:
+    """Monday silently scopes docs() to one workspace when workspace_ids is
+    null; the priming query must omit the filter entirely."""
+    store = _store(tmp_path, "docs")
+    client = FakeClient([{"data": {"docs": []}}])
+
+    get_docs(client, store=store)
+
+    assert client.calls, "expected an API call"
+    query, variables = client.calls[0]
+    assert variables is not None
+    assert "workspace_ids:" not in query
+    assert "object_ids:" not in query
+    assert "ids: $ids" not in query
+    assert "order_by:" not in query
 
 
 # -- columns (per-board scoped cache) ----------------------------------------

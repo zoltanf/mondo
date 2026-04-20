@@ -21,6 +21,10 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    # Default these tests to the live (non-cache) path; cache-specific tests
+    # opt back in by re-setting MONDO_CACHE_ENABLED=true.
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MONDO_CACHE_ENABLED", "false")
 
 
 def _ok(data: dict) -> dict:
@@ -90,6 +94,146 @@ class TestList:
                 f"{forbidden} leaked into unfiltered query: {body['query']}"
             )
         assert body["variables"].keys() == {"limit", "page"}
+
+
+class TestListCache:
+    """Cache-backed `doc list` — enabled by re-setting MONDO_CACHE_ENABLED=true
+    on top of the class-level `_clean_env` default (which disables cache)."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+
+    def _docs_payload(self) -> dict:
+        return _ok(
+            {
+                "docs": [
+                    {
+                        "id": "1",
+                        "object_id": "100",
+                        "name": "Alpha",
+                        "workspace_id": "42",
+                        "created_at": "2024-01-01T10:00:00Z",
+                    },
+                    {
+                        "id": "2",
+                        "object_id": "200",
+                        "name": "Beta",
+                        "workspace_id": "43",
+                        "created_at": "2024-02-01T10:00:00Z",
+                    },
+                ]
+            }
+        )
+
+    def test_cold_then_warm_cache(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        first = runner.invoke(app, ["doc", "list"])
+        assert first.exit_code == 0, first.stdout
+        assert json.loads(first.stdout)[0]["id"] == "1"
+        cache_file = tmp_path / "cache" / "default" / "docs.json"
+        assert cache_file.exists()
+
+        # Second call: no new response queued — must come from cache.
+        second = runner.invoke(app, ["doc", "list"])
+        assert second.exit_code == 0, second.stdout
+        assert json.loads(second.stdout)[0]["id"] == "1"
+        assert len(httpx_mock.get_requests()) == 1
+
+    def test_no_cache_bypasses(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        runner.invoke(app, ["doc", "list"])
+        cache_file = tmp_path / "cache" / "default" / "docs.json"
+        assert cache_file.exists()
+
+        # With --no-cache, must hit the API regardless of cache state.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        result = runner.invoke(app, ["doc", "list", "--no-cache"])
+        assert result.exit_code == 0, result.stdout
+        assert len(httpx_mock.get_requests()) == 2
+
+    def test_refresh_cache_forces_refetch(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        # Prime with stale content.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "1", "object_id": "100", "name": "Stale"}]}),
+        )
+        runner.invoke(app, ["doc", "list"])
+
+        # Refresh overwrites.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "9", "object_id": "900", "name": "Fresh"}]}),
+        )
+        result = runner.invoke(app, ["doc", "list", "--refresh-cache"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout)[0]["name"] == "Fresh"
+        assert len(httpx_mock.get_requests()) == 2
+
+    def test_no_cache_and_refresh_cache_mutually_exclusive(self) -> None:
+        result = runner.invoke(
+            app, ["doc", "list", "--no-cache", "--refresh-cache"]
+        )
+        assert result.exit_code == 2
+        assert "mutually exclusive" in (result.stderr or result.stdout).lower()
+
+    def test_workspace_filter_applies_client_side(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        result = runner.invoke(
+            app, ["doc", "list", "--workspace", "42"]
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["1"]
+        # Priming fetch must not leak a workspace_ids filter on the wire.
+        body = _last_body(httpx_mock)
+        assert "workspace_ids:" not in body["query"]
+
+    def test_object_id_filter_applies_client_side(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        result = runner.invoke(
+            app, ["doc", "list", "--object-id", "200"]
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["2"]
+
+    def test_order_by_created_at_sorts_newest_first(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        result = runner.invoke(
+            app, ["doc", "list", "--order-by", "created_at"]
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["2", "1"]
+
+    def test_max_items_truncates(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._docs_payload())
+        result = runner.invoke(app, ["doc", "list", "--max-items", "1"])
+        assert result.exit_code == 0, result.stdout
+        assert len(json.loads(result.stdout)) == 1
+
+    def test_dry_run_emits_cache_preview(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app, ["--dry-run", "doc", "list", "--workspace", "42"]
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["cache"] == "docs"
+        assert parsed["filters"]["workspace_ids"] == [42]
+        assert httpx_mock.get_requests() == []
 
 
 # --- get ---

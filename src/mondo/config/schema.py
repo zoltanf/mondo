@@ -14,6 +14,7 @@ DEFAULT_CACHE_TTL_WORKSPACES = 86400  # 24h
 DEFAULT_CACHE_TTL_USERS = 86400
 DEFAULT_CACHE_TTL_TEAMS = 86400
 DEFAULT_CACHE_TTL_COLUMNS = 1200  # 20m — per-board column definitions
+DEFAULT_CACHE_TTL_DOCS = 28800  # 8h — same as boards; docs are low-churn
 DEFAULT_CACHE_FUZZY_THRESHOLD = 70
 
 
@@ -25,6 +26,7 @@ class CacheTTLConfig(BaseModel):
     users: int | None = None
     teams: int | None = None
     columns: int | None = None
+    docs: int | None = None
 
 
 class CacheFuzzyConfig(BaseModel):

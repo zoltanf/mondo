@@ -18,6 +18,7 @@ from mondo.api.queries import (
     USERS_LIST_PAGE,
     WORKSPACES_LIST_PAGE,
     build_boards_list_query,
+    build_docs_list_query,
 )
 from mondo.cache.store import CachedDirectory, CacheStore
 
@@ -81,6 +82,21 @@ def get_teams(
         if cached is not None:
             return cached
     entries = _fetch_all_teams(client)
+    return store.write(entries)
+
+
+def get_docs(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the full docs directory (all workspaces)."""
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_all_docs(client)
     return store.write(entries)
 
 
@@ -149,6 +165,21 @@ def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:
     if not isinstance(teams, list):
         return []
     return teams
+
+
+def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
+    # Omit filters explicitly — a null workspace_ids triggers monday's
+    # default-workspace scoping (see build_docs_list_query).
+    query, variables = build_docs_list_query()
+    return list(
+        iter_boards_page(
+            client,
+            query=query,
+            variables=variables,
+            collection_key="docs",
+            limit=MAX_BOARDS_PAGE_SIZE,
+        )
+    )
 
 
 def get_columns(

@@ -27,7 +27,7 @@ from mondo.version import __version__
 # rather than serving incomplete rows under the new --type filter.
 SCHEMA_VERSION = 2
 
-EntityType = str  # "boards" | "workspaces" | "users" | "teams"
+EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "docs"
 
 
 @dataclass

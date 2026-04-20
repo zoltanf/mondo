@@ -38,6 +38,7 @@ from mondo.api.queries import (
     UPDATE_DOC_BLOCK,
     build_docs_list_query,
 )
+from mondo.cache.directory import get_docs as cache_get_docs
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
@@ -130,13 +131,50 @@ def list_cmd(
     order_by: DocsOrderBy | None = typer.Option(
         None, "--order-by", help="created_at or used_at.", case_sensitive=False
     ),
-    limit: int = typer.Option(100, "--limit", help="Page size."),
+    limit: int = typer.Option(
+        100,
+        "--limit",
+        help="Page size for live fetches; ignored when served from cache.",
+    ),
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many docs total."
+    ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Skip the local directory cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local directory cache before serving.",
+        rich_help_panel="Cache",
     ),
 ) -> None:
     """List docs (page-based)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if no_cache and refresh_cache:
+        typer.secho(
+            "error: --no-cache and --refresh-cache are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    cache_cfg = opts.resolve_cache_config()
+    if cache_cfg.enabled and not no_cache:
+        _list_via_cache(
+            opts,
+            workspace=workspace,
+            object_id=object_id,
+            order_by=order_by,
+            max_items=max_items,
+            refresh=refresh_cache,
+        )
+        return
+
     query, variables = build_docs_list_query(
         object_ids=object_id or None,
         workspace_ids=workspace or None,
@@ -167,6 +205,54 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     opts.emit(items)
+
+
+def _list_via_cache(
+    opts: GlobalOpts,
+    *,
+    workspace: list[int] | None,
+    object_id: list[int] | None,
+    order_by: DocsOrderBy | None,
+    max_items: int | None,
+    refresh: bool,
+) -> None:
+    if opts.dry_run:
+        opts.emit(
+            {
+                "cache": "docs",
+                "refresh": refresh,
+                "filters": {
+                    "workspace_ids": workspace or None,
+                    "object_ids": object_id or None,
+                    "order_by": order_by.value if order_by else None,
+                    "max_items": max_items,
+                },
+            }
+        )
+        raise typer.Exit(0)
+
+    client = _client_or_exit(opts)
+    store = opts.build_cache_store("docs")
+    try:
+        with client:
+            cached = cache_get_docs(client, store=store, refresh=refresh)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    entries = cached.entries
+    if workspace:
+        wanted_ws = {str(w) for w in workspace}
+        entries = [e for e in entries if str(e.get("workspace_id") or "") in wanted_ws]
+    if object_id:
+        wanted_obj = {str(o) for o in object_id}
+        entries = [e for e in entries if str(e.get("object_id") or "") in wanted_obj]
+    if order_by is not None:
+        key = order_by.value
+        entries = sorted(entries, key=lambda e: e.get(key) or "", reverse=True)
+    if max_items is not None:
+        entries = entries[:max_items]
+    opts.emit(entries)
 
 
 @app.command("get", epilog=epilog_for("doc get"))

@@ -53,6 +53,23 @@ Commands affected:
   mutations where those exist.
 - New command group: `mondo cache status/refresh/clear` (see §9).
 
+### Phase A extension: workspace docs
+
+Post-Phase-A, workspace docs were added to the cache as a straightforward
+extension of the same infrastructure (no refactor needed — `CacheStore` was
+already entity-agnostic):
+
+- New file: `docs.json`; new TTL `DEFAULT_CACHE_TTL_DOCS = 28800` (8h); new env
+  var `MONDO_CACHE_TTL_DOCS`; new YAML override `cache.ttl.docs`.
+- `mondo doc list` gains `--no-cache` / `--refresh-cache` flags with the same
+  semantics as `board list`; filters (`--workspace`, `--object-id`,
+  `--order-by`, `--max-items`) run client-side against the cached directory.
+- `mondo cache {status,refresh,clear}` learn the `docs` selector.
+
+Mutation-driven invalidation for docs (`doc create`, block edits) is not wired
+up — docs are lower-churn than boards and a stale name in the directory is
+low-consequence. TTL expiry and explicit `--refresh-cache` cover it.
+
 ## 5. Architecture & module layout
 
 New package `mondo/cache/`:

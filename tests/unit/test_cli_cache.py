@@ -37,7 +37,7 @@ class TestCacheStatus:
         result = runner.invoke(app, ["cache", "status", ])
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
-        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams"}
+        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs"}
         assert all(r["fresh"] is False for r in rows)
         assert all(r["entries"] is None for r in rows)
 
@@ -96,6 +96,18 @@ class TestCacheRefresh:
     def test_refresh_unknown_type_rejected(self) -> None:
         result = runner.invoke(app, ["cache", "refresh", "wat"])
         assert result.exit_code == 2
+
+    def test_refresh_docs_via_cache_cmd(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "1", "object_id": "100", "name": "Spec"}]}),
+        )
+        result = runner.invoke(app, ["cache", "refresh", "docs"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert rows[0]["type"] == "docs"
+        assert rows[0]["count"] == 1
 
 
 # -- clear ------------------------------------------------------------------
@@ -179,7 +191,7 @@ class TestCacheColumns:
         result = runner.invoke(app, ["cache", "status"])
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
-        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams"}
+        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs"}
 
     def test_status_columns_only_empty_dir(self) -> None:
         result = runner.invoke(app, ["cache", "status", "columns"])
