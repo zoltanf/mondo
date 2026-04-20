@@ -9,10 +9,9 @@ from typing import Any
 import typer
 
 from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError, UsageError
+from mondo.api.errors import MondoError, NotFoundError, UsageError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
-    COLUMNS_ON_BOARD,
     CREATE_OR_GET_TAG,
     ITEM_ARCHIVE,
     ITEM_CREATE,
@@ -25,6 +24,7 @@ from mondo.api.queries import (
     ITEM_MOVE_GROUP,
     ITEM_RENAME,
 )
+from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
@@ -127,16 +127,25 @@ def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, raw: str) -> 
     return ",".join(str(i) for i in ids)
 
 
-def _fetch_column_defs(client: MondayClient, board_id: int) -> dict[str, dict[str, Any]]:
-    """One-shot fetch of `{col_id: {type, settings_str, ...}}` for a board."""
-    result = client.execute(COLUMNS_ON_BOARD, {"board": board_id})
-    boards = (result.get("data") or {}).get("boards") or []
-    if not boards:
+def _fetch_column_defs(
+    opts: GlobalOpts, client: MondayClient, board_id: int
+) -> dict[str, dict[str, Any]]:
+    """One-shot fetch of `{col_id: {type, settings_str, ...}}` for a board.
+
+    Reads from the per-board columns cache when enabled; falls back to a live
+    query otherwise. Silently returns `{}` when the board isn't visible — the
+    caller's codec dispatch will treat unknown columns as raw passthroughs,
+    mirroring the previous behavior when the API returned no boards.
+    """
+    try:
+        columns = fetch_board_columns(opts, client, board_id)
+    except NotFoundError:
         return {}
-    return {c["id"]: c for c in (boards[0].get("columns") or [])}
+    return {c["id"]: c for c in columns}
 
 
 def _build_column_values(
+    opts: GlobalOpts,
     client: MondayClient,
     board_id: int,
     pairs: list[str],
@@ -154,7 +163,7 @@ def _build_column_values(
     if raw_mode:
         return dict(parsed_pairs)
 
-    defs = _fetch_column_defs(client, board_id)
+    defs = _fetch_column_defs(opts, client, board_id)
     out: dict[str, Any] = {}
     for col_id, raw_value in parsed_pairs:
         definition = defs.get(col_id)
@@ -368,6 +377,7 @@ def create_cmd(
             try:
                 with client_for_preflight:
                     col_values = _build_column_values(
+                        opts,
                         client_for_preflight,
                         board_id,
                         columns,
@@ -392,6 +402,10 @@ def create_cmd(
         "relto": relative_to,
     }
     data = _execute_mutation(opts, ITEM_CREATE, variables)
+    if create_labels_if_missing:
+        # May have minted a status/dropdown label in settings_str; drop the
+        # cached column defs so the next read sees the new labels.
+        invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("create_item") or {})
 
 

@@ -10,8 +10,10 @@ from __future__ import annotations
 from typing import Any
 
 from mondo.api.client import MondayClient
+from mondo.api.errors import NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
+    COLUMNS_ON_BOARD,
     TEAMS_LIST,
     USERS_LIST_PAGE,
     WORKSPACES_LIST_PAGE,
@@ -147,3 +149,35 @@ def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:
     if not isinstance(teams, list):
         return []
     return teams
+
+
+def get_columns(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    board_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the full column list for `board_id`, cached per-board.
+
+    Raises NotFoundError when the board has no columns visible (unknown id or
+    no access) — same behavior callers would see from a live query.
+    """
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_board_columns(client, board_id)
+    return store.write(entries)
+
+
+def _fetch_board_columns(client: MondayClient, board_id: int) -> list[dict[str, Any]]:
+    result = client.execute(COLUMNS_ON_BOARD, {"board": board_id})
+    data = result.get("data") or {}
+    boards = data.get("boards") or []
+    if not boards:
+        raise NotFoundError(f"board {board_id} not found")
+    columns = boards[0].get("columns") or []
+    if not isinstance(columns, list):
+        return []
+    return columns

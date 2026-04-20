@@ -5,8 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from mondo.api.errors import NotFoundError
 from mondo.cache.directory import (
     get_boards,
+    get_columns,
     get_teams,
     get_users,
     get_workspaces,
@@ -168,3 +172,65 @@ def test_get_teams_warm_cache(tmp_path: Path) -> None:
 
     assert [t["name"] for t in result.entries] == ["Cached Team"]
     assert client.calls == []
+
+
+# -- columns (per-board scoped cache) ----------------------------------------
+
+
+def _scoped_store(tmp_path: Path, board_id: str) -> CacheStore:
+    return CacheStore(
+        entity_type="columns",
+        cache_dir=tmp_path / "cache",
+        api_endpoint=ENDPOINT,
+        ttl_seconds=60,
+        scope=board_id,
+    )
+
+
+def test_get_columns_cold_fetches_and_writes(tmp_path: Path) -> None:
+    store = _scoped_store(tmp_path, "1")
+    columns_payload = [
+        {"id": "status", "title": "Status", "type": "status"},
+        {"id": "text", "title": "Text", "type": "text"},
+    ]
+    client = FakeClient([
+        {"data": {"boards": [{"id": "1", "columns": columns_payload}]}}
+    ])
+
+    result = get_columns(client, store=store, board_id=1)
+
+    assert [c["id"] for c in result.entries] == ["status", "text"]
+    assert store.path.exists()
+    assert len(client.calls) == 1
+
+
+def test_get_columns_warm_cache_skips_api(tmp_path: Path) -> None:
+    store = _scoped_store(tmp_path, "1")
+    store.write([{"id": "cached", "title": "Cached", "type": "text"}])
+    client = FakeClient([])
+
+    result = get_columns(client, store=store, board_id=1)
+
+    assert [c["id"] for c in result.entries] == ["cached"]
+    assert client.calls == []
+
+
+def test_get_columns_refresh_ignores_cache(tmp_path: Path) -> None:
+    store = _scoped_store(tmp_path, "1")
+    store.write([{"id": "stale", "title": "Stale", "type": "text"}])
+    client = FakeClient([
+        {"data": {"boards": [{"id": "1", "columns": [{"id": "fresh"}]}]}}
+    ])
+
+    result = get_columns(client, store=store, board_id=1, refresh=True)
+
+    assert [c["id"] for c in result.entries] == ["fresh"]
+    assert len(client.calls) == 1
+
+
+def test_get_columns_missing_board_raises_not_found(tmp_path: Path) -> None:
+    store = _scoped_store(tmp_path, "999")
+    client = FakeClient([{"data": {"boards": []}}])
+    with pytest.raises(NotFoundError):
+        get_columns(client, store=store, board_id=999)
+    assert not store.path.exists()

@@ -184,3 +184,72 @@ def test_parse_utc_accepts_offset_form() -> None:
     parsed = _parse_utc("2026-04-20T10:15:00+00:00")
     assert parsed.tzinfo is not None
     assert parsed.year == 2026
+
+
+# ----- scope (per-board columns cache) -----
+
+
+def _scoped_store(tmp_path: Path, scope: str, *, ttl: int = 60) -> CacheStore:
+    return CacheStore(
+        entity_type="columns",
+        cache_dir=tmp_path / "cache",
+        api_endpoint=ENDPOINT,
+        ttl_seconds=ttl,
+        scope=scope,
+    )
+
+
+def test_scope_puts_file_in_entity_subdir(tmp_path: Path) -> None:
+    store = _scoped_store(tmp_path, scope="12345")
+    assert store.path == tmp_path / "cache" / "columns" / "12345.json"
+
+
+def test_scope_roundtrip_writes_and_reads_independently(tmp_path: Path) -> None:
+    a = _scoped_store(tmp_path, scope="1")
+    b = _scoped_store(tmp_path, scope="2")
+    a.write([{"id": "col_a"}])
+    b.write([{"id": "col_b"}])
+    loaded_a = a.read()
+    loaded_b = b.read()
+    assert loaded_a is not None and loaded_a.entries == [{"id": "col_a"}]
+    assert loaded_b is not None and loaded_b.entries == [{"id": "col_b"}]
+    assert a.path != b.path
+
+
+def test_scope_invalidate_does_not_affect_other_scopes(tmp_path: Path) -> None:
+    a = _scoped_store(tmp_path, scope="1")
+    b = _scoped_store(tmp_path, scope="2")
+    a.write([{"id": "col_a"}])
+    b.write([{"id": "col_b"}])
+    assert a.invalidate() is True
+    assert b.read() is not None
+
+
+def test_scope_subdir_permissions_are_locked_down(tmp_path: Path) -> None:
+    if sys.platform.startswith("win"):
+        pytest.skip("POSIX mode bits only")
+    store = _scoped_store(tmp_path, scope="42")
+    store.write([{"id": "x"}])
+    dir_mode = stat.S_IMODE(store.path.parent.stat().st_mode)
+    file_mode = stat.S_IMODE(store.path.stat().st_mode)
+    assert dir_mode == 0o700
+    assert file_mode == 0o600
+
+
+@pytest.mark.parametrize("bad_scope", ["", ".", "..", "a/b", "a\\b"])
+def test_scope_rejects_unsafe_values(tmp_path: Path, bad_scope: str) -> None:
+    with pytest.raises(ValueError):
+        CacheStore(
+            entity_type="columns",
+            cache_dir=tmp_path / "cache",
+            api_endpoint=ENDPOINT,
+            ttl_seconds=60,
+            scope=bad_scope,
+        )
+
+
+def test_scope_atomic_write_leaves_no_tmp_files(tmp_path: Path) -> None:
+    store = _scoped_store(tmp_path, scope="99")
+    store.write([{"id": 1}])
+    leftovers = [p for p in store.path.parent.iterdir() if p.suffix == ".tmp"]
+    assert leftovers == []

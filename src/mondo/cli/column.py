@@ -25,9 +25,9 @@ from mondo.api.queries import (
     COLUMN_CREATE,
     COLUMN_DELETE,
     COLUMN_RENAME,
-    COLUMNS_ON_BOARD,
     CREATE_OR_GET_TAG,
 )
+from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
@@ -158,22 +158,41 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Skip the local columns cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local columns cache before serving.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List all columns on a board with id, title, type."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
+    if no_cache and refresh_cache:
+        typer.secho(
+            "error: --no-cache and --refresh-cache are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
     client = _client_or_exit(opts)
     try:
         with client:
-            data = _exec_or_exit(client, COLUMNS_ON_BOARD, {"board": board_id})
+            columns = fetch_board_columns(
+                opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
+            )
+    except NotFoundError:
+        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=6) from None
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    boards = data.get("boards") or []
-    if not boards:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
-    columns = boards[0].get("columns") or []
     # Strip settings_str from default output (noisy); it's still in raw JSON.
     simplified = [
         {
@@ -207,15 +226,13 @@ def labels_cmd(
     client = _client_or_exit(opts)
     try:
         with client:
-            data = _exec_or_exit(client, COLUMNS_ON_BOARD, {"board": board_id})
+            columns = fetch_board_columns(opts, client, board_id)
+    except NotFoundError:
+        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=6) from None
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    boards = data.get("boards") or []
-    if not boards:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
-    columns = boards[0].get("columns") or []
     column = next((c for c in columns if c.get("id") == column_id), None)
     if column is None:
         typer.secho(
@@ -390,6 +407,10 @@ def set_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
+    if create_labels_if_missing:
+        # `create_labels_if_missing=True` may have minted a new status/dropdown
+        # label inside the column's settings_str — drop the cached copy.
+        invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_value") or {})
 
 
@@ -457,6 +478,9 @@ def set_many_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
+    if create_labels_if_missing:
+        # May have minted a label in a status/dropdown column's settings_str.
+        invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_multiple_column_values") or {})
 
 
@@ -613,6 +637,7 @@ def create_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("create_column") or {})
 
 
@@ -635,6 +660,7 @@ def rename_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_title") or {})
 
 
@@ -668,6 +694,7 @@ def change_metadata_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_metadata") or {})
 
 
@@ -690,4 +717,5 @@ def delete_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("delete_column") or {})

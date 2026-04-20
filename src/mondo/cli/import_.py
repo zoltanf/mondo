@@ -26,13 +26,13 @@ import typer
 from ruamel.yaml import YAML
 
 from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError, UsageError
+from mondo.api.errors import MondoError, NotFoundError, UsageError
 from mondo.api.pagination import iter_items_page
 from mondo.api.queries import (
-    COLUMNS_ON_BOARD,
     CREATE_OR_GET_TAG,
     ITEM_CREATE,
 )
+from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -105,12 +105,13 @@ def _build_header_to_column_id(
     return resolved
 
 
-def _fetch_board_columns(client: MondayClient, board_id: int) -> list[dict[str, Any]]:
-    result = client.execute(COLUMNS_ON_BOARD, {"board": board_id})
-    boards = (result.get("data") or {}).get("boards") or []
-    if not boards:
-        raise typer.Exit(code=6)
-    return boards[0].get("columns") or []
+def _fetch_board_columns(
+    opts: GlobalOpts, client: MondayClient, board_id: int
+) -> list[dict[str, Any]]:
+    try:
+        return fetch_board_columns(opts, client, board_id)
+    except NotFoundError:
+        raise typer.Exit(code=6) from None
 
 
 def _fetch_existing_names(client: MondayClient, board_id: int) -> set[str]:
@@ -247,7 +248,7 @@ def board_cmd(
                 )
                 raise typer.Exit(code=2)
 
-            board_columns = _fetch_board_columns(client, board_id)
+            board_columns = _fetch_board_columns(opts, client, board_id)
             col_defs = {c["id"]: c for c in board_columns if c.get("id")}
             header_to_col_id = _build_header_to_column_id(
                 headers, mapping, board_columns, name_col, group_col
@@ -316,6 +317,12 @@ def board_cmd(
     except FileNotFoundError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
+
+    if create_labels_if_missing and created > 0:
+        # Batch may have minted status/dropdown labels in settings_str; a
+        # single post-run invalidation is enough since the next read will
+        # re-fetch fresh defs for the whole board.
+        invalidate_columns_cache(opts, board_id)
 
     summary = {
         "created": created,

@@ -94,13 +94,20 @@ class GlobalOpts:
         profile = cfg.get_profile(self.profile_name)
         return profile.api_url
 
-    def build_cache_store(self, entity_type: EntityType) -> CacheStore:
+    def build_cache_store(
+        self, entity_type: EntityType, *, scope: str | None = None
+    ) -> CacheStore:
         """Build a CacheStore for the given entity type, wired with the
-        resolved TTL + endpoint + cache directory."""
+        resolved TTL + endpoint + cache directory.
+
+        `scope` turns the store into a per-scope file at
+        `<cache_dir>/<entity_type>/<scope>.json` (e.g. per-board for columns).
+        """
         resolved = self.resolve_cache_config()
         return CacheStore(
             entity_type=entity_type,
             cache_dir=resolved.directory,
             api_endpoint=self.api_endpoint(),
             ttl_seconds=resolved.ttl_for(entity_type),
+            scope=scope,
         )

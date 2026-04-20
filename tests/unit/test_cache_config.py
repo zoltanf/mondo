@@ -10,6 +10,7 @@ from mondo.cache.config import resolve_cache_config
 from mondo.config.schema import (
     DEFAULT_CACHE_FUZZY_THRESHOLD,
     DEFAULT_CACHE_TTL_BOARDS,
+    DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_USERS,
     DEFAULT_CACHE_TTL_WORKSPACES,
     CacheConfig,
@@ -27,6 +28,7 @@ def test_built_in_defaults_when_config_is_empty() -> None:
     assert resolved.ttl_workspaces == DEFAULT_CACHE_TTL_WORKSPACES
     assert resolved.ttl_users == DEFAULT_CACHE_TTL_USERS
     assert resolved.ttl_teams == DEFAULT_CACHE_TTL_WORKSPACES  # same 24h default
+    assert resolved.ttl_columns == DEFAULT_CACHE_TTL_COLUMNS
     assert resolved.fuzzy_threshold == DEFAULT_CACHE_FUZZY_THRESHOLD
 
 
@@ -127,5 +129,25 @@ def test_ttl_for_method() -> None:
     assert resolved.ttl_for("workspaces") == resolved.ttl_workspaces
     assert resolved.ttl_for("users") == resolved.ttl_users
     assert resolved.ttl_for("teams") == resolved.ttl_teams
+    assert resolved.ttl_for("columns") == resolved.ttl_columns
     with pytest.raises(ValueError):
         resolved.ttl_for("nonsense")  # type: ignore[arg-type]
+
+
+def test_columns_ttl_env_override() -> None:
+    resolved = resolve_cache_config(
+        Config(), profile_name=None, env={"MONDO_CACHE_TTL_COLUMNS": "77"}
+    )
+    assert resolved.ttl_columns == 77
+
+
+def test_columns_ttl_profile_overrides_global() -> None:
+    cfg = Config(
+        default_profile="acme",
+        cache=CacheConfig(ttl=CacheTTLConfig(columns=600)),
+        profiles={
+            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(columns=120))),
+        },
+    )
+    resolved = resolve_cache_config(cfg, profile_name="acme", env={})
+    assert resolved.ttl_columns == 120

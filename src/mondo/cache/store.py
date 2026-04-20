@@ -48,9 +48,13 @@ class CachedDirectory:
 class CacheStore:
     """Read/write/invalidate a single entity type's cache file.
 
-    One `CacheStore` per (entity_type, cache_dir) pair. `api_endpoint` is used
-    to reject envelopes written against a different monday endpoint (e.g. the
-    user switched profiles to a different account).
+    One `CacheStore` per (entity_type, cache_dir [, scope]) tuple. `api_endpoint`
+    is used to reject envelopes written against a different monday endpoint
+    (e.g. the user switched profiles to a different account).
+
+    When `scope` is set (e.g. a board id for per-board column caches), the file
+    lives at `<cache_dir>/<entity_type>/<scope>.json` instead of the default
+    `<cache_dir>/<entity_type>.json`.
     """
 
     def __init__(
@@ -60,11 +64,15 @@ class CacheStore:
         cache_dir: Path,
         api_endpoint: str,
         ttl_seconds: int,
+        scope: str | None = None,
     ) -> None:
+        if scope is not None and (not scope or "/" in scope or "\\" in scope or scope in (".", "..")):
+            raise ValueError(f"invalid cache scope: {scope!r}")
         self._entity_type = entity_type
         self._cache_dir = cache_dir
         self._api_endpoint = api_endpoint
         self._ttl_seconds = ttl_seconds
+        self._scope = scope
 
     @property
     def entity_type(self) -> EntityType:
@@ -72,6 +80,8 @@ class CacheStore:
 
     @property
     def path(self) -> Path:
+        if self._scope is not None:
+            return self._cache_dir / self._entity_type / f"{self._scope}.json"
         return self._cache_dir / f"{self._entity_type}.json"
 
     @property
@@ -189,22 +199,28 @@ class CacheStore:
         return _utcnow() - fetched_at
 
     def _ensure_dir(self) -> None:
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-        # Tighten permissions when the dir is freshly created. mkdir with
+        target_dir = self.path.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        # Tighten permissions when any dir is freshly created. mkdir with
         # default mode may have left it at 0755 under a permissive umask;
-        # chmod is idempotent.
-        try:
-            os.chmod(self._cache_dir, 0o700)
-        except OSError:
-            # Windows / restricted FS — best effort.
-            pass
+        # chmod is idempotent. We tighten both the cache root and the
+        # scoped subdir (same path when no scope is set).
+        for d in {self._cache_dir, target_dir}:
+            try:
+                os.chmod(d, 0o700)
+            except OSError:
+                # Windows / restricted FS — best effort.
+                pass
 
     def _atomic_write(self, envelope: dict[str, Any]) -> None:
         # Write to a tmp file in the same directory, then os.replace.
+        prefix = f".{self._entity_type}."
+        if self._scope is not None:
+            prefix = f".{self._entity_type}.{self._scope}."
         fd, tmp_path = tempfile.mkstemp(
-            prefix=f".{self._entity_type}.",
+            prefix=prefix,
             suffix=".tmp",
-            dir=str(self._cache_dir),
+            dir=str(self.path.parent),
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:

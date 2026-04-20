@@ -1,9 +1,10 @@
 # Local directory cache
 
 `mondo` keeps a small on-disk cache of slowly-changing entity directories —
-boards, workspaces, users, and teams — so that `list` commands don't re-walk
-the monday API on every invocation. This is a **performance optimization**,
-never a data store: any cache-path failure degrades silently to the live API.
+boards, workspaces, users, teams, and per-board column definitions — so that
+`list` commands and column-aware mutation paths don't re-walk the monday API on
+every invocation. This is a **performance optimization**, never a data store:
+any cache-path failure degrades silently to the live API.
 
 ## What's cached
 
@@ -13,21 +14,25 @@ never a data store: any cache-path failure degrades silently to the live API.
 | workspaces | id, name, kind, description, state, created_at |
 | users | id, name, email, enabled, is_admin, is_guest, is_pending, is_view_only, created_at, title |
 | teams | id, name, picture_url, is_guest (plus nested `users` and `owners`) |
+| columns (per-board) | id, title, type, description, archived, settings_str — which includes status/dropdown label sets |
 
 ## What's NOT cached
 
 - `items_count` on boards — too volatile. `--with-item-counts` always bypasses
   the cache with a live fetch.
-- Item-level data (`mondo item`, `mondo column`, `mondo activity`) — out of
-  scope for phase A.
+- Item values / activity (`mondo item get/list`, `mondo activity`) — volatile
+  and out of scope.
 - Raw query responses (`mondo graphql`) — never cached.
+- The combined item+columns round-trip used by `column get/set/clear`
+  (`COLUMN_CONTEXT`) — stays live because splitting it would add a round-trip.
 
 ## Storage
 
 Files live at `$XDG_CACHE_HOME/mondo/<profile>/` (falling back to
 `~/.cache/mondo/<profile>/`). One file per entity type: `boards.json`,
-`workspaces.json`, `users.json`, `teams.json`. The profile subdirectory keeps
-caches from different monday accounts from colliding.
+`workspaces.json`, `users.json`, `teams.json`. Per-board column caches live
+one-file-per-board under `columns/<board_id>.json`. The profile subdirectory
+keeps caches from different monday accounts from colliding.
 
 Directory mode is `0700`; file mode is `0600`. Writes go through a temp file +
 `os.replace()` so a concurrent reader never sees a torn file.
@@ -62,6 +67,7 @@ dropped if corrupt).
 | workspaces | 86400 s (24h) |
 | users | 86400 s (24h) |
 | teams | 86400 s (24h) |
+| columns | 1200 s (20m) |
 
 Override via `~/.config/mondo/config.yaml`:
 
@@ -74,6 +80,7 @@ cache:
     workspaces: 86400
     users: 86400
     teams: 86400
+    columns: 1200
   fuzzy:
     threshold: 70               # default --fuzzy-threshold (0-100)
 
@@ -91,7 +98,8 @@ Or via environment variables (highest non-CLI precedence):
 - `MONDO_CACHE_ENABLED` — `true|false|0|1`
 - `MONDO_CACHE_DIR` — absolute directory; the per-profile subdir is appended
 - `MONDO_CACHE_TTL_BOARDS`, `MONDO_CACHE_TTL_WORKSPACES`,
-  `MONDO_CACHE_TTL_USERS`, `MONDO_CACHE_TTL_TEAMS` — integer seconds
+  `MONDO_CACHE_TTL_USERS`, `MONDO_CACHE_TTL_TEAMS`,
+  `MONDO_CACHE_TTL_COLUMNS` — integer seconds
 - `MONDO_CACHE_FUZZY_THRESHOLD` — integer 0-100
 
 Precedence (lowest → highest): built-in defaults → global `cache:` → profile
@@ -138,8 +146,12 @@ score before acting on the id.
 1. **TTL expiry** — envelopes older than their TTL are treated as cold.
 2. **Same-process mutations** — after a successful `board create/update/
    archive/delete/duplicate` (or the analogous workspace/user/team mutation),
-   the corresponding cache file is dropped. This runs in a best-effort
-   `finally`-style block; a failed invalidation never fails the mutation.
+   the corresponding cache file is dropped. For columns the trigger is any
+   successful `column create/rename/change-metadata/delete` plus any
+   `item create` / `column set` / `column set-many` / `subitem create` /
+   `mondo import` run with `--create-labels-if-missing` (which may mint a new
+   status/dropdown label inside `settings_str`). Invalidation runs
+   best-effort; a failed invalidation never fails the mutation.
 3. **Endpoint change** — switching profiles to a different monday endpoint
    treats the cache as cold.
 4. **Schema version mismatch** — after a `mondo` upgrade that bumps
@@ -152,18 +164,26 @@ They're picked up at TTL expiry or via an explicit `mondo cache refresh`.
 
 ```
 mondo cache status  [<type>]
-mondo cache refresh [<type>]
-mondo cache clear   [<type>]
+mondo cache refresh [<type>] [--board ID ...]
+mondo cache clear   [<type>] [--board ID ...]
 ```
 
-Where `<type>` ∈ `boards | workspaces | users | teams | all`. Default: `all`.
+Where `<type>` ∈ `boards | workspaces | users | teams | columns | all`.
+Default: `all`.
 
-- **`cache status`** — one row per type with path, fetched_at, age, ttl, fresh
+- **`cache status`** — one row per type (and, for `columns`, one row per
+  per-board file already on disk) with path, fetched_at, age, ttl, fresh
   flag, entry count. Honors `--output json` etc.
-- **`cache refresh`** — force-refetches the selected type(s). Honors
-  `--dry-run` (emits the plan without executing).
-- **`cache clear`** — deletes the selected cache file(s). Idempotent. Honors
-  `--dry-run`.
+- **`cache refresh`** — force-refetches the selected type(s). For `columns`,
+  `--board ID` selects which boards to refresh; without it, every board
+  already present in the columns cache is re-fetched (monitored set — does
+  not discover additional boards on the account). Honors `--dry-run` (emits
+  the plan without executing).
+- **`cache clear`** — deletes the selected cache file(s). For `columns`,
+  `--board ID` clears those specific files; without it, every per-board
+  columns cache is removed. Idempotent. Honors `--dry-run`.
+
+`--board` is only accepted when the selector includes `columns`.
 
 All three respect `--profile`, so `mondo --profile acme cache refresh`
 operates on the `acme` profile's cache dir.
@@ -184,13 +204,13 @@ operates on the `acme` profile's cache dir.
 DEBUG-level events: hits, misses, expiry, corrupt-file deletion, successful
 writes. WARNING-level: write failures. No INFO-level spam on the happy path.
 
-## Non-goals (phase A)
+## Non-goals
 
-- Items / columns / activity caching.
+- Item values / activity caching.
 - Cross-process locking.
 - Background / pre-emptive refresh.
 - Negative-lookup refresh (refetching because a name didn't match).
 - `mondo <entity> find` name-resolution helpers.
 
-A future phase B will add name→ID resolution on top of this cache, including
-the miss-triggered refresh that was deferred from this spec.
+A future phase will add name→ID resolution on top of this cache, including
+the miss-triggered refresh that was deferred from the original spec.

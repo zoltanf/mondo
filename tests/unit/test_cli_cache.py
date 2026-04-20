@@ -142,3 +142,121 @@ class TestCacheClear:
         assert result.exit_code == 0, result.stdout
         # File must still exist
         assert cache_file.exists()
+
+
+# -- columns (per-board scoped cache) ---------------------------------------
+
+
+COLS_RESPONSE = _ok(
+    {
+        "boards": [
+            {
+                "id": "42",
+                "name": "B",
+                "columns": [
+                    {"id": "status", "title": "Status", "type": "status", "archived": False},
+                    {"id": "date4", "title": "Due", "type": "date", "archived": False},
+                ],
+            }
+        ]
+    }
+)
+
+
+def _prime_columns_cache(
+    httpx_mock: HTTPXMock, tmp_path: Path, board_id: int = 42
+) -> Path:
+    """Warm the columns cache for one board and return the resulting file path."""
+    httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+    # `column list` goes through fetch_board_columns which writes the file.
+    result = runner.invoke(app, ["column", "list", str(board_id)])
+    assert result.exit_code == 0, result.stdout
+    return tmp_path / "cache" / "default" / "columns" / f"{board_id}.json"
+
+
+class TestCacheColumns:
+    def test_status_all_includes_no_column_rows_when_cold(self) -> None:
+        result = runner.invoke(app, ["cache", "status"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams"}
+
+    def test_status_columns_only_empty_dir(self) -> None:
+        result = runner.invoke(app, ["cache", "status", "columns"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == []
+
+    def test_column_list_writes_cache_then_second_call_is_a_hit(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        cache_file = _prime_columns_cache(httpx_mock, tmp_path)
+        assert cache_file.exists()
+        # Second invocation should NOT hit the API (no additional mock added).
+        result = runner.invoke(app, ["column", "list", "42"])
+        assert result.exit_code == 0, result.stdout
+
+    def test_status_reports_cached_board(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
+        result = runner.invoke(app, ["cache", "status", "columns"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert len(rows) == 1
+        assert rows[0]["type"] == "columns"
+        assert rows[0]["board"] == "42"
+        assert rows[0]["fresh"] is True
+        assert rows[0]["entries"] == 2
+
+    def test_clear_columns_removes_all_per_board_files(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        cache_file = _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
+        assert cache_file.exists()
+        result = runner.invoke(app, ["cache", "clear", "columns"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert rows[0]["type"] == "columns"
+        assert rows[0]["removed"] is True
+        assert not cache_file.exists()
+
+    def test_clear_columns_with_board_filter(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
+        result = runner.invoke(app, ["cache", "clear", "columns", "--board", "42"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert rows[0]["board"] == "42"
+
+    def test_refresh_columns_requires_known_board(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+        result = runner.invoke(app, ["cache", "refresh", "columns", "--board", "42"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert rows[0]["type"] == "columns"
+        assert rows[0]["board"] == "42"
+        assert rows[0]["count"] == 2
+
+    def test_refresh_all_columns_uses_cached_board_ids(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
+        # Refresh without --board should re-fetch the one board already cached.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+        result = runner.invoke(app, ["cache", "refresh", "columns"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert [r["board"] for r in rows] == ["42"]
+
+    def test_board_flag_rejected_for_non_columns_types(self) -> None:
+        result = runner.invoke(
+            app, ["cache", "clear", "boards", "--board", "42"]
+        )
+        assert result.exit_code == 2
+        assert "only applies when clearing" in result.stderr or "only applies" in (
+            result.stdout + (result.stderr or "")
+        )

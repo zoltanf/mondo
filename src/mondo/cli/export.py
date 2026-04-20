@@ -25,13 +25,13 @@ import typer
 from openpyxl import Workbook  # type: ignore[import-untyped]
 
 from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
-    COLUMNS_ON_BOARD,
     ITEMS_PAGE_INITIAL_WITH_SUBITEMS,
     ITEMS_PAGE_NEXT_WITH_SUBITEMS,
 )
+from mondo.cli._column_cache import fetch_board_columns
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -64,13 +64,14 @@ def _client_or_exit(opts: GlobalOpts) -> MondayClient:
         raise typer.Exit(code=int(e.exit_code)) from e
 
 
-def _fetch_columns(client: MondayClient, board_id: int) -> list[dict[str, Any]]:
+def _fetch_columns(
+    opts: GlobalOpts, client: MondayClient, board_id: int
+) -> list[dict[str, Any]]:
     """Return [{id, title, type}] for the board, in display order."""
-    result = client.execute(COLUMNS_ON_BOARD, {"board": board_id})
-    boards = (result.get("data") or {}).get("boards") or []
-    if not boards:
-        raise typer.Exit(code=6)
-    cols = boards[0].get("columns") or []
+    try:
+        cols = fetch_board_columns(opts, client, board_id)
+    except NotFoundError:
+        raise typer.Exit(code=6) from None
     return [
         {"id": c.get("id"), "title": c.get("title"), "type": c.get("type")}
         for c in cols
@@ -212,7 +213,7 @@ def board_cmd(
     client = _client_or_exit(opts)
     try:
         with client:
-            columns = _fetch_columns(client, board_id)
+            columns = _fetch_columns(opts, client, board_id)
             query_initial = None
             query_next = None
             if include_subitems:

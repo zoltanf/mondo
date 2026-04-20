@@ -24,6 +24,10 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    # Isolate from the user's real cache dir and disable caching by default
+    # — tests exercise the live fetch paths unless they explicitly opt in.
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MONDO_CACHE_ENABLED", "false")
 
 
 def _ok(data: dict) -> dict:

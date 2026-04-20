@@ -22,9 +22,8 @@ from typing import Any
 import typer
 
 from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
-    COLUMNS_ON_BOARD,
     ITEM_ARCHIVE,
     ITEM_DELETE,
     ITEM_GET,
@@ -33,6 +32,7 @@ from mondo.api.queries import (
     SUBITEM_CREATE,
     SUBITEMS_LIST,
 )
+from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
@@ -82,6 +82,7 @@ def _parse_settings(raw: str | None) -> dict[str, Any]:
 
 
 def _build_column_values(
+    opts: GlobalOpts,
     client: MondayClient,
     subitems_board_id: int | None,
     pairs: list[str],
@@ -96,11 +97,11 @@ def _build_column_values(
     parsed_pairs = [parse_column_kv(p) for p in pairs]
     if subitems_board_id is None:
         return dict(parsed_pairs)
-    result = client.execute(COLUMNS_ON_BOARD, {"board": subitems_board_id})
-    boards = (result.get("data") or {}).get("boards") or []
-    if not boards:
+    try:
+        columns = fetch_board_columns(opts, client, subitems_board_id)
+    except NotFoundError:
         return dict(parsed_pairs)
-    defs = {c["id"]: c for c in (boards[0].get("columns") or [])}
+    defs = {c["id"]: c for c in columns}
     out: dict[str, Any] = {}
     for col_id, raw_value in parsed_pairs:
         definition = defs.get(col_id)
@@ -219,6 +220,7 @@ def create_cmd(
             try:
                 with client:
                     col_values = _build_column_values(
+                        opts,
                         client,
                         subitems_board,
                         columns,
@@ -248,6 +250,9 @@ def create_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+    if create_labels_if_missing and subitems_board is not None:
+        # May have minted a status/dropdown label on the subitems board.
+        invalidate_columns_cache(opts, subitems_board)
     opts.emit(data.get("create_subitem") or {})
 
 
