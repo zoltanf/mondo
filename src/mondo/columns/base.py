@@ -56,8 +56,30 @@ def get_codec(type_name: str) -> ColumnCodec:
         ) from e
 
 
-def parse_value(type_name: str, value: str, settings: dict[str, Any]) -> Any:
-    return get_codec(type_name).parse(value, settings)
+class LabelAwareCodec(ColumnCodec):
+    """Base for codecs whose labels can be server-created on the fly.
+
+    ``create_labels=True`` mirrors the mutation's ``create_labels_if_missing``
+    flag and tells the codec to skip its client-side reject of unknown labels
+    so the server can create them.
+    """
+
+    @abstractmethod
+    def parse(self, value: str, settings: dict[str, Any], *, create_labels: bool = False) -> Any:
+        ...
+
+
+def parse_value(
+    type_name: str,
+    value: str,
+    settings: dict[str, Any],
+    *,
+    create_labels: bool = False,
+) -> Any:
+    codec = get_codec(type_name)
+    if isinstance(codec, LabelAwareCodec):
+        return codec.parse(value, settings, create_labels=create_labels)
+    return codec.parse(value, settings)
 
 
 def render_value(type_name: str, value: Any, text: str | None) -> str:

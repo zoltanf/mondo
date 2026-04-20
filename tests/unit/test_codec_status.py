@@ -41,6 +41,12 @@ class TestParse:
         with pytest.raises(ValueError, match="Known:"):
             parse_value("status", "NotAValidLabel", STATUS_SETTINGS)
 
+    def test_create_labels_skips_client_validation(self) -> None:
+        """With create_labels=True, unknown labels pass through unchecked."""
+        assert parse_value(
+            "status", "NewStatus", STATUS_SETTINGS, create_labels=True
+        ) == {"label": "NewStatus"}
+
     def test_without_settings_accepts_any_label(self) -> None:
         """If settings aren't available, trust the user's label."""
         assert parse_value("status", "New Label", {}) == {"label": "New Label"}

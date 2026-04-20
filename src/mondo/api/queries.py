@@ -1001,6 +1001,18 @@ def build_boards_list_query(
     return query, variables
 
 
+# Lightweight variant for polling: only the fields the `--wait` path needs.
+# Avoids pulling columns/groups/subscribers/tags every 2s during long waits.
+BOARD_ITEMS_COUNT = """
+query ($ids: [ID!]!) {
+  boards(ids: $ids) {
+    id
+    items_count
+  }
+}
+""".strip()
+
+
 # Detailed single-board fetch.
 BOARD_GET = """
 query ($id: ID!) {

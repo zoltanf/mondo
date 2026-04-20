@@ -44,6 +44,17 @@ class TestParse:
     def test_without_settings_passes_through(self) -> None:
         assert parse_value("dropdown", "Donut", {}) == {"labels": ["Donut"]}
 
+    def test_create_labels_skips_client_validation(self) -> None:
+        """With create_labels=True, unknown labels pass through unchecked."""
+        assert parse_value("dropdown", "Donut", SETTINGS, create_labels=True) == {
+            "labels": ["Donut"]
+        }
+
+    def test_create_labels_mixed_known_and_unknown(self) -> None:
+        assert parse_value(
+            "dropdown", "Cookie,Donut", SETTINGS, create_labels=True
+        ) == {"labels": ["Cookie", "Donut"]}
+
 
 class TestRender:
     def test_uses_text_field(self) -> None:

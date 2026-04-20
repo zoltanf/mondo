@@ -18,6 +18,7 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import VALIDATIONS_LIST
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -63,10 +64,14 @@ def _mutation_removed() -> None:
 @app.command("list", epilog=epilog_for("validation list"))
 def list_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
 ) -> None:
     """List validation rules on a board (required columns + rules JSON)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     variables = {"id": board_id}
     if opts.dry_run:
         _dry_run(opts, VALIDATIONS_LIST, variables)

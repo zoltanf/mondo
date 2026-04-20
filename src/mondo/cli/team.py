@@ -31,6 +31,7 @@ from mondo.cache.directory import get_teams as cache_get_teams
 from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -221,10 +222,12 @@ def _list_teams_via_cache(
 @app.command("get", epilog=epilog_for("team get"))
 def get_cmd(
     ctx: typer.Context,
-    team_id: int = typer.Option(..., "--id", help="Team ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Team ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Team ID (flag form)."),
 ) -> None:
     """Fetch a single team by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    team_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="team")
     variables = {"ids": [team_id]}
     if opts.dry_run:
         _dry_run(opts, TEAMS_LIST, variables)
@@ -287,11 +290,13 @@ def create_cmd(
 @app.command("delete", epilog=epilog_for("team delete"))
 def delete_cmd(
     ctx: typer.Context,
-    team_id: int = typer.Option(..., "--id", help="Team ID to delete."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Team ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Team ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a team (permanent)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    team_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="team")
     if not hard:
         typer.secho(
             "refusing to delete without --hard.",

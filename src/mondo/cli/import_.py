@@ -34,6 +34,7 @@ from mondo.api.queries import (
     ITEM_CREATE,
 )
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 
@@ -143,6 +144,8 @@ def _encode_row(
     row_values: dict[str, str],
     header_to_col_id: dict[str, str],
     col_defs: dict[str, dict[str, Any]],
+    *,
+    create_labels: bool = False,
 ) -> dict[str, Any]:
     """Turn a CSV row (header → string value) into a monday column_values dict."""
     out: dict[str, Any] = {}
@@ -164,9 +167,11 @@ def _encode_row(
         if col_type == "tags":
             raw = _resolve_tag_names_to_ids(client, board_id, raw)
         try:
-            out[col_id] = parse_value(col_type, raw, settings)
+            out[col_id] = parse_value(col_type, raw, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
             out[col_id] = raw
+        except ValueError as e:
+            raise ValueError(f"column {col_id}={raw!r}: {e}") from e
     return out
 
 
@@ -176,7 +181,10 @@ def _encode_row(
 @app.command("board", epilog=epilog_for("import board"))
 def board_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID to import into."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
     source: Path = typer.Option(..., "--from", help="CSV file to read rows from."),
     mapping_path: Path | None = typer.Option(
         None, "--mapping", help="YAML file with header → column_id overrides."
@@ -211,6 +219,7 @@ def board_cmd(
 ) -> None:
     """Bulk-create items on a board from a CSV file."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     try:
         mapping = _load_mapping(mapping_path)
@@ -267,6 +276,7 @@ def board_cmd(
                         {h: row.get(h, "") for h in headers},
                         header_to_col_id,
                         col_defs,
+                        create_labels=create_labels_if_missing,
                     )
                 except ValueError as e:
                     results.append({"status": "failed", "name": name, "error": str(e)})

@@ -29,6 +29,7 @@ from mondo.cache.directory import get_workspaces as cache_get_workspaces
 from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -276,10 +277,14 @@ def _list_workspaces_via_cache(
 @app.command("get", epilog=epilog_for("workspace get"))
 def get_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
+    id_pos: int | None = typer.Argument(
+        None, metavar="[ID]", help="Workspace ID (positional)."
+    ),
+    id_flag: int | None = typer.Option(None, "--id", help="Workspace ID (flag form)."),
 ) -> None:
     """Fetch a single workspace by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
     client = _client_or_exit(opts)
     try:
         with client:
@@ -333,7 +338,10 @@ def create_cmd(
 @app.command("update", epilog=epilog_for("workspace update"))
 def update_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
+    id_pos: int | None = typer.Argument(
+        None, metavar="[ID]", help="Workspace ID (positional)."
+    ),
+    id_flag: int | None = typer.Option(None, "--id", help="Workspace ID (flag form)."),
     name: str | None = typer.Option(None, "--name", help="New name."),
     description: str | None = typer.Option(None, "--description", help="New description."),
     kind: WorkspaceKind | None = typer.Option(
@@ -342,6 +350,7 @@ def update_cmd(
 ) -> None:
     """Update a workspace's name / description / kind."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
     attributes: dict[str, Any] = {}
     if name is not None:
         attributes["name"] = name
@@ -373,11 +382,15 @@ def update_cmd(
 @app.command("delete", epilog=epilog_for("workspace delete"))
 def delete_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID to delete."),
+    id_pos: int | None = typer.Argument(
+        None, metavar="[ID]", help="Workspace ID (positional)."
+    ),
+    id_flag: int | None = typer.Option(None, "--id", help="Workspace ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a workspace (permanent; Main Workspace cannot be deleted)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
     if not hard:
         typer.secho(
             "refusing to delete without --hard.",

@@ -22,6 +22,7 @@ class ExitCode(IntEnum):
     VALIDATION = 5
     NOT_FOUND = 6
     NETWORK = 7
+    TIMEOUT = 8
 
 
 class MondoError(Exception):
@@ -117,6 +118,12 @@ class CursorExpiredError(MondoError):
     """Cursor lifetime exceeded (60 min). Not retryable — re-issue the initial page."""
 
     exit_code = ExitCode.GENERIC
+
+
+class WaitTimeoutError(MondoError):
+    """Client-side wait timed out (e.g. `board duplicate --wait --timeout N`)."""
+
+    exit_code = ExitCode.TIMEOUT
 
 
 # Monday error code (from extensions.code) → exception class.

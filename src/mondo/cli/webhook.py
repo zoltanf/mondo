@@ -28,6 +28,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -67,7 +68,10 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
 @app.command("list", epilog=epilog_for("webhook list"))
 def list_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
     app_only: bool = typer.Option(
         False,
         "--app-only",
@@ -76,6 +80,7 @@ def list_cmd(
 ) -> None:
     """List webhooks on a board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     variables = {"board": board_id, "appOnly": True if app_only else None}
     if opts.dry_run:
         _dry_run(opts, WEBHOOKS_LIST, variables)
@@ -152,10 +157,12 @@ def create_cmd(
 @app.command("delete", epilog=epilog_for("webhook delete"))
 def delete_cmd(
     ctx: typer.Context,
-    webhook_id: int = typer.Option(..., "--id", help="Webhook ID to delete."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Webhook ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Webhook ID (flag form)."),
 ) -> None:
     """Delete a webhook."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    webhook_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="webhook")
     _confirm(opts, f"Delete webhook {webhook_id}?")
     variables = {"id": webhook_id}
     if opts.dry_run:

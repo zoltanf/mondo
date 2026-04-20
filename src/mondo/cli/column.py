@@ -30,6 +30,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
@@ -38,6 +39,8 @@ from mondo.columns import (
     parse_value,
     render_value,
 )
+from mondo.columns.dropdown import iter_dropdown_labels
+from mondo.columns.status import iter_status_labels
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -151,10 +154,14 @@ def _load_value(value: str | None, from_file: Path | None, from_stdin: bool) -> 
 @app.command("list", epilog=epilog_for("column list"))
 def list_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
 ) -> None:
     """List all columns on a board with id, title, type."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     client = _client_or_exit(opts)
     try:
         with client:
@@ -178,6 +185,60 @@ def list_cmd(
         for c in columns
     ]
     opts.emit(simplified)
+
+
+@app.command("labels", epilog=epilog_for("column labels"))
+def labels_cmd(
+    ctx: typer.Context,
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    column_id: str = typer.Option(..., "--column", help="Column ID (status or dropdown)."),
+) -> None:
+    """List the known labels for a status or dropdown column on a board.
+
+    For status columns, emits `{index, label}` tuples. For dropdown columns,
+    emits `{id, name}` tuples. Other column types are rejected with a clear
+    error.
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
+    client = _client_or_exit(opts)
+    try:
+        with client:
+            data = _exec_or_exit(client, COLUMNS_ON_BOARD, {"board": board_id})
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+    boards = data.get("boards") or []
+    if not boards:
+        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=6)
+    columns = boards[0].get("columns") or []
+    column = next((c for c in columns if c.get("id") == column_id), None)
+    if column is None:
+        typer.secho(
+            f"column {column_id!r} not found on board {board_id}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=6)
+    col_type = column.get("type")
+    settings = _parse_settings(column.get("settings_str"))
+    if col_type == "status":
+        opts.emit(iter_status_labels(settings))
+        return
+    if col_type == "dropdown":
+        opts.emit(iter_dropdown_labels(settings))
+        return
+    typer.secho(
+        f"error: column labels only supported for status/dropdown columns "
+        f"(column {column_id!r} is type {col_type!r}).",
+        fg=typer.colors.RED,
+        err=True,
+    )
+    raise typer.Exit(code=2)
 
 
 @app.command("get", epilog=epilog_for("column get"))
@@ -284,7 +345,9 @@ def set_cmd(
                     # Resolve tag names to IDs before the codec sees them.
                     raw_input = _resolve_tag_names_to_ids(client, board_id, raw_input)
                 try:
-                    parsed = parse_value(col_type, raw_input, settings)
+                    parsed = parse_value(
+                        col_type, raw_input, settings, create_labels=create_labels_if_missing
+                    )
                 except ValueError as e:
                     typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
                     raise typer.Exit(code=5) from e

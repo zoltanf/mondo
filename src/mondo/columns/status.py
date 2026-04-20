@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from mondo.columns.base import ColumnCodec, register
+from mondo.columns.base import LabelAwareCodec, register
 
 
-class StatusCodec(ColumnCodec):
+class StatusCodec(LabelAwareCodec):
     type_name: ClassVar[str] = "status"
 
-    def parse(self, value: str, settings: dict[str, Any]) -> dict[str, Any]:
+    def parse(
+        self, value: str, settings: dict[str, Any], *, create_labels: bool = False
+    ) -> dict[str, Any]:
         stripped = value.strip()
         if not stripped:
             return {}  # clear
@@ -32,19 +34,28 @@ class StatusCodec(ColumnCodec):
                 raise ValueError(f"status index {idx} out of range. Valid indices: {allowed}")
             return {"index": idx}
 
-        # Treat as label. If we have settings, validate — else accept.
-        labels = settings.get("labels") or {}
-        if labels and stripped not in labels.values():
-            known = ", ".join(sorted(labels.values()))
-            raise ValueError(
-                f"unknown status label {stripped!r}. "
-                f"Known: {known}. "
-                f"Use --create-labels-if-missing to add it on the fly."
-            )
+        if not create_labels:
+            labels = settings.get("labels") or {}
+            if labels and stripped not in labels.values():
+                known = ", ".join(sorted(labels.values()))
+                raise ValueError(
+                    f"unknown status label {stripped!r}. "
+                    f"Known: {known}. "
+                    f"Use --create-labels-if-missing to add it on the fly."
+                )
         return {"label": stripped}
 
     def render(self, value: Any, text: str | None) -> str:
         return text or ""
+
+
+def iter_status_labels(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the status column's labels as ``[{index, label}, ...]`` sorted by index."""
+    labels = settings.get("labels") or {}
+    if not isinstance(labels, dict):
+        return []
+    pairs = sorted((int(idx), str(label)) for idx, label in labels.items())
+    return [{"index": idx, "label": label} for idx, label in pairs]
 
 
 register(StatusCodec())

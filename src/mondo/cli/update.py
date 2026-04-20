@@ -33,6 +33,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -69,7 +70,13 @@ def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
     raise typer.Exit(0)
 
 
-def _load_body(body: str | None, from_file: Path | None, from_stdin: bool) -> str:
+def _load_body(
+    body: str | None,
+    from_file: Path | None,
+    from_stdin: bool,
+    *,
+    markdown: bool = False,
+) -> str:
     sources = sum(x is not None and x is not False for x in (body, from_file, from_stdin))
     if sources == 0:
         typer.secho(
@@ -86,11 +93,17 @@ def _load_body(body: str | None, from_file: Path | None, from_stdin: bool) -> st
         )
         raise typer.Exit(code=2)
     if from_file is not None:
-        return from_file.read_text()
-    if from_stdin:
-        return sys.stdin.read()
-    assert body is not None
-    return body
+        raw = from_file.read_text()
+    elif from_stdin:
+        raw = sys.stdin.read()
+    else:
+        assert body is not None
+        raw = body
+    if markdown:
+        from mondo.util.markdown import to_html
+
+        return to_html(raw)
+    return raw
 
 
 # ----- read commands -----
@@ -193,10 +206,12 @@ def list_cmd(
 @app.command("get", epilog=epilog_for("update get"))
 def get_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
 ) -> None:
     """Fetch a single update by ID with replies, likes, and pinning info."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
     if opts.dry_run:
         _dry_run(opts, UPDATE_GET, variables)
@@ -226,10 +241,16 @@ def create_cmd(
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
+    markdown: bool = typer.Option(
+        False,
+        "--markdown",
+        help="Treat --body / --from-file / --from-stdin as CommonMark markdown "
+        "and convert to HTML before posting.",
+    ),
 ) -> None:
     """Post a new update (comment) on an item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    payload = _load_body(body, from_file, from_stdin)
+    payload = _load_body(body, from_file, from_stdin, markdown=markdown)
     variables = {"item": item_id, "parent": None, "body": payload}
     if opts.dry_run:
         _dry_run(opts, UPDATE_CREATE, variables)
@@ -254,10 +275,16 @@ def reply_cmd(
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
+    markdown: bool = typer.Option(
+        False,
+        "--markdown",
+        help="Treat --body / --from-file / --from-stdin as CommonMark markdown "
+        "and convert to HTML before posting.",
+    ),
 ) -> None:
     """Post a reply to an existing update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    payload = _load_body(body, from_file, from_stdin)
+    payload = _load_body(body, from_file, from_stdin, markdown=markdown)
     variables = {"item": None, "parent": parent_id, "body": payload}
     if opts.dry_run:
         _dry_run(opts, UPDATE_CREATE, variables)
@@ -274,16 +301,24 @@ def reply_cmd(
 @app.command("edit", epilog=epilog_for("update edit"))
 def edit_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
     body: str | None = typer.Option(None, "--body", help="New body (HTML)."),
     from_file: Path | None = typer.Option(
         None, "--from-file", help="Load the new body from a file."
     ),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the new body from stdin."),
+    markdown: bool = typer.Option(
+        False,
+        "--markdown",
+        help="Treat --body / --from-file / --from-stdin as CommonMark markdown "
+        "and convert to HTML before posting.",
+    ),
 ) -> None:
     """Edit an existing update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    payload = _load_body(body, from_file, from_stdin)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
+    payload = _load_body(body, from_file, from_stdin, markdown=markdown)
     variables = {"id": update_id, "body": payload}
     if opts.dry_run:
         _dry_run(opts, UPDATE_EDIT, variables)
@@ -300,10 +335,12 @@ def edit_cmd(
 @app.command("delete", epilog=epilog_for("update delete"))
 def delete_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID to delete."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
 ) -> None:
     """Delete an update (permanent)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     _confirm(opts, f"Delete update {update_id}?")
     variables = {"id": update_id}
     if opts.dry_run:
@@ -321,10 +358,12 @@ def delete_cmd(
 @app.command("like", epilog=epilog_for("update like"))
 def like_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID to like."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
 ) -> None:
     """Like an update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
     if opts.dry_run:
         _dry_run(opts, UPDATE_LIKE, variables)
@@ -341,10 +380,12 @@ def like_cmd(
 @app.command("unlike", epilog=epilog_for("update unlike"))
 def unlike_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID to unlike."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
 ) -> None:
     """Remove a like from an update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
     if opts.dry_run:
         _dry_run(opts, UPDATE_UNLIKE, variables)
@@ -382,13 +423,15 @@ def clear_cmd(
 @app.command("pin", epilog=epilog_for("update pin"))
 def pin_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID to pin."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
     item_id: int | None = typer.Option(
         None, "--item", help="Item the update belongs to (optional)."
     ),
 ) -> None:
     """Pin an update to the top of its item's feed."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"item": item_id, "update": update_id}
     if opts.dry_run:
         _dry_run(opts, UPDATE_PIN, variables)
@@ -405,13 +448,15 @@ def pin_cmd(
 @app.command("unpin", epilog=epilog_for("update unpin"))
 def unpin_cmd(
     ctx: typer.Context,
-    update_id: int = typer.Option(..., "--id", help="Update ID to unpin."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
     item_id: int | None = typer.Option(
         None, "--item", help="Item the update belongs to (optional)."
     ),
 ) -> None:
     """Unpin an update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"item": item_id, "update": update_id}
     if opts.dry_run:
         _dry_run(opts, UPDATE_UNPIN, variables)

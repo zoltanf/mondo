@@ -16,12 +16,14 @@ import typer
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, UsageError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
+from mondo.api.polling import wait_for_items_count_stable
 from mondo.api.queries import (
     BOARD_ARCHIVE,
     BOARD_CREATE,
     BOARD_DELETE,
     BOARD_DUPLICATE,
     BOARD_GET,
+    BOARD_ITEMS_COUNT,
     BOARD_UPDATE,
     build_boards_list_query,
 )
@@ -29,6 +31,7 @@ from mondo.cache.directory import get_boards as cache_get_boards
 from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -196,49 +199,73 @@ def _invalidate_boards_cache(opts: GlobalOpts) -> None:
 def list_cmd(
     ctx: typer.Context,
     state: BoardState | None = typer.Option(
-        None, "--state", help="Filter by state (default: active).", case_sensitive=False
+        None,
+        "--state",
+        help="Filter by state (default: active).",
+        case_sensitive=False,
+        rich_help_panel="Filters",
     ),
     kind: BoardKind | None = typer.Option(
-        None, "--kind", help="Filter by board kind.", case_sensitive=False
+        None,
+        "--kind",
+        help="Filter by board kind.",
+        case_sensitive=False,
+        rich_help_panel="Filters",
     ),
     workspace: list[int] | None = typer.Option(
-        None, "--workspace", help="Restrict to workspace IDs (repeatable)."
+        None,
+        "--workspace",
+        help="Restrict to workspace IDs (repeatable).",
+        rich_help_panel="Filters",
     ),
     order_by: BoardOrderBy | None = typer.Option(
-        None, "--order-by", help="Sort order.", case_sensitive=False
+        None,
+        "--order-by",
+        help="Sort order.",
+        case_sensitive=False,
+        rich_help_panel="Filters",
     ),
     name_contains: str | None = typer.Option(
         None,
         "--name-contains",
         help="Client-side substring filter on board name (case-insensitive).",
+        rich_help_panel="Filters",
     ),
     name_matches: str | None = typer.Option(
         None,
         "--name-matches",
         help="Client-side regex filter on board name.",
+        rich_help_panel="Filters",
     ),
     name_fuzzy: str | None = typer.Option(
         None,
         "--name-fuzzy",
         help="Client-side fuzzy filter on board name (tolerates typos).",
+        rich_help_panel="Filters",
     ),
     fuzzy_threshold: int | None = typer.Option(
         None,
         "--fuzzy-threshold",
         help="Minimum fuzzy match score (0-100). Defaults to config/70.",
+        rich_help_panel="Filters",
     ),
     fuzzy_score_flag: bool = typer.Option(
         False,
         "--fuzzy-score",
         help="Include `_fuzzy_score` field and sort by score desc.",
+        rich_help_panel="Filters",
     ),
     limit: int = typer.Option(
         MAX_BOARDS_PAGE_SIZE,
         "--limit",
         help=f"Page size for live fetches (max {MAX_BOARDS_PAGE_SIZE}); ignored when served from cache.",
+        rich_help_panel="Pagination",
     ),
     max_items: int | None = typer.Option(
-        None, "--max-items", help="Stop after this many boards total."
+        None,
+        "--max-items",
+        help="Stop after this many boards total.",
+        rich_help_panel="Pagination",
     ),
     with_item_counts: bool = typer.Option(
         False,
@@ -249,14 +276,21 @@ def list_cmd(
         False,
         "--no-cache",
         help="Skip the local directory cache; fetch live.",
+        rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
         "--refresh-cache",
         help="Force-refresh the local directory cache before serving.",
+        rich_help_panel="Cache",
     ),
 ) -> None:
-    """List boards. Served from the local directory cache when available."""
+    """List boards.
+
+    Use --name-contains / --name-matches / --name-fuzzy to narrow down,
+    --workspace to restrict to a workspace, and --state to include archived
+    boards. Served from the local directory cache when available.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
     if no_cache and refresh_cache:
@@ -445,10 +479,12 @@ def _list_via_cache(
 @app.command("get", epilog=epilog_for("board get"))
 def get_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--id", help="Board ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
 ) -> None:
     """Fetch a single board by ID with columns, groups, and subscribers."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     data = _execute_mutation(opts, BOARD_GET, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
@@ -511,7 +547,8 @@ def create_cmd(
 @app.command("update", epilog=epilog_for("board update"))
 def update_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--id", help="Board ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
     attribute: BoardAttribute = typer.Option(
         ...,
         "--attribute",
@@ -522,6 +559,7 @@ def update_cmd(
 ) -> None:
     """Update a single board attribute."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     data = _execute_mutation(
         opts,
         BOARD_UPDATE,
@@ -535,10 +573,12 @@ def update_cmd(
 @app.command("archive", epilog=epilog_for("board archive"))
 def archive_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--id", help="Board ID to archive."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
 ) -> None:
     """Archive a board (reversible via monday UI within 30 days)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     _confirm(opts, f"Archive board {board_id}?")
     data = _execute_mutation(opts, BOARD_ARCHIVE, {"board": board_id})
     _invalidate_boards_cache(opts)
@@ -548,13 +588,15 @@ def archive_cmd(
 @app.command("delete", epilog=epilog_for("board delete"))
 def delete_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--id", help="Board ID to delete."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
     hard: bool = typer.Option(
         False, "--hard", help="Required for permanent deletion (paired with --yes)."
     ),
 ) -> None:
     """Delete a board (permanent — prefer `archive` unless --hard is passed)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     if not hard:
         typer.secho(
             "refusing to delete without --hard. Use `mondo board archive` for "
@@ -572,7 +614,8 @@ def delete_cmd(
 @app.command("duplicate", epilog=epilog_for("board duplicate"))
 def duplicate_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--id", help="Board ID to duplicate."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
     duplicate_type: DuplicateType = typer.Option(
         DuplicateType.with_structure,
         "--type",
@@ -589,13 +632,34 @@ def duplicate_cmd(
     keep_subscribers: bool = typer.Option(
         False, "--keep-subscribers", help="Carry subscribers over to the copy."
     ),
+    wait: bool = typer.Option(
+        False,
+        "--wait",
+        help="Poll the new board's items_count until it stabilises (matches the "
+        "source board's count, or stops growing). Exits with code 8 on timeout.",
+    ),
+    timeout_s: int = typer.Option(
+        300,
+        "--timeout",
+        metavar="SECONDS",
+        help="Timeout for --wait (default: 300s).",
+    ),
+    poll_interval_s: float = typer.Option(
+        2.0,
+        "--poll-interval",
+        metavar="SECONDS",
+        help="Poll interval for --wait (default: 2s).",
+    ),
 ) -> None:
     """Duplicate a board (async — response may be partial).
 
     When --workspace is omitted, the copy lands in the source board's workspace.
     (monday's API default otherwise drops it into the caller's main workspace.)
+    Pass --wait to block until the copy's items_count stabilises; useful in
+    scripts that depend on the copy being fully populated before the next step.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     if workspace is None:
         workspace = _resolve_source_workspace(opts, board_id)
     variables: dict[str, Any] = {
@@ -608,4 +672,62 @@ def duplicate_cmd(
     }
     data = _execute_mutation(opts, BOARD_DUPLICATE, variables)
     _invalidate_boards_cache(opts)
-    opts.emit(data.get("duplicate_board") or {})
+    duplicate_payload = data.get("duplicate_board") or {}
+
+    if wait:
+        board_payload = (duplicate_payload.get("board") or {}) if duplicate_payload else {}
+        dup_id_raw = board_payload.get("id")
+        if dup_id_raw is None:
+            typer.secho(
+                "error: duplicate_board returned no board id — cannot poll for completion.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        try:
+            dup_id = int(dup_id_raw)
+        except (TypeError, ValueError):
+            typer.secho(
+                f"error: duplicate_board returned non-integer id {dup_id_raw!r}.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
+        source_items_count = _items_count_or_none(opts, board_id)
+        try:
+            client = opts.build_client()
+        except MondoError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=int(e.exit_code)) from e
+        try:
+            with client:
+                final_count = wait_for_items_count_stable(
+                    client,
+                    dup_id,
+                    target=source_items_count,
+                    timeout_s=float(timeout_s),
+                    interval_s=poll_interval_s,
+                )
+        except MondoError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=int(e.exit_code)) from e
+        duplicate_payload = {
+            **duplicate_payload,
+            "_wait": {"final_items_count": final_count, "source_items_count": source_items_count},
+        }
+
+    opts.emit(duplicate_payload)
+
+
+def _items_count_or_none(opts: GlobalOpts, board_id: int) -> int | None:
+    data = _execute_query(opts, BOARD_ITEMS_COUNT, {"ids": [board_id]})
+    boards = data.get("boards") or []
+    if not boards:
+        return None
+    raw = boards[0].get("items_count")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None

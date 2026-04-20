@@ -13,6 +13,7 @@ on failure mode without parsing stderr.
 | 5    | validation error (bad column value, unknown column id, read-only column) |
 | 6    | not found (board / item / user / doc ID doesn't exist) |
 | 7    | network / transport error (DNS, TLS, monday reachable?) |
+| 8    | timeout (client-side wait exceeded, e.g. `board duplicate --wait`) |
 
 ## What stderr carries
 
@@ -31,6 +32,7 @@ shape `{"error": "...", "code": N}`. Agents can parse either stream.
 | 5    | no (fix the value)                                    |
 | 6    | no (fix the ID)                                       |
 | 7    | yes (with exponential backoff; cap at ~3 attempts)    |
+| 8    | yes, with a longer timeout (the op is still running server-side) |
 
 ## Complexity specifically
 

@@ -24,6 +24,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -119,10 +120,14 @@ def _validate_color(color: str | None) -> str | None:
 @app.command("list", epilog=epilog_for("group list"))
 def list_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
 ) -> None:
     """List all groups on a board (nested query — no standalone groups root)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     client = _client_or_exit(opts)
     try:
         with client:

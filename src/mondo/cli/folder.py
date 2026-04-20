@@ -27,6 +27,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -110,10 +111,12 @@ def list_cmd(
 @app.command("get", epilog=epilog_for("folder get"))
 def get_cmd(
     ctx: typer.Context,
-    folder_id: int = typer.Option(..., "--id", help="Folder ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
 ) -> None:
     """Fetch a single folder by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     variables = {"ids": [folder_id]}
     if opts.dry_run:
         _dry_run(opts, FOLDER_GET, variables)
@@ -175,7 +178,8 @@ def create_cmd(
 @app.command("update", epilog=epilog_for("folder update"))
 def update_cmd(
     ctx: typer.Context,
-    folder_id: int = typer.Option(..., "--id", help="Folder ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
     name: str | None = typer.Option(None, "--name", help="New name."),
     color: str | None = typer.Option(None, "--color", help="New color (enum)."),
     product_id: int | None = typer.Option(None, "--product-id", help="Account product ID."),
@@ -188,6 +192,7 @@ def update_cmd(
 ) -> None:
     """Update a folder (name / color / position)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     position_obj: Any = None
     if position is not None:
         try:
@@ -228,13 +233,15 @@ def update_cmd(
 @app.command("delete", epilog=epilog_for("folder delete"))
 def delete_cmd(
     ctx: typer.Context,
-    folder_id: int = typer.Option(..., "--id", help="Folder ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
     hard: bool = typer.Option(
         False, "--hard", help="Required (folder delete archives contained boards)."
     ),
 ) -> None:
     """Delete a folder (only the creator can delete; contained boards are archived)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     if not hard:
         typer.secho(
             "refusing to delete without --hard (folder delete archives contained boards).",

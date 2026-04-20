@@ -35,6 +35,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
@@ -84,6 +85,8 @@ def _build_column_values(
     client: MondayClient,
     subitems_board_id: int | None,
     pairs: list[str],
+    *,
+    create_labels: bool = False,
 ) -> dict[str, Any]:
     """Turn `--column K=V` pairs into the write JSON shape.
 
@@ -110,9 +113,11 @@ def _build_column_values(
             continue
         settings = _parse_settings(definition.get("settings_str"))
         try:
-            out[col_id] = parse_value(col_type, raw_value, settings)
+            out[col_id] = parse_value(col_type, raw_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
             out[col_id] = raw_value
+        except ValueError as e:
+            raise ValueError(f"--column {col_id}={raw_value!r}: {e}") from e
     return out
 
 
@@ -146,10 +151,12 @@ def list_cmd(
 @app.command("get", epilog=epilog_for("subitem get"))
 def get_cmd(
     ctx: typer.Context,
-    subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
 ) -> None:
     """Fetch a single subitem by ID (same shape as `item get`)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"id": subitem_id}
     if opts.dry_run:
         _dry_run(opts, ITEM_GET, variables)
@@ -211,7 +218,12 @@ def create_cmd(
             client = _client_or_exit(opts)
             try:
                 with client:
-                    col_values = _build_column_values(client, subitems_board, columns)
+                    col_values = _build_column_values(
+                        client,
+                        subitems_board,
+                        columns,
+                        create_labels=create_labels_if_missing,
+                    )
             except MondoError as e:
                 typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=int(e.exit_code)) from e
@@ -242,12 +254,14 @@ def create_cmd(
 @app.command("rename", epilog=epilog_for("subitem rename"))
 def rename_cmd(
     ctx: typer.Context,
-    subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent subitems board ID."),
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
     """Rename a subitem (writes the `name` column via change_simple_column_value)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"board": board_id, "id": subitem_id, "name": name}
     if opts.dry_run:
         _dry_run(opts, ITEM_RENAME, variables)
@@ -264,7 +278,8 @@ def rename_cmd(
 @app.command("move", epilog=epilog_for("subitem move"))
 def move_cmd(
     ctx: typer.Context,
-    subitem_id: int = typer.Option(..., "--id", help="Subitem ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
     group_id: str = typer.Option(
         ...,
         "--group",
@@ -276,6 +291,7 @@ def move_cmd(
 ) -> None:
     """Move a subitem to a different subitems group."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"id": subitem_id, "group": group_id}
     if opts.dry_run:
         _dry_run(opts, ITEM_MOVE_GROUP, variables)
@@ -292,10 +308,12 @@ def move_cmd(
 @app.command("archive", epilog=epilog_for("subitem archive"))
 def archive_cmd(
     ctx: typer.Context,
-    subitem_id: int = typer.Option(..., "--id", help="Subitem ID to archive."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
 ) -> None:
     """Archive a subitem (reversible)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     _confirm(opts, f"Archive subitem {subitem_id}?")
     variables = {"id": subitem_id}
     if opts.dry_run:
@@ -313,11 +331,13 @@ def archive_cmd(
 @app.command("delete", epilog=epilog_for("subitem delete"))
 def delete_cmd(
     ctx: typer.Context,
-    subitem_id: int = typer.Option(..., "--id", help="Subitem ID to delete."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a subitem (permanent — prefer `archive` unless --hard is passed)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     if not hard:
         typer.secho(
             "refusing to delete without --hard. Use `mondo subitem archive` for "

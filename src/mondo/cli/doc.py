@@ -38,6 +38,7 @@ from mondo.api.queries import (
     UPDATE_DOC_BLOCK,
 )
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.docs import blocks_to_markdown, markdown_to_blocks
 
@@ -390,13 +391,15 @@ def add_content_cmd(
 @app.command("update-block", epilog=epilog_for("doc update-block"))
 def update_block_cmd(
     ctx: typer.Context,
-    block_id: str = typer.Option(..., "--id", help="Block ID to update."),
+    id_pos: str | None = typer.Argument(None, metavar="[BLOCK_ID]", help="Block ID (positional)."),
+    id_flag: str | None = typer.Option(None, "--id", help="Block ID (flag form)."),
     content: str = typer.Option(
         ..., "--content", metavar="JSON", help="Replacement content as JSON."
     ),
 ) -> None:
     """Replace a single block's content."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     try:
         parsed_content = json.loads(content)
     except json.JSONDecodeError as e:
@@ -420,10 +423,12 @@ def update_block_cmd(
 @app.command("delete-block", epilog=epilog_for("doc delete-block"))
 def delete_block_cmd(
     ctx: typer.Context,
-    block_id: str = typer.Option(..., "--id", help="Block ID to delete."),
+    id_pos: str | None = typer.Argument(None, metavar="[BLOCK_ID]", help="Block ID (positional)."),
+    id_flag: str | None = typer.Option(None, "--id", help="Block ID (flag form)."),
 ) -> None:
     """Delete a single block from a doc."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     variables = {"block": block_id}
     if opts.dry_run:
         _dry_run(opts, DELETE_DOC_BLOCK, variables)

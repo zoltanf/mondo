@@ -18,6 +18,7 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_OR_GET_TAG, TAG_BY_BOARD, TAGS_LIST
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -73,7 +74,8 @@ def list_cmd(
 @app.command("get", epilog=epilog_for("tag get"))
 def get_cmd(
     ctx: typer.Context,
-    tag_id: int = typer.Option(..., "--id", help="Tag ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Tag ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Tag ID (flag form)."),
     board_id: int | None = typer.Option(
         None,
         "--board",
@@ -90,6 +92,7 @@ def get_cmd(
     `board.tags` as a fallback.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    tag_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="tag")
     variables = {"ids": [tag_id]}
     if opts.dry_run:
         _dry_run(opts, TAGS_LIST, variables)

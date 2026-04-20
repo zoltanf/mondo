@@ -33,6 +33,7 @@ from mondo.api.queries import (
     ITEMS_PAGE_NEXT_WITH_SUBITEMS,
 )
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -172,7 +173,10 @@ def _write_xlsx(
 @app.command("board", epilog=epilog_for("export board"))
 def board_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID to export."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
     fmt: ExportFormat = typer.Option(
         ExportFormat.csv,
         "--format",
@@ -195,6 +199,7 @@ def board_cmd(
 ) -> None:
     """Export a board's items (and optionally subitems) in the chosen format."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     if fmt is ExportFormat.xlsx and out is None:
         typer.secho(

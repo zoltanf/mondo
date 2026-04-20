@@ -146,13 +146,17 @@ EXAMPLES: dict[str, list[Example]] = {
     "board duplicate": [
         Example(
             "Duplicate a board including its pulses + updates",
-            "mondo board duplicate --id 1234567890 --type duplicate_board_with_pulses_and_updates",
+            "mondo board duplicate 1234567890 --type duplicate_board_with_pulses_and_updates",
         ),
         Example(
             "Duplicate into a specific workspace, keep subscribers",
-            "mondo board duplicate --id 1234567890 "
+            "mondo board duplicate 1234567890 "
             "--type duplicate_board_with_structure "
             '--name "Copy" --workspace 42 --keep-subscribers',
+        ),
+        Example(
+            "Block until the copy is fully populated (5 min timeout)",
+            "mondo board duplicate 1234567890 --wait --timeout 300",
         ),
     ],
     # --- item --------------------------------------------------------------
@@ -308,12 +312,16 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "update create": [
         Example(
-            "Post a new update (body is HTML, not markdown)",
+            "Post a new update (body is HTML)",
             'mondo update create --item 1234567890 --body "<p>FYI</p>"',
         ),
         Example(
-            "Post from a file",
-            "mondo update create --item 1234567890 --from-file note.html",
+            "Post from a markdown file (converted to HTML)",
+            "mondo update create --item 1234567890 --from-file note.md --markdown",
+        ),
+        Example(
+            "Inline markdown",
+            'mondo update create --item 1234567890 --body "**Done**: audit passed" --markdown',
         ),
     ],
     "update reply": [
@@ -321,11 +329,19 @@ EXAMPLES: dict[str, list[Example]] = {
             "Reply to an existing update",
             'mondo update reply --parent 555 --body "<p>re</p>"',
         ),
+        Example(
+            "Reply with markdown",
+            'mondo update reply --parent 555 --body "thanks, **merged**" --markdown',
+        ),
     ],
     "update edit": [
         Example(
             "Edit an update's body",
-            'mondo update edit --id 555 --body "<p>new body</p>"',
+            'mondo update edit 555 --body "<p>new body</p>"',
+        ),
+        Example(
+            "Rewrite in markdown",
+            'mondo update edit 555 --body "## Revised\n- fixed typo" --markdown',
         ),
     ],
     "update delete": [
@@ -653,7 +669,21 @@ EXAMPLES: dict[str, list[Example]] = {
     "column list": [
         Example(
             "Every column definition on a board",
+            "mondo column list 1234567890",
+        ),
+        Example(
+            "Flag form (still works for scripts)",
             "mondo column list --board 1234567890",
+        ),
+    ],
+    "column labels": [
+        Example(
+            "List status labels with their indices",
+            "mondo column labels 1234567890 --column status",
+        ),
+        Example(
+            "List dropdown labels with their ids",
+            "mondo column labels 1234567890 --column dropdown_mkrnym4p",
         ),
     ],
     "column get": [

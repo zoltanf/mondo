@@ -27,6 +27,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
@@ -141,6 +142,7 @@ def _build_column_values(
     pairs: list[str],
     *,
     raw_mode: bool,
+    create_labels: bool = False,
 ) -> dict[str, Any]:
     """Apply codecs to `--column K=V` pairs, using live board column types.
 
@@ -165,10 +167,12 @@ def _build_column_values(
         if col_type == "tags":
             raw_value = _resolve_tag_names_to_ids(client, board_id, raw_value)
         try:
-            out[col_id] = parse_value(col_type, raw_value, settings)
+            out[col_id] = parse_value(col_type, raw_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
             # Unfamiliar column type → don't translate, send raw
             out[col_id] = raw_value
+        except ValueError as e:
+            raise ValueError(f"--column {col_id}={raw_value!r}: {e}") from e
     return out
 
 
@@ -190,7 +194,8 @@ def _build_query_params(filters: list[str] | None, order_by: str | None) -> dict
 @app.command("get", epilog=epilog_for("item get"))
 def get_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
     include_updates: bool = typer.Option(
         False, "--include-updates", help="Also fetch item updates (comments)."
     ),
@@ -198,6 +203,7 @@ def get_cmd(
 ) -> None:
     """Fetch a single item by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     if include_updates and include_subitems:
         typer.secho(
             "error: --include-updates and --include-subitems are mutually exclusive for now.",
@@ -223,24 +229,42 @@ def get_cmd(
 @app.command("list", epilog=epilog_for("item list"))
 def list_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID to list items from."),
-    limit: int = typer.Option(MAX_PAGE_SIZE, "--limit", help=f"Page size (max {MAX_PAGE_SIZE})."),
-    max_items: int | None = typer.Option(
-        None, "--max-items", help="Stop after this many items total."
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
     filter_expr: list[str] | None = typer.Option(
         None,
         "--filter",
         help="Filter rule like 'status=Done' or 'status!=Stuck' (repeatable).",
+        rich_help_panel="Filters",
     ),
     order_by: str | None = typer.Option(
         None,
         "--order-by",
         help="Column to sort by, optionally with ',asc'/',desc' (default: asc).",
+        rich_help_panel="Filters",
+    ),
+    limit: int = typer.Option(
+        MAX_PAGE_SIZE,
+        "--limit",
+        help=f"Page size (max {MAX_PAGE_SIZE}).",
+        rich_help_panel="Pagination",
+    ),
+    max_items: int | None = typer.Option(
+        None,
+        "--max-items",
+        help="Stop after this many items total.",
+        rich_help_panel="Pagination",
     ),
 ) -> None:
-    """List items on a board (cursor pagination)."""
+    """List items on a board (cursor pagination).
+
+    Use --filter 'col=val' (repeatable) to narrow results server-side, and
+    --order-by col[,asc|desc] to sort.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     if opts.dry_run:
         opts.emit(
@@ -348,6 +372,7 @@ def create_cmd(
                         board_id,
                         columns,
                         raw_mode=False,
+                        create_labels=create_labels_if_missing,
                     )
             except ValueError as e:
                 typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
@@ -373,12 +398,14 @@ def create_cmd(
 @app.command("rename", epilog=epilog_for("item rename"))
 def rename_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent board ID."),
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
     """Rename an item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     data = _execute_mutation(opts, ITEM_RENAME, {"board": board_id, "id": item_id, "name": name})
     opts.emit(data.get("change_simple_column_value") or {})
 
@@ -386,7 +413,8 @@ def rename_cmd(
 @app.command("duplicate", epilog=epilog_for("item duplicate"))
 def duplicate_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID to duplicate."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent board ID."),
     with_updates: bool = typer.Option(
         False, "--with-updates", help="Also duplicate the item's updates (comments)."
@@ -394,6 +422,7 @@ def duplicate_cmd(
 ) -> None:
     """Duplicate an item in place."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     data = _execute_mutation(
         opts,
         ITEM_DUPLICATE,
@@ -405,10 +434,12 @@ def duplicate_cmd(
 @app.command("archive", epilog=epilog_for("item archive"))
 def archive_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID to archive."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
 ) -> None:
     """Archive an item (reversible via monday UI within 30 days)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     _confirm(opts, f"Archive item {item_id}?")
     data = _execute_mutation(opts, ITEM_ARCHIVE, {"id": item_id})
     opts.emit(data.get("archive_item") or {})
@@ -417,13 +448,15 @@ def archive_cmd(
 @app.command("delete", epilog=epilog_for("item delete"))
 def delete_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID to delete."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
     hard: bool = typer.Option(
         False, "--hard", help="Required for permanent deletion (paired with --yes)."
     ),
 ) -> None:
     """Delete an item (permanent — prefer `archive` unless --hard is passed)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     if not hard:
         typer.secho(
             "refusing to delete without --hard. Use `mondo item archive` for "

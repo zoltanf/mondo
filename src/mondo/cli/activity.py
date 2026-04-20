@@ -17,6 +17,7 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import BOARD_ACTIVITY_LOGS
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -48,7 +49,10 @@ def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -
 @app.command("board", epilog=epilog_for("activity board"))
 def board_cmd(
     ctx: typer.Context,
-    board_id: int = typer.Option(..., "--board", help="Board ID."),
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
     since: str | None = typer.Option(
         None, "--since", help="Lower bound ISO-8601 timestamp (inclusive)."
     ),
@@ -70,6 +74,7 @@ def board_cmd(
 ) -> None:
     """Stream activity log entries for a board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     base_vars: dict[str, Any] = {
         "board": board_id,

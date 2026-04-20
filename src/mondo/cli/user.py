@@ -36,6 +36,7 @@ from mondo.cache.directory import get_users as cache_get_users
 from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -335,10 +336,12 @@ def _list_users_via_cache(
 @app.command("get", epilog=epilog_for("user get"))
 def get_cmd(
     ctx: typer.Context,
-    user_id: int = typer.Option(..., "--id", help="User ID."),
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="User ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="User ID (flag form)."),
 ) -> None:
     """Fetch a single user by ID, including teams and account."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    user_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="user")
     if opts.dry_run:
         _dry_run(opts, USER_GET, {"ids": [user_id]})
     client = _client_or_exit(opts)
