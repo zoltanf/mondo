@@ -179,6 +179,73 @@ class TestBoardList:
         for forbidden in ("workspace_ids", "state:", "board_kind:", "order_by:"):
             assert forbidden not in body["query"], body["query"]
 
+    def test_type_filter_hides_docs_by_default(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {"id": "1", "name": "Real board", "type": "board"},
+                        {"id": "2", "name": "A doc", "type": "document"},
+                        {"id": "3", "name": "No type"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        # Missing `type` falls back to "board" so pre-type entries aren't lost.
+        assert [b["id"] for b in parsed] == ["1", "3"]
+
+    def test_type_filter_doc_keeps_only_documents(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {"id": "1", "type": "board"},
+                        {"id": "2", "type": "document"},
+                        {"id": "3", "type": "sub_items_board"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "list", "--type", "doc"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [b["id"] for b in parsed] == ["2"]
+
+    def test_type_filter_all_passes_everything(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {"id": "1", "type": "board"},
+                        {"id": "2", "type": "document"},
+                        {"id": "3", "type": "sub_items_board"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "list", "--type", "all"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [b["id"] for b in parsed] == ["1", "2", "3"]
+
+    def test_type_field_included_in_query(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        # `type` is now part of the selection set so the client can filter.
+        # Match as a word so it isn't a false hit on "items_count" etc.
+        query = _last_body(httpx_mock)["query"]
+        assert " type " in query or "\ntype\n" in query or "type\n" in query
+
     def test_items_count_omitted_by_default(self, httpx_mock: HTTPXMock) -> None:
         """items_count costs ~500k complexity per page; opt-in only."""
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))

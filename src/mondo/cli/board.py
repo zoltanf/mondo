@@ -58,6 +58,43 @@ class BoardOrderBy(StrEnum):
     created_at = "created_at"
 
 
+class BoardTypeFilter(StrEnum):
+    """`--type` selector on `board list`.
+
+    monday's `boards()` query returns both real boards and workdoc-backing
+    boards (monday models every workdoc as a board with `type=="document"`).
+    The CLI hides docs by default; pass `--type doc` to list only docs, or
+    `--type all` to see everything including non-standard types such as
+    `sub_items_board` and `custom_object`.
+    """
+
+    board = "board"
+    doc = "doc"
+    all = "all"
+
+
+# Mapping from CLI filter → monday's `Board.type` server value.
+_BOARD_TYPE_SERVER_VALUE: dict[BoardTypeFilter, str] = {
+    BoardTypeFilter.board: "board",
+    BoardTypeFilter.doc: "document",
+}
+
+
+def _type_matches(entry: dict[str, Any], type_filter: BoardTypeFilter) -> bool:
+    """Return True when `entry` should pass the `--type` filter.
+
+    Entries cached before schema_version 2 lack `type`; we don't want those
+    to silently disappear under `--type board` (the common default). The
+    schema_version bump forces a one-off refresh so this branch should only
+    matter in the edge case of an in-memory fetch before the cache is warm.
+    Treat missing as `"board"` to keep behavior predictable.
+    """
+    if type_filter is BoardTypeFilter.all:
+        return True
+    observed = entry.get("type") or "board"
+    return observed == _BOARD_TYPE_SERVER_VALUE[type_filter]
+
+
 class BoardAttribute(StrEnum):
     name = "name"
     description = "description"
@@ -212,6 +249,16 @@ def list_cmd(
         case_sensitive=False,
         rich_help_panel="Filters",
     ),
+    type_filter: BoardTypeFilter = typer.Option(
+        BoardTypeFilter.board,
+        "--type",
+        help=(
+            "Filter by Board.type — `board` (default) hides workdocs; "
+            "`doc` lists only workdoc-backing boards; `all` includes every type."
+        ),
+        case_sensitive=False,
+        rich_help_panel="Filters",
+    ),
     workspace: list[int] | None = typer.Option(
         None,
         "--workspace",
@@ -320,6 +367,7 @@ def list_cmd(
             opts,
             state=state,
             kind=kind,
+            type_filter=type_filter,
             workspace=workspace,
             order_by=order_by,
             needle_lower=needle_lower,
@@ -372,9 +420,9 @@ def list_cmd(
                     query=query,
                     variables=variables,
                     limit=limit,
-                    max_items=None,  # client-side filter applied below
+                    max_items=None,  # client-side filters applied below
                 )
-                if _name_matches(b, needle_lower, pattern)
+                if _type_matches(b, type_filter) and _name_matches(b, needle_lower, pattern)
             ]
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
@@ -398,6 +446,7 @@ def _list_via_cache(
     *,
     state: BoardState | None,
     kind: BoardKind | None,
+    type_filter: BoardTypeFilter,
     workspace: list[int] | None,
     order_by: BoardOrderBy | None,
     needle_lower: str | None,
@@ -421,6 +470,7 @@ def _list_via_cache(
                 "filters": {
                     "state": state.value if state else None,
                     "kind": kind.value if kind else None,
+                    "type": type_filter.value,
                     "workspace_ids": workspace or None,
                     "order_by": order_by.value if order_by else None,
                     "name_fuzzy": name_fuzzy,
@@ -453,6 +503,8 @@ def _list_via_cache(
         entries = [b for b in entries if (b.get("state") or "active") == requested_state]
     if kind is not None:
         entries = [b for b in entries if (b.get("board_kind") or "") == kind.value]
+    if type_filter is not BoardTypeFilter.all:
+        entries = [b for b in entries if _type_matches(b, type_filter)]
     if workspace:
         wanted = {str(w) for w in workspace}
         entries = [b for b in entries if str(b.get("workspace_id") or "") in wanted]

@@ -987,6 +987,10 @@ def build_boards_list_query(
         "board_folder_id",
         "workspace_id",
         "updated_at",
+        # monday's `boards()` returns both real boards and workdoc-backing
+        # boards. `type` is how the schema distinguishes them — observed
+        # values: "board", "document", "sub_items_board", "custom_object".
+        "type",
     ]
     if with_item_counts:
         fields.append("items_count")
@@ -1022,6 +1026,7 @@ query ($id: ID!) {
     description
     state
     board_kind
+    type
     board_folder_id
     workspace_id
     items_count
