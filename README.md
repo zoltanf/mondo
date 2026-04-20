@@ -18,6 +18,99 @@ workspaces, users, docs, webhooks, etc.
 
 ---
 
+## Features
+
+**Complete monday platform API coverage.** Boards, items, subitems, columns
+(read/write + structural CRUD), groups, workspaces, users, teams, workspace
+docs, webhooks, files, activity logs, folders, favorites, tags, notifications,
+aggregations, validation rules, bulk CSV/XLSX import & export, and a raw
+GraphQL escape hatch.
+
+**Smart column-value shorthand.** Write `--column status=Done`,
+`--column due=2026-04-25`, or `--column tags=urgent,blocked` and a codec
+registry (22 writable column types) turns it into the right JSON — no
+hand-written mutations for 90% of the work.
+
+**Built for agents and scripts.** `mondo help --dump-spec -o json` emits the
+entire command tree (flags, types, enums, examples, exit codes) as one JSON
+blob — ingest once, plan many calls. Exit codes are narrow and stable
+(3=auth, 4=rate, 5=validation, 6=not-found, 7=network) so retry logic can
+branch on the code. Stdout is always machine-parseable JSON when not a TTY.
+
+**Complexity-aware.** Every query is transparently rewritten to fetch
+monday's [complexity counters](https://developer.monday.com/api-reference/docs/complexity),
+feeding a session-local meter (`mondo complexity status`) so you never blow
+through the per-minute budget mid-script.
+
+**Local directory cache.** Boards, workspaces, users, and teams are cached on
+disk with per-entity TTLs. Repeat `list` calls and fuzzy name matches
+(`--name-fuzzy "prodct launc"`) don't re-walk the API.
+
+**Multi-profile, keyring-backed auth.** Token can live in the OS keyring
+(macOS Keychain / Windows Credential Manager / libsecret), an env var, or
+a `config.yaml` profile — switch accounts with `--profile work`.
+
+### At a glance
+
+**Items & columns**
+
+```bash
+# Create an item with typed column values — no JSON hand-writing
+mondo item create --board 1234567890 --name "Fix CI" \
+  --column status=Working --column owner=42 --column due=2026-04-25
+
+# List items with a JMESPath projection + table output
+mondo item list --board 1234567890 -o table \
+  -q '[].{id:id,name:name,state:state}'
+
+# Update a tags column by name — mondo resolves to tag IDs automatically
+mondo column set --item 987 --column tags --value urgent,blocked
+```
+
+**Boards & workspaces**
+
+```bash
+# Find boards by name (client-side — monday's API has no name filter)
+mondo board list --name-contains pager --limit 20 -o table
+
+# Duplicate a board with all items + updates into a different workspace
+mondo board duplicate --id 1234567890 \
+  --type duplicate_board_with_pulses_and_updates --workspace 42
+
+# Add a whole team as workspace owners
+mondo workspace add-team --id 7 --team 11 --kind owner
+```
+
+**Import / export**
+
+```bash
+# Export a board as XLSX, including a subitems worksheet
+mondo export board --board 1234567890 --format xlsx \
+  --include-subitems --out board.xlsx
+
+# Re-import from CSV, skipping rows whose name already exists
+mondo import board --board 1234567890 --from items.csv --idempotency-name
+
+# Dry-run to see the mutations without sending them
+mondo --dry-run import board --board 1234567890 --from items.csv
+```
+
+**Agents & automation**
+
+```bash
+# Full command tree (flags, types, enums, examples, exit codes) as JSON
+mondo help --dump-spec -o json > mondo-spec.json
+
+# Raw GraphQL escape hatch for anything not yet wrapped
+mondo graphql 'query ($ids:[ID!]!){items(ids:$ids){id name}}' \
+  --vars '{"ids":[1,2]}'
+
+# Pipeline-friendly: extract a scalar, branch on stable exit codes
+count=$(mondo item list --board 42 -q "length(@)" -o none)
+```
+
+---
+
 ## Installation
 
 ### Homebrew (macOS, Linux) — recommended
