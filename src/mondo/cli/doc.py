@@ -34,8 +34,8 @@ from mondo.api.queries import (
     DELETE_DOC_BLOCK,
     DOC_GET_BY_ID,
     DOCS_BY_OBJECT_ID,
-    DOCS_LIST_PAGE,
     UPDATE_DOC_BLOCK,
+    build_docs_list_query,
 )
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
@@ -135,16 +135,15 @@ def list_cmd(
 ) -> None:
     """List docs (page-based)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    variables: dict[str, Any] = {
-        "ids": None,
-        "objectIds": object_id or None,
-        "workspaceIds": workspace or None,
-        "orderBy": order_by.value if order_by else None,
-    }
+    query, variables = build_docs_list_query(
+        object_ids=object_id or None,
+        workspace_ids=workspace or None,
+        order_by=order_by.value if order_by else None,
+    )
     if opts.dry_run:
         opts.emit(
             {
-                "query": "<docs page iterator>",
+                "query": query,
                 "variables": {**variables, "limit": limit, "max_items": max_items},
             }
         )
@@ -155,7 +154,7 @@ def list_cmd(
             items = list(
                 iter_boards_page(
                     client,
-                    query=DOCS_LIST_PAGE,
+                    query=query,
                     variables=variables,
                     collection_key="docs",
                     limit=limit,

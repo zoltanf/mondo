@@ -76,6 +76,21 @@ class TestList:
         assert v["objectIds"] == [100]
         assert v["orderBy"] == "used_at"
 
+    def test_unfiltered_omits_workspace_ids_arg(self, httpx_mock: HTTPXMock) -> None:
+        """Monday silently scopes docs() to a single workspace when
+        `workspace_ids: null` is sent. Unfiltered `doc list` must omit the
+        arg entirely so monday returns docs across every accessible workspace.
+        """
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        for forbidden in ("ids: $ids", "object_ids:", "workspace_ids:", "order_by:"):
+            assert forbidden not in body["query"], (
+                f"{forbidden} leaked into unfiltered query: {body['query']}"
+            )
+        assert body["variables"].keys() == {"limit", "page"}
+
 
 # --- get ---
 

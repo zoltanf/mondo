@@ -471,35 +471,63 @@ mutation ($block: String!) {
 
 # --- workspace docs (3e) — distinct from the `doc` column type ---
 
-DOCS_LIST_PAGE = """
-query (
-  $limit: Int!
-  $page: Int!
-  $ids: [ID!]
-  $objectIds: [ID!]
-  $workspaceIds: [ID!]
-  $orderBy: DocsOrderBy
-) {
-  docs(
-    limit: $limit
-    page: $page
-    ids: $ids
-    object_ids: $objectIds
-    workspace_ids: $workspaceIds
-    order_by: $orderBy
-  ) {
-    id
-    object_id
-    name
-    doc_kind
-    created_at
-    url
-    relative_url
-    workspace_id
-    created_by { id name }
-  }
-}
-""".strip()
+def build_docs_list_query(
+    *,
+    ids: list[int] | None = None,
+    object_ids: list[int] | None = None,
+    workspace_ids: list[int] | None = None,
+    order_by: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Build a page-based docs list query containing only the filter args
+    that are actually set.
+
+    Monday's `docs(...)` has the same server-side quirk as `boards(...)`:
+    passing `workspace_ids: null` silently scopes the result set to a single
+    (default) workspace instead of returning docs from every accessible
+    workspace. Safest to never send null-valued filters, so we build the
+    query and variables dynamically.
+    """
+    var_decls: list[str] = ["$limit: Int!", "$page: Int!"]
+    args: list[str] = ["limit: $limit", "page: $page"]
+    variables: dict[str, Any] = {}
+
+    if ids:
+        var_decls.append("$ids: [ID!]")
+        args.append("ids: $ids")
+        variables["ids"] = ids
+    if object_ids:
+        var_decls.append("$objectIds: [ID!]")
+        args.append("object_ids: $objectIds")
+        variables["objectIds"] = object_ids
+    if workspace_ids:
+        var_decls.append("$workspaceIds: [ID!]")
+        args.append("workspace_ids: $workspaceIds")
+        variables["workspaceIds"] = workspace_ids
+    if order_by is not None:
+        var_decls.append("$orderBy: DocsOrderBy")
+        args.append("order_by: $orderBy")
+        variables["orderBy"] = order_by
+
+    fields = [
+        "id",
+        "object_id",
+        "name",
+        "doc_kind",
+        "created_at",
+        "url",
+        "relative_url",
+        "workspace_id",
+        "created_by { id name }",
+    ]
+
+    query = (
+        f"query ({', '.join(var_decls)}) {{\n"
+        f"  docs({', '.join(args)}) {{\n"
+        f"    {' '.join(fields)}\n"
+        f"  }}\n"
+        f"}}"
+    )
+    return query, variables
 
 
 DOC_GET_BY_ID = """
