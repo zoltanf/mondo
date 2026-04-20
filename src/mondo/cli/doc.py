@@ -29,6 +29,7 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.pagination import iter_boards_page
 from mondo.api.queries import (
+    BOARD_GET,
     CREATE_DOC_BLOCK,
     CREATE_DOC_IN_WORKSPACE,
     DELETE_DOC_BLOCK,
@@ -39,6 +40,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
+from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
 from mondo.docs import blocks_to_markdown, markdown_to_blocks
 
@@ -170,9 +172,17 @@ def list_cmd(
 @app.command("get", epilog=epilog_for("doc get"))
 def get_cmd(
     ctx: typer.Context,
-    doc_id: int | None = typer.Option(None, "--id", help="Internal doc ID."),
+    doc_id: int | None = typer.Option(
+        None,
+        "--id",
+        help="Internal doc ID (or monday.com URL).",
+        click_type=MondayIdParam(),
+    ),
     object_id: int | None = typer.Option(
-        None, "--object-id", help="URL-visible numeric object_id."
+        None,
+        "--object-id",
+        help="URL-visible numeric object_id (or monday.com URL).",
+        click_type=MondayIdParam(),
     ),
     fmt: DocFormat = typer.Option(
         DocFormat.json,
@@ -180,9 +190,15 @@ def get_cmd(
         help="Emit raw JSON (blocks as-is) or render blocks to markdown.",
         case_sensitive=False,
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="(No-op for docs — `url` is always present in the payload.)",
+    ),
 ) -> None:
     """Fetch a single doc by id or object_id, with its full block tree."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    del with_url  # docs always carry `url` from monday; flag kept for symmetry
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
         typer.secho(
@@ -206,20 +222,49 @@ def get_cmd(
     try:
         with client:
             data = _exec_or_exit(client, query, variables)
+            docs = data.get("docs") or []
+            if not docs:
+                _emit_doc_not_found(client, doc_id=doc_id, object_id=object_id)
+                raise typer.Exit(code=6)
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    docs = data.get("docs") or []
-    if not docs:
-        ref = f"id={doc_id}" if doc_id is not None else f"object_id={object_id}"
-        typer.secho(f"doc {ref} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
     doc = docs[0]
     if fmt is DocFormat.markdown:
         blocks = doc.get("blocks") or []
         typer.echo(blocks_to_markdown(blocks))
         return
     opts.emit(doc)
+
+
+def _emit_doc_not_found(
+    client: MondayClient,
+    *,
+    doc_id: int | None,
+    object_id: int | None,
+) -> None:
+    """Emit a helpful not-found message; probe BOARD_GET on --object-id
+    misses to distinguish a real-board id from a genuine miss.
+
+    Why: URLs of the form `/boards/<id>` commonly carry a real-board id;
+    users who paste one into `doc get --object-id` deserve a specific
+    "try board get" hint rather than a generic "not found". The probe is
+    skipped for --id (internal doc ids don't overlap with board ids in
+    practice).
+    """
+    if object_id is not None:
+        probe = _exec_or_exit(client, BOARD_GET, {"id": object_id})
+        boards = probe.get("boards") or []
+        if boards and (boards[0].get("type") or "board") != "document":
+            typer.secho(
+                f"warning: id {object_id} is a regular board, not a workdoc. "
+                f"Consider: mondo board get {object_id}",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            return
+    ref = f"id={doc_id}" if doc_id is not None else f"object_id={object_id}"
+    typer.secho(f"doc {ref} not found.", fg=typer.colors.RED, err=True)
 
 
 # ----- write commands -----

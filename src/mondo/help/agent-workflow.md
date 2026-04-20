@@ -76,3 +76,4 @@ output formatting, same exit codes, no codec layer in between. See
 - `mondo help filters` — server-side filter syntax for list commands.
 - `mondo help auth` — token resolution chain.
 - `mondo help profiles` — multi-account configuration.
+- `mondo help boards-vs-docs` — reading monday URLs, workdoc detection, and `--with-url`.

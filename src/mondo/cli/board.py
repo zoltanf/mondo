@@ -32,6 +32,7 @@ from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
+from mondo.cli._url import MondayIdParam, board_url, get_tenant_slug, warn_cross_type
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -531,8 +532,23 @@ def _list_via_cache(
 @app.command("get", epilog=epilog_for("board get"))
 def get_cmd(
     ctx: typer.Context,
-    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_pos: int | None = typer.Argument(
+        None,
+        metavar="[ID|URL]",
+        help="Board ID or monday.com URL (positional).",
+        click_type=MondayIdParam(),
+    ),
+    id_flag: int | None = typer.Option(
+        None,
+        "--id",
+        help="Board ID or monday.com URL.",
+        click_type=MondayIdParam(),
+    ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include a synthesized `url` field in the emitted payload.",
+    ),
 ) -> None:
     """Fetch a single board by ID with columns, groups, and subscribers."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -542,7 +558,17 @@ def get_cmd(
     if not boards:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(boards[0])
+    board = boards[0]
+    warn_cross_type(board, expected="board", id_=board_id)
+    if with_url:
+        try:
+            client = opts.build_client()
+        except MondoError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=int(e.exit_code)) from e
+        with client:
+            board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
+    opts.emit(board)
 
 
 # ----- write commands -----

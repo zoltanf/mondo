@@ -34,6 +34,7 @@ query ($id: ID!) {
     state
     created_at
     updated_at
+    url
     creator { id name }
     group { id title }
     board { id name }
@@ -51,6 +52,7 @@ query ($id: ID!) {
     state
     created_at
     updated_at
+    url
     creator { id name }
     group { id title }
     board { id name }
@@ -75,6 +77,7 @@ query ($id: ID!) {
     state
     created_at
     updated_at
+    url
     creator { id name }
     group { id title }
     board { id name }

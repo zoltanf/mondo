@@ -104,7 +104,20 @@ EXAMPLES: dict[str, list[Example]] = {
         Example("Force-refresh the cache before serving", "mondo board list --refresh-cache"),
     ],
     "board get": [
-        Example("Fetch one board by id", "mondo board get --id 1234567890"),
+        Example("Fetch by id", "mondo board get --id 1234567890"),
+        Example("Positional id", "mondo board get 1234567890"),
+        Example(
+            "Paste a monday URL (works for boards and workdocs)",
+            "mondo board get https://marktguru.monday.com/boards/1234567890",
+        ),
+        Example(
+            "Include the round-trip URL in the payload",
+            "mondo board get 1234567890 --with-url -q url -o none",
+        ),
+        Example(
+            "If `type` comes back `document`, switch to `mondo doc get`",
+            "mondo board get 1234567890 -q type -o none",
+        ),
     ],
     "board create": [
         Example(
@@ -181,6 +194,14 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "item get": [
         Example("Fetch one item", "mondo item get --id 987"),
+        Example(
+            "Paste a monday /pulses/ URL",
+            "mondo item get https://marktguru.monday.com/boards/42/pulses/987",
+        ),
+        Example(
+            "Include the canonical url in the payload",
+            "mondo item get 987 --with-url -q url -o none",
+        ),
         Example(
             "Include its update thread (comments)",
             "mondo item get --id 987 --include-updates",
@@ -263,6 +284,14 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "subitem get": [
         Example("Fetch one subitem", "mondo subitem get --id 9876543210"),
+        Example(
+            "Paste a monday /pulses/ URL",
+            "mondo subitem get https://marktguru.monday.com/boards/999/pulses/9876543210",
+        ),
+        Example(
+            "Include the canonical url",
+            "mondo subitem get 9876543210 --with-url -q url -o none",
+        ),
     ],
     "subitem create": [
         Example(
@@ -380,8 +409,12 @@ EXAMPLES: dict[str, list[Example]] = {
     "doc get": [
         Example("By internal id", "mondo doc get --id 7"),
         Example(
-            "By the URL-visible id",
+            "By the URL-visible id (what `/boards/<id>` shows)",
             "mondo doc get --object-id 77",
+        ),
+        Example(
+            "Paste the monday URL directly",
+            "mondo doc get --object-id https://marktguru.monday.com/boards/77",
         ),
         Example(
             "Render the block tree as markdown",

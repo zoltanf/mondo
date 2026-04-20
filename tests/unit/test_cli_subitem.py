@@ -93,6 +93,73 @@ class TestGet:
         result = runner.invoke(app, ["subitem", "get", "--id", "999"])
         assert result.exit_code == 6
 
+    def test_accepts_pulses_url(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"items": [{"id": "10", "name": "Sub"}]}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "subitem",
+                "get",
+                "https://marktguru.monday.com/boards/99/pulses/10",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"id": 10}
+
+    def test_rejects_board_url_with_hint(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["subitem", "get", "https://marktguru.monday.com/boards/42"],
+        )
+        assert result.exit_code == 2
+        assert "board get https://marktguru.monday.com/boards/42" in result.stderr
+        assert httpx_mock.get_requests() == []
+
+    def test_with_url_includes_url_field(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "items": [
+                        {
+                            "id": "10",
+                            "name": "Sub",
+                            "url": "https://marktguru.monday.com/boards/99/pulses/10",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["subitem", "get", "--id", "10", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://marktguru.monday.com/boards/99/pulses/10"
+
+    def test_without_url_strips_field(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "items": [
+                        {
+                            "id": "10",
+                            "name": "Sub",
+                            "url": "https://marktguru.monday.com/boards/99/pulses/10",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["subitem", "get", "--id", "10"])
+        assert result.exit_code == 0, result.stdout
+        assert "url" not in json.loads(result.stdout)
+
 
 class TestCreate:
     def test_minimal(self, httpx_mock: HTTPXMock) -> None:

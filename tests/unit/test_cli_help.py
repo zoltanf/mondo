@@ -141,6 +141,30 @@ class TestDumpSpec:
         prm = next(p for p in create["params"] if p["name"] == "position_relative_method")
         assert prm.get("choices") == ["before_at", "after_at"]
 
+    def test_get_commands_expose_url_examples(self, spec: dict) -> None:
+        """Board/doc/item/subitem get all accept URLs — agents find the
+        pattern by scanning examples in the spec."""
+        targets = {
+            "board": "get",
+            "doc": "get",
+            "item": "get",
+            "subitem": "get",
+        }
+        for group, sub in targets.items():
+            grp = next(c for c in spec["root"]["commands"] if c["name"] == group)
+            cmd = next(c for c in grp["commands"] if c["name"] == sub)
+            assert any("https://" in ex["command"] for ex in cmd["examples"]), (
+                f"{group} {sub}: no example with a monday URL"
+            )
+
+    def test_boards_vs_docs_topic_content(self) -> None:
+        """The topic is the contract agents read for workdoc handling."""
+        result = runner.invoke(app, ["help", "boards-vs-docs"])
+        assert result.exit_code == 0, result.output
+        assert "workdoc" in result.output.lower()
+        assert "mondo doc get --object-id" in result.output
+        assert "--with-url" in result.output
+
     def test_every_leaf_command_has_examples(self, spec: dict) -> None:
         """The binary is the docs — every runnable leaf command must ship
         copy-pasteable examples. `help` itself is exempt (it's a meta-command)."""
@@ -173,6 +197,7 @@ class TestBundledTopics:
         {
             "agent-workflow",
             "auth",
+            "boards-vs-docs",
             "codecs",
             "complexity",
             "exit-codes",

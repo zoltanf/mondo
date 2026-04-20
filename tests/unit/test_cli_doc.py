@@ -177,6 +177,90 @@ class TestGet:
         result = runner.invoke(app, ["doc", "get", "--id", "999"])
         assert result.exit_code == 6
 
+    def test_accepts_url_for_object_id(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "7",
+                            "object_id": "99",
+                            "name": "X",
+                            "blocks": [],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "get",
+                "--object-id",
+                "https://marktguru.monday.com/boards/99",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"objs": [99]}
+
+    def test_accepts_url_for_id(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "7",
+                            "object_id": "77",
+                            "name": "X",
+                            "blocks": [],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["doc", "get", "--id", "https://marktguru.monday.com/boards/7"],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"ids": [7]}
+
+    def test_not_found_falls_back_to_board_get(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "99", "name": "Real board", "type": "board"}]}),
+        )
+        result = runner.invoke(app, ["doc", "get", "--object-id", "99"])
+        assert result.exit_code == 6
+        assert "regular board" in result.stderr
+        assert "mondo board get 99" in result.stderr
+
+    def test_not_found_generic_when_board_also_missing(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["doc", "get", "--object-id", "99"])
+        assert result.exit_code == 6
+        assert "not found" in result.stderr
+        assert "regular board" not in result.stderr
+
+    def test_not_found_no_fallback_for_internal_id(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        result = runner.invoke(app, ["doc", "get", "--id", "999"])
+        assert result.exit_code == 6
+        # Only one HTTP call — no BOARD_GET probe on --id path.
+        assert len(httpx_mock.get_requests()) == 1
+
 
 # --- create ---
 

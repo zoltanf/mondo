@@ -288,6 +288,108 @@ class TestBoardGet:
         result = runner.invoke(app, ["board", "get", "--id", "999"])
         assert result.exit_code == 6
 
+    def test_warns_when_id_is_workdoc(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"boards": [{"id": "42", "name": "Spec doc", "type": "document"}]}
+            ),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["type"] == "document"
+        assert "workdoc" in result.stderr
+        assert "mondo doc get --object-id 42" in result.stderr
+
+    def test_no_warning_for_regular_board(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "name": "X", "type": "board"}]}),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42"])
+        assert result.exit_code == 0, result.stdout
+        assert "workdoc" not in result.stderr
+
+    def test_accepts_url(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "name": "X", "type": "board"}]}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "get",
+                "https://marktguru.monday.com/boards/42/views/1",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"id": 42}
+
+    def test_accepts_pulses_url_and_extracts_board_part(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "name": "X", "type": "board"}]}),
+        )
+        result = runner.invoke(
+            app,
+            ["board", "get", "https://marktguru.monday.com/boards/42/pulses/987"],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"id": 42}
+
+    def test_rejects_garbage_url(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["board", "get", "not-a-number"])
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_with_url_adds_synthesized_url(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from mondo.cli import _url as url_mod
+
+        monkeypatch.setattr(url_mod, "_TENANT_SLUG_CACHE", None)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "name": "X", "type": "board"}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"me": {"account": {"slug": "marktguru"}}}),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://marktguru.monday.com/boards/42"
+
+    def test_without_url_payload_has_no_url_key(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "42", "name": "X", "type": "board"}]}),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42"])
+        assert result.exit_code == 0, result.stdout
+        assert "url" not in json.loads(result.stdout)
+
+    def test_dump_spec_reports_integer_for_id(self) -> None:
+        result = runner.invoke(app, ["-o", "json", "help", "--dump-spec"])
+        assert result.exit_code == 0, result.stdout
+        spec = json.loads(result.stdout)
+        board = next(c for c in spec["root"]["commands"] if c["name"] == "board")
+        get = next(c for c in board["commands"] if c["name"] == "get")
+        id_param = next(p for p in get["params"] if p["name"] == "id_flag")
+        assert id_param["type"] == "integer"
+
 
 # --- create ---
 

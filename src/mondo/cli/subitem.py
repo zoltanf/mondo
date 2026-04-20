@@ -36,6 +36,7 @@ from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cach
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
+from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
@@ -152,8 +153,23 @@ def list_cmd(
 @app.command("get", epilog=epilog_for("subitem get"))
 def get_cmd(
     ctx: typer.Context,
-    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
+    id_pos: int | None = typer.Argument(
+        None,
+        metavar="[ID|URL]",
+        help="Subitem ID or monday.com /pulses/<id> URL (positional).",
+        click_type=MondayIdParam(kind="item"),
+    ),
+    id_flag: int | None = typer.Option(
+        None,
+        "--id",
+        help="Subitem ID or monday.com /pulses/<id> URL.",
+        click_type=MondayIdParam(kind="item"),
+    ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include the subitem's canonical monday.com URL in the emitted payload.",
+    ),
 ) -> None:
     """Fetch a single subitem by ID (same shape as `item get`)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -172,7 +188,10 @@ def get_cmd(
     if not items:
         typer.secho(f"subitem {subitem_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(items[0])
+    item = items[0]
+    if not with_url:
+        item.pop("url", None)
+    opts.emit(item)
 
 
 # ----- write commands -----

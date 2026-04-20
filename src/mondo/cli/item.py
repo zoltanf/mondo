@@ -28,6 +28,7 @@ from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cach
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._resolve import resolve_required_id
+from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
@@ -203,14 +204,29 @@ def _build_query_params(filters: list[str] | None, order_by: str | None) -> dict
 @app.command("get", epilog=epilog_for("item get"))
 def get_cmd(
     ctx: typer.Context,
-    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
+    id_pos: int | None = typer.Argument(
+        None,
+        metavar="[ID|URL]",
+        help="Item ID or monday.com /pulses/<id> URL (positional).",
+        click_type=MondayIdParam(kind="item"),
+    ),
+    id_flag: int | None = typer.Option(
+        None,
+        "--id",
+        help="Item ID or monday.com /pulses/<id> URL.",
+        click_type=MondayIdParam(kind="item"),
+    ),
     include_updates: bool = typer.Option(
         False, "--include-updates", help="Also fetch item updates (comments)."
     ),
     include_subitems: bool = typer.Option(False, "--include-subitems", help="Also fetch subitems."),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include the item's canonical monday.com URL in the emitted payload.",
+    ),
 ) -> None:
-    """Fetch a single item by ID."""
+    """Fetch a single item by ID or pulses URL."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     if include_updates and include_subitems:
@@ -232,7 +248,10 @@ def get_cmd(
     if not items:
         typer.secho(f"item {item_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(items[0])
+    item = items[0]
+    if not with_url:
+        item.pop("url", None)
+    opts.emit(item)
 
 
 @app.command("list", epilog=epilog_for("item list"))

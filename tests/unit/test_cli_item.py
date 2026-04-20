@@ -78,6 +78,87 @@ class TestItemGet:
         assert result.exit_code == 0
         assert "subitems" in _last_body(httpx_mock)["query"]
 
+    def test_accepts_pulses_url(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"items": [{"id": "987", "name": "Task"}]}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "get",
+                "https://marktguru.monday.com/boards/42/pulses/987",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"id": 987}
+
+    def test_rejects_board_url_with_hint(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["item", "get", "https://marktguru.monday.com/boards/42"],
+        )
+        assert result.exit_code == 2
+        # Rich formats the error into a box; match on the distinctive tail of
+        # the hint rather than the whole "mondo board get ..." string (which
+        # gets wrapped across box lines).
+        assert "board get https://marktguru.monday.com/boards/42" in result.stderr
+        assert httpx_mock.get_requests() == []
+
+    def test_with_url_includes_url_field(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "items": [
+                        {
+                            "id": "1",
+                            "name": "T",
+                            "url": "https://marktguru.monday.com/boards/42/pulses/1",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["item", "get", "--id", "1", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://marktguru.monday.com/boards/42/pulses/1"
+
+    def test_without_url_strips_field_from_payload(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "items": [
+                        {
+                            "id": "1",
+                            "name": "T",
+                            "url": "https://marktguru.monday.com/boards/42/pulses/1",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["item", "get", "--id", "1"])
+        assert result.exit_code == 0, result.stdout
+        assert "url" not in json.loads(result.stdout)
+
+    def test_item_get_selects_url(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"items": [{"id": "1"}]}),
+        )
+        runner.invoke(app, ["item", "get", "--id", "1"])
+        # url is in the selection regardless of --with-url so monday returns it.
+        query = _last_body(httpx_mock)["query"]
+        assert "\n    url\n" in query or " url " in query
+
 
 # --- list ---
 
