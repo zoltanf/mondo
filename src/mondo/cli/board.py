@@ -27,6 +27,8 @@ from mondo.api.queries import (
     build_boards_list_query,
 )
 from mondo.cache.directory import get_boards as cache_get_boards
+from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, execute_read
@@ -136,17 +138,6 @@ def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
         return int(ws)
     except (TypeError, ValueError):
         return None
-
-
-def _invalidate_boards_cache(opts: GlobalOpts) -> None:
-    """Drop the boards cache file after a successful mutation. Best-effort."""
-    if opts.dry_run:
-        return
-    try:
-        opts.build_cache_store("boards").invalidate()
-    except Exception:
-        # Cache is a perf optimization — never fail a mutation because of it.
-        pass
 
 
 # ----- read commands -----
@@ -264,14 +255,7 @@ def list_cmd(
     boards. Served from the local directory cache when available.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-
-    if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    reject_mutually_exclusive(no_cache, refresh_cache)
 
     try:
         needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
@@ -279,15 +263,14 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
 
-    cache_cfg = opts.resolve_cache_config()
-    use_cache = (
-        cache_cfg.enabled
-        and not no_cache
-        and not with_item_counts
+    prefs = resolve_cache_prefs(
+        opts,
+        no_cache=no_cache,
+        fuzzy_threshold=fuzzy_threshold,
+        extra_disable=with_item_counts,
     )
-    effective_fuzzy_threshold = fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
 
-    if use_cache:
+    if prefs.use_cache:
         _list_via_cache(
             opts,
             state=state,
@@ -298,7 +281,7 @@ def list_cmd(
             needle_lower=needle_lower,
             pattern=pattern,
             name_fuzzy=name_fuzzy,
-            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_threshold=prefs.fuzzy_threshold,
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
@@ -357,7 +340,7 @@ def list_cmd(
         boards = apply_fuzzy(
             boards,
             name_fuzzy,
-            threshold=effective_fuzzy_threshold,
+            threshold=prefs.fuzzy_threshold,
             include_score=fuzzy_score_flag,
         )
 
@@ -366,7 +349,7 @@ def list_cmd(
 
     # --no-cache opts the user out of cache writes, so skip the workspace
     # enrichment step (which would transparently populate workspaces.json).
-    if cache_cfg.enabled and not no_cache:
+    if prefs.cfg.enabled and not no_cache:
         enrich_workspaces_best_effort(boards, opts)
 
     if with_url:
@@ -553,7 +536,7 @@ def create_cmd(
         "empty": True if empty else None,
     }
     data = execute(opts, BOARD_CREATE, variables)
-    _invalidate_boards_cache(opts)
+    invalidate_entity(opts, "boards")
     opts.emit(data.get("create_board") or {})
 
 
@@ -578,7 +561,7 @@ def update_cmd(
         BOARD_UPDATE,
         {"board": board_id, "attribute": attribute.value, "value": value},
     )
-    _invalidate_boards_cache(opts)
+    invalidate_entity(opts, "boards")
     # update_board returns a scalar (String) with a status JSON payload, not a Board.
     opts.emit({"update_board": data.get("update_board")})
 
@@ -594,7 +577,7 @@ def archive_cmd(
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     _confirm(opts, f"Archive board {board_id}?")
     data = execute(opts, BOARD_ARCHIVE, {"board": board_id})
-    _invalidate_boards_cache(opts)
+    invalidate_entity(opts, "boards")
     opts.emit(data.get("archive_board") or {})
 
 
@@ -620,7 +603,7 @@ def delete_cmd(
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete board {board_id}?")
     data = execute(opts, BOARD_DELETE, {"board": board_id})
-    _invalidate_boards_cache(opts)
+    invalidate_entity(opts, "boards")
     opts.emit(data.get("delete_board") or {})
 
 
@@ -684,7 +667,7 @@ def duplicate_cmd(
         "keepSubscribers": True if keep_subscribers else None,
     }
     data = execute(opts, BOARD_DUPLICATE, variables)
-    _invalidate_boards_cache(opts)
+    invalidate_entity(opts, "boards")
     duplicate_payload = data.get("duplicate_board") or {}
 
     if wait:

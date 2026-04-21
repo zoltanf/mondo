@@ -25,6 +25,8 @@ from mondo.api.queries import (
     WORKSPACES_LIST_PAGE,
 )
 from mondo.cache.directory import get_workspaces as cache_get_workspaces
+from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, execute_read
@@ -53,19 +55,6 @@ class WorkspaceState(StrEnum):
 class SubscriberKind(StrEnum):
     subscriber = "subscriber"
     owner = "owner"
-
-
-# ----- helpers -----
-
-
-def _invalidate_workspaces_cache(opts: GlobalOpts) -> None:
-    """Drop the workspaces cache file after a successful mutation."""
-    if opts.dry_run:
-        return
-    try:
-        opts.build_cache_store("workspaces").invalidate()
-    except Exception:
-        pass
 
 
 # ----- read commands -----
@@ -106,28 +95,16 @@ def list_cmd(
 ) -> None:
     """List workspaces. Served from the local directory cache when available."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
 
-    if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    cache_cfg = opts.resolve_cache_config()
-    use_cache = cache_cfg.enabled and not no_cache
-    effective_fuzzy_threshold = (
-        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
-    )
-
-    if use_cache:
+    if prefs.use_cache:
         _list_workspaces_via_cache(
             opts,
             kind=kind,
             state=state,
             name_fuzzy=name_fuzzy,
-            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_threshold=prefs.fuzzy_threshold,
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
@@ -169,7 +146,7 @@ def list_cmd(
         items = apply_fuzzy(
             items,
             name_fuzzy,
-            threshold=effective_fuzzy_threshold,
+            threshold=prefs.fuzzy_threshold,
             include_score=fuzzy_score_flag,
         )
         if max_items is not None:
@@ -281,7 +258,7 @@ def create_cmd(
         "accountProductId": account_product_id,
     }
     data = execute(opts, WORKSPACE_CREATE, variables)
-    _invalidate_workspaces_cache(opts)
+    invalidate_entity(opts, "workspaces")
     opts.emit(data.get("create_workspace") or {})
 
 
@@ -317,7 +294,7 @@ def update_cmd(
         raise typer.Exit(code=2)
     variables = {"id": workspace_id, "attributes": attributes}
     data = execute(opts, WORKSPACE_UPDATE, variables)
-    _invalidate_workspaces_cache(opts)
+    invalidate_entity(opts, "workspaces")
     opts.emit(data.get("update_workspace") or {})
 
 
@@ -343,7 +320,7 @@ def delete_cmd(
     _confirm(opts, f"PERMANENTLY delete workspace {workspace_id}?")
     variables = {"id": workspace_id}
     data = execute(opts, WORKSPACE_DELETE, variables)
-    _invalidate_workspaces_cache(opts)
+    invalidate_entity(opts, "workspaces")
     opts.emit(data.get("delete_workspace") or {})
 
 

@@ -27,6 +27,8 @@ from mondo.api.queries import (
     TEAMS_LIST,
 )
 from mondo.cache.directory import get_teams as cache_get_teams
+from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
@@ -38,18 +40,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-# ----- helpers -----
-
-
-def _invalidate_teams_cache(opts: GlobalOpts) -> None:
-    if opts.dry_run:
-        return
-    try:
-        opts.build_cache_store("teams").invalidate()
-    except Exception:
-        pass
 
 
 # ----- read commands -----
@@ -82,28 +72,16 @@ def list_cmd(
 ) -> None:
     """List teams (optionally filtered to specific IDs or by fuzzy name)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
 
-    if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    cache_cfg = opts.resolve_cache_config()
-    use_cache = cache_cfg.enabled and not no_cache
-    effective_fuzzy_threshold = (
-        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
-    )
-
-    if use_cache and not team_id:
+    if prefs.use_cache and not team_id:
         # `--id` pins to specific IDs → the live query is more targeted than
         # filtering a full cached directory, so skip cache in that case.
         _list_teams_via_cache(
             opts,
             name_fuzzy=name_fuzzy,
-            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_threshold=prefs.fuzzy_threshold,
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
@@ -117,7 +95,7 @@ def list_cmd(
         teams = apply_fuzzy(
             teams,
             name_fuzzy,
-            threshold=effective_fuzzy_threshold,
+            threshold=prefs.fuzzy_threshold,
             include_score=fuzzy_score_flag,
         )
     if max_items is not None:
@@ -223,7 +201,7 @@ def create_cmd(
     options: dict[str, Any] | None = {"allow_empty_team": True} if allow_empty else None
     variables = {"input": attrs, "options": options}
     data = execute(opts, TEAM_CREATE, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("create_team") or {})
 
 
@@ -247,7 +225,7 @@ def delete_cmd(
     _confirm(opts, f"PERMANENTLY delete team {team_id}?")
     variables = {"id": team_id}
     data = execute(opts, TEAM_DELETE, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("delete_team") or {})
 
 
@@ -261,7 +239,7 @@ def add_users_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, ADD_USERS_TO_TEAM, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("add_users_to_team") or {})
 
 
@@ -275,7 +253,7 @@ def remove_users_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, REMOVE_USERS_FROM_TEAM, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("remove_users_from_team") or {})
 
 
@@ -289,7 +267,7 @@ def assign_owners_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, ASSIGN_TEAM_OWNERS, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("assign_team_owners") or {})
 
 
@@ -305,5 +283,5 @@ def remove_owners_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, REMOVE_TEAM_OWNERS, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("remove_team_owners") or {})

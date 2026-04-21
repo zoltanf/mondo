@@ -27,6 +27,7 @@ from mondo.api.queries import (
     COLUMN_RENAME,
     CREATE_OR_GET_TAG,
 )
+from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
@@ -158,13 +159,7 @@ def list_cmd(
     """List all columns on a board with id, title, type."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
-    if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     client = client_or_exit(opts)
     try:
         with client:

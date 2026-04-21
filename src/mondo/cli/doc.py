@@ -40,6 +40,7 @@ from mondo.api.queries import (
     build_docs_list_query,
 )
 from mondo.cache.directory import get_docs as cache_get_docs
+from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
     client_or_exit,
@@ -207,14 +208,7 @@ def list_cmd(
     share. Served from the local directory cache when available.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-
-    if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    reject_mutually_exclusive(no_cache, refresh_cache)
 
     try:
         needle_lower, pattern = compile_name_filter(
@@ -224,11 +218,8 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
 
-    cache_cfg = opts.resolve_cache_config()
-    effective_fuzzy_threshold = (
-        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
-    )
-    if cache_cfg.enabled and not no_cache:
+    prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
+    if prefs.use_cache:
         _list_via_cache(
             opts,
             workspace=workspace,
@@ -238,7 +229,7 @@ def list_cmd(
             needle_lower=needle_lower,
             pattern=pattern,
             name_fuzzy=name_fuzzy,
-            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_threshold=prefs.fuzzy_threshold,
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
@@ -305,14 +296,14 @@ def list_cmd(
         items = apply_fuzzy(
             items,
             name_fuzzy,
-            threshold=effective_fuzzy_threshold,
+            threshold=prefs.fuzzy_threshold,
             include_score=fuzzy_score_flag,
         )
 
     if client_side_filter_active and max_items is not None:
         items = items[:max_items]
 
-    if cache_cfg.enabled and not no_cache:
+    if prefs.cfg.enabled and not no_cache:
         enrich_workspaces_best_effort(items, opts)
     if not with_url:
         strip_url_fields(items)

@@ -32,6 +32,8 @@ from mondo.api.queries import (
     USERS_UPDATE_AS_VIEWERS,
 )
 from mondo.cache.directory import get_users as cache_get_users
+from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
@@ -65,27 +67,6 @@ _ROLE_TO_MUTATION = {
     UserRole.guest: (USERS_UPDATE_AS_GUESTS, "update_multiple_users_as_guests"),
     UserRole.viewer: (USERS_UPDATE_AS_VIEWERS, "update_multiple_users_as_viewers"),
 }
-
-
-# ----- helpers -----
-
-
-def _invalidate_users_cache(opts: GlobalOpts) -> None:
-    if opts.dry_run:
-        return
-    try:
-        opts.build_cache_store("users").invalidate()
-    except Exception:
-        pass
-
-
-def _invalidate_teams_cache(opts: GlobalOpts) -> None:
-    if opts.dry_run:
-        return
-    try:
-        opts.build_cache_store("teams").invalidate()
-    except Exception:
-        pass
 
 
 # ----- read commands -----
@@ -141,29 +122,17 @@ def list_cmd(
 ) -> None:
     """List users. Served from the local directory cache when available."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
 
-    if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    cache_cfg = opts.resolve_cache_config()
-    use_cache = cache_cfg.enabled and not no_cache
-    effective_fuzzy_threshold = (
-        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
-    )
-
-    if use_cache:
+    if prefs.use_cache:
         _list_users_via_cache(
             opts,
             kind=kind,
             emails=email,
             name=name,
             name_fuzzy=name_fuzzy,
-            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_threshold=prefs.fuzzy_threshold,
             fuzzy_score_flag=fuzzy_score_flag,
             non_active=non_active,
             newest_first=newest_first,
@@ -210,7 +179,7 @@ def list_cmd(
         items = apply_fuzzy(
             items,
             name_fuzzy,
-            threshold=effective_fuzzy_threshold,
+            threshold=prefs.fuzzy_threshold,
             include_score=fuzzy_score_flag,
         )
         if max_items is not None:
@@ -332,7 +301,7 @@ def deactivate_cmd(
     _confirm(opts, f"Deactivate {len(user)} user(s)?")
     variables = {"ids": user}
     data = execute(opts, USERS_DEACTIVATE, variables)
-    _invalidate_users_cache(opts)
+    invalidate_entity(opts, "users")
     opts.emit(data.get("deactivate_users") or {})
 
 
@@ -345,7 +314,7 @@ def activate_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"ids": user}
     data = execute(opts, USERS_ACTIVATE, variables)
-    _invalidate_users_cache(opts)
+    invalidate_entity(opts, "users")
     opts.emit(data.get("activate_users") or {})
 
 
@@ -368,7 +337,7 @@ def update_role_cmd(
     query, response_key = _ROLE_TO_MUTATION[role]
     variables = {"ids": user}
     data = execute(opts, query, variables)
-    _invalidate_users_cache(opts)
+    invalidate_entity(opts, "users")
     opts.emit(data.get(response_key) or {})
 
 
@@ -382,7 +351,7 @@ def add_to_team_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, ADD_USERS_TO_TEAM, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("add_users_to_team") or {})
 
 
@@ -396,5 +365,5 @@ def remove_from_team_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, REMOVE_USERS_FROM_TEAM, variables)
-    _invalidate_teams_cache(opts)
+    invalidate_entity(opts, "teams")
     opts.emit(data.get("remove_users_from_team") or {})
