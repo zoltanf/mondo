@@ -48,18 +48,25 @@ jobs:
 
       - name: Build binary (unix)
         if: runner.os != 'Windows'
-        run: uv run pyinstaller --onefile --name mondo --paths src src/mondo/cli/main.py
+        run: |
+          uv run pyinstaller --onefile --name mondo --paths src \
+            --collect-data mondo.help --hidden-import mondo.help \
+            src/mondo/cli/main.py
 
       - name: Build binary (windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: uv run pyinstaller --onefile --name mondo --paths src src/mondo/cli/main.py
+        run: |
+          uv run pyinstaller --onefile --name mondo --paths src `
+            --collect-data mondo.help --hidden-import mondo.help `
+            src/mondo/cli/main.py
 
       - name: Smoke test (unix)
         if: runner.os != 'Windows'
         run: |
           ./dist/mondo --version
           ./dist/mondo --help > /dev/null
+          ./dist/mondo help codecs > /dev/null
 
       - name: Smoke test (windows)
         if: runner.os == 'Windows'
@@ -67,6 +74,7 @@ jobs:
         run: |
           .\dist\mondo.exe --version
           .\dist\mondo.exe --help | Out-Null
+          .\dist\mondo.exe help codecs | Out-Null
 
       - name: Archive (unix)
         if: runner.os != 'Windows'

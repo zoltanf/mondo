@@ -40,12 +40,11 @@ def fuzzy_score(
     if not entries:
         return []
     if not query:
-        return [(entry, 100) for entry in entries if entry.get(name_key)]
+        return [(entry, 100) for entry in entries]
 
     indexed: list[tuple[str, dict[str, Any]]] = [
-        (str(entry[name_key]), entry)
+        (str(entry.get(name_key) or ""), entry)
         for entry in entries
-        if entry.get(name_key)
     ]
     names = [name for name, _ in indexed]
 

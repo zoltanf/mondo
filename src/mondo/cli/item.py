@@ -9,7 +9,7 @@ from typing import Any
 import typer
 
 from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError, NotFoundError, UsageError
+from mondo.api.errors import ColumnValueError, MondoError, NotFoundError, UsageError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
     CREATE_OR_GET_TAG,
@@ -58,7 +58,13 @@ def _dispatch_dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -
     raise typer.Exit(0)
 
 
-def _execute_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+def _execute_mutation(
+    opts: GlobalOpts,
+    query: str,
+    variables: dict[str, Any],
+    *,
+    column_value_hint: str = "",
+) -> dict[str, Any]:
     """Build the client, run the mutation, return the `data` payload or raise."""
     if opts.dry_run:
         _dispatch_dry_run(opts, query, variables)
@@ -72,6 +78,12 @@ def _execute_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -
     try:
         with client:
             return _run(client, query, variables)
+    except ColumnValueError as e:
+        msg = str(e)
+        if column_value_hint:
+            msg = f"{msg}\n{column_value_hint}"
+        typer.secho(f"error: {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
@@ -420,7 +432,17 @@ def create_cmd(
         "prm": position_relative_method.value if position_relative_method else None,
         "relto": relative_to,
     }
-    data = _execute_mutation(opts, ITEM_CREATE, variables)
+    col_ids = ", ".join(col_values.keys()) if col_values else ""
+    data = _execute_mutation(
+        opts,
+        ITEM_CREATE,
+        variables,
+        column_value_hint=(
+            f"Columns passed: {col_ids}\nHint: see `mondo help codecs` for expected value formats."
+            if col_ids
+            else ""
+        ),
+    )
     if create_labels_if_missing:
         # May have minted a status/dropdown label in settings_str; drop the
         # cached column defs so the next read sees the new labels.

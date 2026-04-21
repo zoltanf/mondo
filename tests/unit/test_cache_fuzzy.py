@@ -19,13 +19,24 @@ def test_empty_query_returns_all_entries_with_score_100() -> None:
     assert all(score == 100 for _, score in result)
 
 
-def test_entries_without_name_are_skipped() -> None:
-    entries = [{"name": "alpha"}, {"id": 1}, {"name": ""}]
+def test_null_name_entries_are_not_silently_dropped() -> None:
+    # Entries with name=None or missing name must not be dropped — they should
+    # score low but still appear in results when threshold=0.  This guards the
+    # "59 teams returned, 58 after sort" regression where a single null-named
+    # team was silently excluded by the previous `if entry.get(name_key)` guard.
+    null_entry = {"id": 99}
+    entries = [{"name": "alpha"}, null_entry]
     result = fuzzy_score("alpha", entries, threshold=0)
-    names = [entry.get("name") for entry, _ in result]
-    assert "alpha" in names
-    assert "" not in names
-    assert None not in names
+    returned_ids = [e.get("id") for e, _ in result]
+    assert 99 in returned_ids, "null-name entry was silently dropped"
+
+
+def test_empty_query_includes_null_name_entries() -> None:
+    null_entry = {"id": 99}
+    entries = [{"name": "alpha"}, null_entry]
+    result = fuzzy_score("", entries)
+    assert len(result) == 2
+    assert all(score == 100 for _, score in result)
 
 
 def test_exact_match_scores_100() -> None:

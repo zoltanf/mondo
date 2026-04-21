@@ -137,7 +137,12 @@ def list_cmd(
     fuzzy_score_flag: bool = typer.Option(
         False, "--fuzzy-score", help="Include `_fuzzy_score` field; sort by score desc."
     ),
-    non_active: bool = typer.Option(False, "--non-active", help="Include deactivated users."),
+    non_active: bool = typer.Option(
+        False,
+        "--include-deactivated",
+        "--non-active",
+        help="Include deactivated users.",
+    ),
     newest_first: bool = typer.Option(
         False, "--newest-first", help="Sort by most recently created."
     ),

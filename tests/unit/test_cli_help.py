@@ -14,6 +14,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mondo.cli._examples import EXAMPLES, epilog_for
+from mondo.cli.help import _list_topics, _read_topic
 from mondo.cli.main import app
 
 runner = CliRunner()
@@ -222,3 +223,16 @@ class TestBundledTopics:
             assert result.output.startswith("# "), (
                 f"{slug} doesn't start with an H1 heading: {result.output[:80]!r}"
             )
+
+    def test_read_topic_returns_content_directly(self) -> None:
+        """Direct importlib.resources read — catches accidental deletion or
+        _TOPIC_PACKAGE string changes without going through the CLI runner."""
+        body = _read_topic("codecs")
+        assert body is not None
+        assert len(body) > 0
+
+    def test_list_topics_returns_slugs_directly(self) -> None:
+        """Direct importlib.resources listing — same guard as above."""
+        topics = _list_topics()
+        assert "codecs" in topics
+        assert "output" in topics

@@ -926,7 +926,7 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example(
             "Deactivated users only",
-            "mondo user list --non-active --limit 100",
+            "mondo user list --include-deactivated --limit 100",
         ),
         Example(
             "Fuzzy name search",
