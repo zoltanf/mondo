@@ -21,6 +21,7 @@ from mondo.config.schema import (
     DEFAULT_CACHE_TTL_BOARDS,
     DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_DOCS,
+    DEFAULT_CACHE_TTL_FOLDERS,
     DEFAULT_CACHE_TTL_TEAMS,
     DEFAULT_CACHE_TTL_USERS,
     DEFAULT_CACHE_TTL_WORKSPACES,
@@ -44,6 +45,7 @@ class ResolvedCacheConfig:
     ttl_teams: int
     ttl_columns: int
     ttl_docs: int
+    ttl_folders: int
     fuzzy_threshold: int
 
     def ttl_for(self, entity_type: EntityType) -> int:
@@ -60,6 +62,8 @@ class ResolvedCacheConfig:
                 return self.ttl_columns
             case "docs":
                 return self.ttl_docs
+            case "folders":
+                return self.ttl_folders
             case _:
                 raise ValueError(f"unknown entity_type: {entity_type!r}")
 
@@ -136,6 +140,14 @@ def resolve_cache_config(
         profile_cfg=profile_cache,
         env=environ,
     )
+    ttl_folders = _resolve_ttl(
+        "folders",
+        default=DEFAULT_CACHE_TTL_FOLDERS,
+        env_key="MONDO_CACHE_TTL_FOLDERS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
     fuzzy_threshold = _resolve_fuzzy_threshold(config.cache, profile_cache, environ)
 
     return ResolvedCacheConfig(
@@ -147,6 +159,7 @@ def resolve_cache_config(
         ttl_teams=ttl_teams,
         ttl_columns=ttl_columns,
         ttl_docs=ttl_docs,
+        ttl_folders=ttl_folders,
         fuzzy_threshold=fuzzy_threshold,
     )
 
