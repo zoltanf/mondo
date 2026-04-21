@@ -124,8 +124,8 @@ echo "==> uv sync --all-extras"
 uv sync --all-extras --quiet
 
 if [ "$SKIP_TESTS" -eq 0 ]; then
-    echo "==> uv run pytest -m 'not integration'"
-    uv run pytest -m "not integration"
+    echo "==> uv run python -m pytest -m 'not integration'"
+    uv run python -m pytest -m "not integration"
 else
     echo "==> skipping tests (--skip-tests)"
 fi
