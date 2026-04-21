@@ -30,6 +30,7 @@ from mondo.api.queries import (
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, exec_or_exit, execute
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
@@ -52,23 +53,6 @@ app.add_typer(doc_app, name="doc", help="Read/write the content of a `doc`-typed
 # ----- helpers -----
 
 
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
 def _parse_settings(raw: str | None) -> dict[str, Any]:
     if not raw:
         return {}
@@ -87,7 +71,7 @@ def _fetch_column_context(
     Raises NotFoundError if the item doesn't exist.
     `column_ids` must be non-empty.
     """
-    data = _exec_or_exit(client, COLUMN_CONTEXT, {"id": item_id, "cols": column_ids})
+    data = exec_or_exit(client, COLUMN_CONTEXT, {"id": item_id, "cols": column_ids})
     items = data.get("items") or []
     if not items:
         raise NotFoundError(f"item {item_id} not found")
@@ -114,7 +98,7 @@ def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, value: str) -
         if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
             resolved_ids.append(int(part))
             continue
-        data = _exec_or_exit(client, CREATE_OR_GET_TAG, {"name": part, "board": board_id})
+        data = exec_or_exit(client, CREATE_OR_GET_TAG, {"name": part, "board": board_id})
         tag = data.get("create_or_get_tag") or {}
         tag_id = tag.get("id")
         if tag_id is None:
@@ -181,7 +165,7 @@ def list_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             columns = fetch_board_columns(
@@ -223,7 +207,7 @@ def labels_cmd(
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             columns = fetch_board_columns(opts, client, board_id)
@@ -271,7 +255,7 @@ def get_cmd(
 ) -> None:
     """Read a single column value from an item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             _, _defs, values = _fetch_column_context(client, item_id, [column_id])
@@ -331,7 +315,7 @@ def set_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     raw_input = _load_value(value, from_file, from_stdin)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             board_id, defs, _current = _fetch_column_context(client, item_id, [column_id])
@@ -392,7 +376,7 @@ def set_cmd(
                 )
                 raise typer.Exit(0)
 
-            data = _exec_or_exit(
+            data = exec_or_exit(
                 client,
                 CHANGE_COLUMN_VALUE,
                 {
@@ -447,7 +431,7 @@ def set_many_cmd(
         )
         raise typer.Exit(code=2)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             board_id, _defs, _values = _fetch_column_context(client, item_id, list(parsed.keys()))
@@ -464,7 +448,7 @@ def set_many_cmd(
                     }
                 )
                 raise typer.Exit(0)
-            data = _exec_or_exit(
+            data = exec_or_exit(
                 client,
                 CHANGE_MULTIPLE_COLUMN_VALUES,
                 {
@@ -492,7 +476,7 @@ def clear_cmd(
 ) -> None:
     """Clear a column value, using the correct empty payload for the column's type."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             board_id, defs, _current = _fetch_column_context(client, item_id, [column_id])
@@ -525,7 +509,7 @@ def clear_cmd(
                 )
                 raise typer.Exit(0)
 
-            data = _exec_or_exit(
+            data = exec_or_exit(
                 client,
                 CHANGE_COLUMN_VALUE,
                 {
@@ -556,11 +540,6 @@ class ColumnProperty(StrEnum):
 
     title = "title"  # type: ignore[assignment]  # StrEnum value shadows str.title method
     description = "description"
-
-
-def _dry_run_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 def _parse_defaults(raw: str | None) -> str | None:
@@ -628,15 +607,7 @@ def create_cmd(
         "id": custom_id,
         "after": after,
     }
-    if opts.dry_run:
-        _dry_run_mutation(opts, COLUMN_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, COLUMN_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, COLUMN_CREATE, variables)
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("create_column") or {})
 
@@ -651,15 +622,7 @@ def rename_cmd(
     """Rename a column (shortcut for change-metadata --property title)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"board": board_id, "col": column_id, "title": title}
-    if opts.dry_run:
-        _dry_run_mutation(opts, COLUMN_RENAME, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, COLUMN_RENAME, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, COLUMN_RENAME, variables)
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_title") or {})
 
@@ -685,15 +648,7 @@ def change_metadata_cmd(
         "property": column_property.value,
         "value": value,
     }
-    if opts.dry_run:
-        _dry_run_mutation(opts, COLUMN_CHANGE_METADATA, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, COLUMN_CHANGE_METADATA, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, COLUMN_CHANGE_METADATA, variables)
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_metadata") or {})
 
@@ -708,14 +663,6 @@ def delete_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _confirm(opts, f"PERMANENTLY delete column {column_id!r} on board {board_id}?")
     variables = {"board": board_id, "col": column_id}
-    if opts.dry_run:
-        _dry_run_mutation(opts, COLUMN_DELETE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, COLUMN_DELETE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, COLUMN_DELETE, variables)
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("delete_column") or {})

@@ -17,7 +17,6 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
@@ -35,6 +34,7 @@ from mondo.api.queries import (
 from mondo.cache.directory import get_users as cache_get_users
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, execute
 from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -68,28 +68,6 @@ _ROLE_TO_MUTATION = {
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 def _invalidate_users_cache(opts: GlobalOpts) -> None:
@@ -212,7 +190,7 @@ def list_cmd(
         )
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             items = list(
@@ -273,7 +251,7 @@ def _list_users_via_cache(
         )
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         store = opts.build_cache_store("users")
     except MondoError as e:
@@ -333,15 +311,7 @@ def get_cmd(
     """Fetch a single user by ID, including teams and account."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     user_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="user")
-    if opts.dry_run:
-        _dry_run(opts, USER_GET, {"ids": [user_id]})
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, USER_GET, {"ids": [user_id]})
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, USER_GET, {"ids": [user_id]})
     users = data.get("users") or []
     if not users:
         typer.secho(f"user {user_id} not found.", fg=typer.colors.RED, err=True)
@@ -361,15 +331,7 @@ def deactivate_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _confirm(opts, f"Deactivate {len(user)} user(s)?")
     variables = {"ids": user}
-    if opts.dry_run:
-        _dry_run(opts, USERS_DEACTIVATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, USERS_DEACTIVATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, USERS_DEACTIVATE, variables)
     _invalidate_users_cache(opts)
     opts.emit(data.get("deactivate_users") or {})
 
@@ -382,15 +344,7 @@ def activate_cmd(
     """Reactivate one or more users."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"ids": user}
-    if opts.dry_run:
-        _dry_run(opts, USERS_ACTIVATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, USERS_ACTIVATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, USERS_ACTIVATE, variables)
     _invalidate_users_cache(opts)
     opts.emit(data.get("activate_users") or {})
 
@@ -413,15 +367,7 @@ def update_role_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     query, response_key = _ROLE_TO_MUTATION[role]
     variables = {"ids": user}
-    if opts.dry_run:
-        _dry_run(opts, query, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, query, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, query, variables)
     _invalidate_users_cache(opts)
     opts.emit(data.get(response_key) or {})
 
@@ -435,15 +381,7 @@ def add_to_team_cmd(
     """Add one or more users to a team."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
-    if opts.dry_run:
-        _dry_run(opts, ADD_USERS_TO_TEAM, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, ADD_USERS_TO_TEAM, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, ADD_USERS_TO_TEAM, variables)
     _invalidate_teams_cache(opts)
     opts.emit(data.get("add_users_to_team") or {})
 
@@ -457,14 +395,6 @@ def remove_from_team_cmd(
     """Remove one or more users from a team."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
-    if opts.dry_run:
-        _dry_run(opts, REMOVE_USERS_FROM_TEAM, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, REMOVE_USERS_FROM_TEAM, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, REMOVE_USERS_FROM_TEAM, variables)
     _invalidate_teams_cache(opts)
     opts.emit(data.get("remove_users_from_team") or {})

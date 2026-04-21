@@ -19,7 +19,6 @@ from typing import Any
 import httpx
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NetworkError
 from mondo.api.queries import (
     ASSETS_GET,
@@ -27,6 +26,7 @@ from mondo.api.queries import (
     FILE_UPLOAD_UPDATE,
 )
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -38,22 +38,6 @@ app = typer.Typer(
 class UploadTarget(StrEnum):
     item = "item"
     update = "update"
-
-
-# ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _dry_run(opts: GlobalOpts, payload: dict[str, Any]) -> None:
-    opts.emit(payload)
-    raise typer.Exit(0)
 
 
 # ----- upload -----
@@ -111,17 +95,17 @@ def upload_cmd(
         response_key = "add_file_to_update"
 
     if opts.dry_run:
-        _dry_run(
-            opts,
+        opts.emit(
             {
                 "endpoint": "/v2/file",
                 "query": query,
                 "variables": {**variables, "file": f"<multipart:{file_path}>"},
                 "filename": filename or file_path.name,
-            },
+            }
         )
+        raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             result = client.upload_file(
@@ -185,7 +169,7 @@ def download_cmd(
         )
         raise typer.Exit(code=2)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     results: list[dict[str, Any]] = []
     try:
         with client:

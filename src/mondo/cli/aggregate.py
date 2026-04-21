@@ -26,10 +26,9 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
 from mondo.api.queries import AGGREGATE_BOARD
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import execute_read
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -49,23 +48,6 @@ _SELECT_FN_MAP: dict[str, str] = {
     "MAX": "MAX",
     "MEDIAN": "MEDIAN",
 }
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
 
 
 def _parse_select_tokens(tokens: list[str]) -> list[tuple[str, str | None]]:
@@ -233,12 +215,5 @@ def board_cmd(
         opts.emit({"query": AGGREGATE_BOARD, "variables": variables})
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, AGGREGATE_BOARD, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
+    data = execute_read(opts, AGGREGATE_BOARD, variables)
     opts.emit(_flatten_results(data))

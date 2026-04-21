@@ -11,7 +11,6 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
@@ -28,6 +27,7 @@ from mondo.api.queries import (
 from mondo.cache.directory import get_workspaces as cache_get_workspaces
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, execute, execute_read
 from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -56,28 +56,6 @@ class SubscriberKind(StrEnum):
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 def _invalidate_workspaces_cache(opts: GlobalOpts) -> None:
@@ -171,7 +149,7 @@ def list_cmd(
         )
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             items = list(
@@ -226,7 +204,7 @@ def _list_workspaces_via_cache(
         )
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         store = opts.build_cache_store("workspaces")
     except MondoError as e:
@@ -271,13 +249,7 @@ def get_cmd(
     """Fetch a single workspace by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_GET, {"id": workspace_id})
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute_read(opts, WORKSPACE_GET, {"id": workspace_id})
     workspaces = data.get("workspaces") or []
     if not workspaces:
         typer.secho(f"workspace {workspace_id} not found.", fg=typer.colors.RED, err=True)
@@ -308,15 +280,7 @@ def create_cmd(
         "description": description,
         "accountProductId": account_product_id,
     }
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_CREATE, variables)
     _invalidate_workspaces_cache(opts)
     opts.emit(data.get("create_workspace") or {})
 
@@ -352,15 +316,7 @@ def update_cmd(
         )
         raise typer.Exit(code=2)
     variables = {"id": workspace_id, "attributes": attributes}
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_UPDATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_UPDATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_UPDATE, variables)
     _invalidate_workspaces_cache(opts)
     opts.emit(data.get("update_workspace") or {})
 
@@ -386,15 +342,7 @@ def delete_cmd(
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete workspace {workspace_id}?")
     variables = {"id": workspace_id}
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_DELETE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_DELETE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_DELETE, variables)
     _invalidate_workspaces_cache(opts)
     opts.emit(data.get("delete_workspace") or {})
 
@@ -417,15 +365,7 @@ def add_user_cmd(
     """Add one or more users to a workspace."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"id": workspace_id, "users": user, "kind": kind.value}
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_ADD_USERS, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_ADD_USERS, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_ADD_USERS, variables)
     opts.emit(data.get("add_users_to_workspace") or [])
 
 
@@ -438,15 +378,7 @@ def remove_user_cmd(
     """Remove one or more users from a workspace."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"id": workspace_id, "users": user}
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_REMOVE_USERS, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_REMOVE_USERS, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_REMOVE_USERS, variables)
     opts.emit(data.get("delete_users_from_workspace") or [])
 
 
@@ -465,15 +397,7 @@ def add_team_cmd(
     """Add one or more teams to a workspace."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"id": workspace_id, "teams": team, "kind": kind.value}
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_ADD_TEAMS, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_ADD_TEAMS, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_ADD_TEAMS, variables)
     opts.emit(data.get("add_teams_to_workspace") or [])
 
 
@@ -486,13 +410,5 @@ def remove_team_cmd(
     """Remove one or more teams from a workspace."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"id": workspace_id, "teams": team}
-    if opts.dry_run:
-        _dry_run(opts, WORKSPACE_REMOVE_TEAMS, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WORKSPACE_REMOVE_TEAMS, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WORKSPACE_REMOVE_TEAMS, variables)
     opts.emit(data.get("delete_teams_from_workspace") or [])

@@ -13,10 +13,10 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import BOARD_ACTIVITY_LOGS
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, exec_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -24,26 +24,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-# ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
 
 
 @app.command("board", epilog=epilog_for("activity board"))
@@ -95,13 +75,13 @@ def board_cmd(
         )
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     collected: list[dict[str, Any]] = []
     page = 1
     try:
         with client:
             while True:
-                data = _exec_or_exit(
+                data = exec_or_exit(
                     client,
                     BOARD_ACTIVITY_LOGS,
                     {**base_vars, "limit": limit, "page": page},

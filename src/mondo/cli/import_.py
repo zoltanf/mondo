@@ -34,6 +34,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
@@ -45,14 +46,6 @@ app = typer.Typer(
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
 
 
 def _parse_settings(raw: str | None) -> dict[str, Any]:
@@ -231,7 +224,7 @@ def board_cmd(
     name_col = mapping.get("name_column", name_column) or name_column
     group_col = mapping.get("group_column", group_column) or group_column
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
 
     results: list[dict[str, Any]] = []
     created = skipped = failed = 0

@@ -41,6 +41,12 @@ from mondo.api.queries import (
 )
 from mondo.cache.directory import get_docs as cache_get_docs
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import (
+    client_or_exit,
+    dry_run_and_exit,
+    exec_or_exit,
+    execute,
+)
 from mondo.cli._filters import apply_fuzzy, compile_name_filter
 from mondo.cli._filters import name_matches as _name_matches
 from mondo.cli._list_decorate import (
@@ -76,28 +82,6 @@ class DocFormat(StrEnum):
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> str:
@@ -294,7 +278,7 @@ def list_cmd(
     )
     fetch_cap = None if client_side_filter_active else max_items
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             items = [
@@ -370,7 +354,7 @@ def _list_via_cache(
         )
         raise typer.Exit(0)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     store = opts.build_cache_store("docs")
     try:
         with client:
@@ -460,11 +444,11 @@ def get_cmd(
         variables = {"objs": [object_id]}
 
     if opts.dry_run:
-        _dry_run(opts, query, variables)
-    client = _client_or_exit(opts)
+        dry_run_and_exit(opts, query, variables)
+    client = client_or_exit(opts)
     try:
         with client:
-            data = _exec_or_exit(client, query, variables)
+            data = exec_or_exit(client, query, variables)
             docs = data.get("docs") or []
             if not docs:
                 _emit_doc_not_found(client, doc_id=doc_id, object_id=object_id)
@@ -496,7 +480,7 @@ def _emit_doc_not_found(
     practice).
     """
     if object_id is not None:
-        probe = _exec_or_exit(client, BOARD_GET, {"id": object_id})
+        probe = exec_or_exit(client, BOARD_GET, {"id": object_id})
         boards = probe.get("boards") or []
         if boards and (boards[0].get("type") or "board") != "document":
             typer.secho(
@@ -529,15 +513,7 @@ def create_cmd(
         "name": name,
         "kind": kind.value if kind else None,
     }
-    if opts.dry_run:
-        _dry_run(opts, CREATE_DOC_IN_WORKSPACE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, CREATE_DOC_IN_WORKSPACE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, CREATE_DOC_IN_WORKSPACE, variables)
     opts.emit(data.get("create_doc") or {})
 
 
@@ -571,7 +547,7 @@ def add_block_cmd(
         typer.secho(f"error: --content is not valid JSON: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
     if opts.dry_run:
-        _dry_run(
+        dry_run_and_exit(
             opts,
             CREATE_DOC_BLOCK,
             {
@@ -582,17 +558,17 @@ def add_block_cmd(
                 "parent": parent_block,
             },
         )
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             effective_after = after
             if effective_after is None:
-                pre = _exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
+                pre = exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
                 docs_list = pre.get("docs") or []
                 existing = (docs_list[0].get("blocks") or []) if docs_list else []
                 if existing:
                     effective_after = str(existing[-1].get("id"))
-            data = _exec_or_exit(
+            data = exec_or_exit(
                 client,
                 CREATE_DOC_BLOCK,
                 {
@@ -637,23 +613,23 @@ def add_content_cmd(
         )
         raise typer.Exit(code=5)
     if opts.dry_run:
-        _dry_run(
+        dry_run_and_exit(
             opts,
             f"{CREATE_DOC_BLOCK} (looped per block)",
             {"doc": doc_id, "blocks": blocks},
         )
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     created: list[dict[str, Any]] = []
     try:
         with client:
             # Seed `after_block_id` from the doc's current last block so blocks
             # land at the end (monday's default for `after=null` is TOP insert).
-            pre = _exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
+            pre = exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
             docs_list = pre.get("docs") or []
             existing_blocks = (docs_list[0].get("blocks") or []) if docs_list else []
             prev_id: str | None = str(existing_blocks[-1].get("id")) if existing_blocks else None
             for block in blocks:
-                data = _exec_or_exit(
+                data = exec_or_exit(
                     client,
                     CREATE_DOC_BLOCK,
                     {
@@ -695,15 +671,7 @@ def update_block_cmd(
     # monday's JSON scalar wants the content as a JSON-encoded string (matches
     # what create_doc_block does). We validated the JSON above; now re-stringify.
     variables = {"block": block_id, "content": json.dumps(parsed_content)}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_DOC_BLOCK, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_DOC_BLOCK, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_DOC_BLOCK, variables)
     opts.emit(data.get("update_doc_block") or {})
 
 
@@ -717,13 +685,5 @@ def delete_block_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     variables = {"block": block_id}
-    if opts.dry_run:
-        _dry_run(opts, DELETE_DOC_BLOCK, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, DELETE_DOC_BLOCK, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, DELETE_DOC_BLOCK, variables)
     opts.emit(data.get("delete_doc_block") or {})

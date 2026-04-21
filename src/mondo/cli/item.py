@@ -27,6 +27,7 @@ from mondo.api.queries import (
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, dry_run_and_exit, execute
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
@@ -52,46 +53,28 @@ class OrderDir(StrEnum):
 # ----- helpers -----
 
 
-def _dispatch_dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    """For `--dry-run`: emit the mutation + variables as structured data and exit 0."""
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
-
-
-def _execute_mutation(
+def _execute_create_item(
     opts: GlobalOpts,
     query: str,
     variables: dict[str, Any],
     *,
-    column_value_hint: str = "",
+    column_value_hint: str,
 ) -> dict[str, Any]:
-    """Build the client, run the mutation, return the `data` payload or raise."""
+    """Like `execute()` but adds a column-value hint to `ColumnValueError` messages."""
     if opts.dry_run:
-        _dispatch_dry_run(opts, query, variables)
-
-    try:
-        client = opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
+        dry_run_and_exit(opts, query, variables)
+    client = client_or_exit(opts)
     try:
         with client:
-            return _run(client, query, variables)
+            result = client.execute(query, variables=variables)
+            return result.get("data") or {}
     except ColumnValueError as e:
-        msg = str(e)
-        if column_value_hint:
-            msg = f"{msg}\n{column_value_hint}"
+        msg = f"{e}\n{column_value_hint}" if column_value_hint else str(e)
         typer.secho(f"error: {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _run(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    result = client.execute(query, variables=variables)
-    return result.get("data") or {}
 
 
 def _parse_filter(expr: str) -> dict[str, Any]:
@@ -255,7 +238,7 @@ def get_cmd(
     else:
         query = ITEM_GET
 
-    data = _execute_mutation(opts, query, {"id": item_id})
+    data = execute(opts, query, {"id": item_id})
     items = data.get("items") or []
     if not items:
         typer.secho(f"item {item_id} not found.", fg=typer.colors.RED, err=True)
@@ -433,7 +416,7 @@ def create_cmd(
         "relto": relative_to,
     }
     col_ids = ", ".join(col_values.keys()) if col_values else ""
-    data = _execute_mutation(
+    data = _execute_create_item(
         opts,
         ITEM_CREATE,
         variables,
@@ -461,7 +444,7 @@ def rename_cmd(
     """Rename an item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
-    data = _execute_mutation(opts, ITEM_RENAME, {"board": board_id, "id": item_id, "name": name})
+    data = execute(opts, ITEM_RENAME, {"board": board_id, "id": item_id, "name": name})
     opts.emit(data.get("change_simple_column_value") or {})
 
 
@@ -478,7 +461,7 @@ def duplicate_cmd(
     """Duplicate an item in place."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
-    data = _execute_mutation(
+    data = execute(
         opts,
         ITEM_DUPLICATE,
         {"board": board_id, "id": item_id, "with_updates": with_updates},
@@ -496,7 +479,7 @@ def archive_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     _confirm(opts, f"Archive item {item_id}?")
-    data = _execute_mutation(opts, ITEM_ARCHIVE, {"id": item_id})
+    data = execute(opts, ITEM_ARCHIVE, {"id": item_id})
     opts.emit(data.get("archive_item") or {})
 
 
@@ -521,7 +504,7 @@ def delete_cmd(
         )
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete item {item_id}?")
-    data = _execute_mutation(opts, ITEM_DELETE, {"id": item_id})
+    data = execute(opts, ITEM_DELETE, {"id": item_id})
     opts.emit(data.get("delete_item") or {})
 
 
@@ -533,7 +516,7 @@ def move_cmd(
 ) -> None:
     """Move an item to a different group within the same board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = _execute_mutation(opts, ITEM_MOVE_GROUP, {"id": item_id, "group": group_id})
+    data = execute(opts, ITEM_MOVE_GROUP, {"id": item_id, "group": group_id})
     opts.emit(data.get("move_item_to_group") or {})
 
 
@@ -611,5 +594,5 @@ def move_to_board_cmd(
         "columns": columns or None,
         "subitemColumns": subitem_columns or None,
     }
-    data = _execute_mutation(opts, ITEM_MOVE_BOARD, variables)
+    data = execute(opts, ITEM_MOVE_BOARD, variables)
     opts.emit(data.get("move_item_to_board") or {})

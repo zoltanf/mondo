@@ -15,7 +15,6 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.pagination import iter_boards_page
 from mondo.api.queries import (
@@ -33,6 +32,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, exec_or_exit, execute
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -46,28 +46,6 @@ MAX_UPDATES_PAGE_SIZE = 100
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 def _load_body(
@@ -132,17 +110,19 @@ def list_cmd(
         # Single-item path — nested query, single request per page.
         page = 1
         collected: list[dict[str, Any]] = []
-        client = _client_or_exit(opts)
         if opts.dry_run:
-            _dry_run(
-                opts,
-                UPDATES_FOR_ITEM,
-                {"id": item_id, "limit": limit, "page": page},
+            opts.emit(
+                {
+                    "query": UPDATES_FOR_ITEM,
+                    "variables": {"id": item_id, "limit": limit, "page": page},
+                }
             )
+            raise typer.Exit(0)
+        client = client_or_exit(opts)
         try:
             with client:
                 while True:
-                    data = _exec_or_exit(
+                    data = exec_or_exit(
                         client,
                         UPDATES_FOR_ITEM,
                         {"id": item_id, "limit": limit, "page": page},
@@ -184,7 +164,7 @@ def list_cmd(
             }
         )
         raise typer.Exit(0)
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             items = list(
@@ -213,15 +193,7 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_GET, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_GET, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_GET, variables)
     updates = data.get("updates") or []
     if not updates:
         typer.secho(f"update {update_id} not found.", fg=typer.colors.RED, err=True)
@@ -252,15 +224,7 @@ def create_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     payload = _load_body(body, from_file, from_stdin, markdown=markdown)
     variables = {"item": item_id, "parent": None, "body": payload}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_CREATE, variables)
     opts.emit(data.get("create_update") or {})
 
 
@@ -286,15 +250,7 @@ def reply_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     payload = _load_body(body, from_file, from_stdin, markdown=markdown)
     variables = {"item": None, "parent": parent_id, "body": payload}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_CREATE, variables)
     opts.emit(data.get("create_update") or {})
 
 
@@ -320,15 +276,7 @@ def edit_cmd(
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     payload = _load_body(body, from_file, from_stdin, markdown=markdown)
     variables = {"id": update_id, "body": payload}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_EDIT, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_EDIT, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_EDIT, variables)
     opts.emit(data.get("edit_update") or {})
 
 
@@ -343,15 +291,7 @@ def delete_cmd(
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     _confirm(opts, f"Delete update {update_id}?")
     variables = {"id": update_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_DELETE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_DELETE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_DELETE, variables)
     opts.emit(data.get("delete_update") or {})
 
 
@@ -365,15 +305,7 @@ def like_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_LIKE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_LIKE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_LIKE, variables)
     opts.emit(data.get("like_update") or {})
 
 
@@ -387,15 +319,7 @@ def unlike_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_UNLIKE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_UNLIKE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_UNLIKE, variables)
     opts.emit(data.get("unlike_update") or {})
 
 
@@ -408,15 +332,7 @@ def clear_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _confirm(opts, f"Clear ALL updates on item {item_id}?")
     variables = {"item": item_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_CLEAR_ITEM, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_CLEAR_ITEM, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_CLEAR_ITEM, variables)
     opts.emit(data.get("clear_item_updates") or {})
 
 
@@ -433,15 +349,7 @@ def pin_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"item": item_id, "update": update_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_PIN, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_PIN, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_PIN, variables)
     opts.emit(data.get("pin_to_top") or {})
 
 
@@ -458,13 +366,5 @@ def unpin_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"item": item_id, "update": update_id}
-    if opts.dry_run:
-        _dry_run(opts, UPDATE_UNPIN, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, UPDATE_UNPIN, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, UPDATE_UNPIN, variables)
     opts.emit(data.get("unpin_from_top") or {})

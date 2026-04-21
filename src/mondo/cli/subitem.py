@@ -35,6 +35,7 @@ from mondo.api.queries import (
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, execute
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
@@ -48,28 +49,6 @@ app = typer.Typer(
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 def _parse_settings(raw: str | None) -> dict[str, Any]:
@@ -134,15 +113,7 @@ def list_cmd(
     """List all subitems of a parent item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"parent": parent_id}
-    if opts.dry_run:
-        _dry_run(opts, SUBITEMS_LIST, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, SUBITEMS_LIST, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, SUBITEMS_LIST, variables)
     items = data.get("items") or []
     if not items:
         typer.secho(f"parent item {parent_id} not found.", fg=typer.colors.RED, err=True)
@@ -175,15 +146,7 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"id": subitem_id}
-    if opts.dry_run:
-        _dry_run(opts, ITEM_GET, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, ITEM_GET, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, ITEM_GET, variables)
     items = data.get("items") or []
     if not items:
         typer.secho(f"subitem {subitem_id} not found.", fg=typer.colors.RED, err=True)
@@ -235,7 +198,7 @@ def create_cmd(
             # No codec dispatch — send values verbatim.
             col_values = dict(parse_column_kv(p) for p in columns)
         else:
-            client = _client_or_exit(opts)
+            client = client_or_exit(opts)
             try:
                 with client:
                     col_values = _build_column_values(
@@ -260,15 +223,7 @@ def create_cmd(
         "values": json.dumps(col_values) if col_values else None,
         "create_labels": create_labels_if_missing if create_labels_if_missing else None,
     }
-    if opts.dry_run:
-        _dry_run(opts, SUBITEM_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, SUBITEM_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, SUBITEM_CREATE, variables)
     if create_labels_if_missing and subitems_board is not None:
         # May have minted a status/dropdown label on the subitems board.
         invalidate_columns_cache(opts, subitems_board)
@@ -287,15 +242,7 @@ def rename_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"board": board_id, "id": subitem_id, "name": name}
-    if opts.dry_run:
-        _dry_run(opts, ITEM_RENAME, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, ITEM_RENAME, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, ITEM_RENAME, variables)
     opts.emit(data.get("change_simple_column_value") or {})
 
 
@@ -317,15 +264,7 @@ def move_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"id": subitem_id, "group": group_id}
-    if opts.dry_run:
-        _dry_run(opts, ITEM_MOVE_GROUP, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, ITEM_MOVE_GROUP, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, ITEM_MOVE_GROUP, variables)
     opts.emit(data.get("move_item_to_group") or {})
 
 
@@ -340,15 +279,7 @@ def archive_cmd(
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     _confirm(opts, f"Archive subitem {subitem_id}?")
     variables = {"id": subitem_id}
-    if opts.dry_run:
-        _dry_run(opts, ITEM_ARCHIVE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, ITEM_ARCHIVE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, ITEM_ARCHIVE, variables)
     opts.emit(data.get("archive_item") or {})
 
 
@@ -372,13 +303,5 @@ def delete_cmd(
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete subitem {subitem_id}?")
     variables = {"id": subitem_id}
-    if opts.dry_run:
-        _dry_run(opts, ITEM_DELETE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, ITEM_DELETE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, ITEM_DELETE, variables)
     opts.emit(data.get("delete_item") or {})

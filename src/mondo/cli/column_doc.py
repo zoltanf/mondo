@@ -31,6 +31,7 @@ from mondo.api.queries import (
     DOCS_BY_OBJECT_ID,
 )
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit
 from mondo.cli.context import GlobalOpts
 from mondo.docs import (
     blocks_to_markdown,
@@ -50,14 +51,6 @@ class DocFormat(StrEnum):
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
 
 
 def _exec(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -163,7 +156,7 @@ def get_cmd(
 ) -> None:
     """Fetch a doc column's content and render as Markdown or raw blocks."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
 
     try:
         with client:
@@ -222,7 +215,7 @@ def set_cmd(
         typer.secho("error: no content to write.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             _board_id, raw_value = _fetch_doc_column_value(client, item_id, column_id)
@@ -312,7 +305,7 @@ def append_cmd(
         typer.secho("error: no content to append.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             _board_id, raw_value = _fetch_doc_column_value(client, item_id, column_id)
@@ -356,7 +349,7 @@ def clear_cmd(
     """Clear the doc column pointer on the item. Does NOT delete the underlying
     workspace doc — it just unlinks it from this item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
 
     try:
         with client:

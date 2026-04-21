@@ -33,6 +33,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._column_cache import fetch_board_columns
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -54,14 +55,6 @@ META_FIELDS = ("id", "name", "state", "group")
 
 
 # ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
 
 
 def _fetch_columns(
@@ -210,7 +203,7 @@ def board_cmd(
         )
         raise typer.Exit(code=2)
 
-    client = _client_or_exit(opts)
+    client = client_or_exit(opts)
     try:
         with client:
             columns = _fetch_columns(opts, client, board_id)

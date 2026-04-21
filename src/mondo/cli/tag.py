@@ -10,14 +10,12 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-from typing import Any
-
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_OR_GET_TAG, TAG_BY_BOARD, TAGS_LIST
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, exec_or_exit, execute
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -25,28 +23,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 @app.command("list", epilog=epilog_for("tag list"))
@@ -59,15 +35,7 @@ def list_cmd(
     """List account-level tags (public). See `mondo board get` for board-level tags."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"ids": tag_id or None}
-    if opts.dry_run:
-        _dry_run(opts, TAGS_LIST, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, TAGS_LIST, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, TAGS_LIST, variables)
     opts.emit(data.get("tags") or [])
 
 
@@ -95,14 +63,15 @@ def get_cmd(
     tag_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="tag")
     variables = {"ids": [tag_id]}
     if opts.dry_run:
-        _dry_run(opts, TAGS_LIST, variables)
-    client = _client_or_exit(opts)
+        opts.emit({"query": TAGS_LIST, "variables": variables})
+        raise typer.Exit(0)
+    client = client_or_exit(opts)
     try:
         with client:
-            data = _exec_or_exit(client, TAGS_LIST, variables)
+            data = exec_or_exit(client, TAGS_LIST, variables)
             tags = data.get("tags") or []
             if not tags and board_id is not None:
-                board_data = _exec_or_exit(client, TAG_BY_BOARD, {"board": board_id})
+                board_data = exec_or_exit(client, TAG_BY_BOARD, {"board": board_id})
                 boards = board_data.get("boards") or []
                 board_tags = (boards[0].get("tags") or []) if boards else []
                 tags = [t for t in board_tags if str(t.get("id")) == str(tag_id)]
@@ -125,13 +94,5 @@ def create_or_get_cmd(
     """Create a tag (or return the existing one with the same name) on a board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"name": name, "board": board_id}
-    if opts.dry_run:
-        _dry_run(opts, CREATE_OR_GET_TAG, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, CREATE_OR_GET_TAG, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, CREATE_OR_GET_TAG, variables)
     opts.emit(data.get("create_or_get_tag") or {})

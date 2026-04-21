@@ -12,8 +12,6 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
 from mondo.api.queries import (
     GROUP_ARCHIVE,
     GROUP_CREATE,
@@ -24,6 +22,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import execute, execute_read
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -75,28 +74,6 @@ class GroupAttribute(StrEnum):
 # ----- helpers -----
 
 
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
-
-
 def _validate_color(color: str | None) -> str | None:
     if color is None:
         return None
@@ -128,13 +105,7 @@ def list_cmd(
     """List all groups on a board (nested query — no standalone groups root)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUPS_LIST, {"board": board_id})
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute_read(opts, GROUPS_LIST, {"board": board_id})
     boards = data.get("boards") or []
     if not boards:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
@@ -180,15 +151,7 @@ def create_cmd(
         "prm": position_relative_method.value if position_relative_method else None,
         "position": position,
     }
-    if opts.dry_run:
-        _dry_run(opts, GROUP_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_CREATE, variables)
     opts.emit(data.get("create_group") or {})
 
 
@@ -207,15 +170,7 @@ def rename_cmd(
         "attribute": GroupAttribute.title.value,
         "value": title,
     }
-    if opts.dry_run:
-        _dry_run(opts, GROUP_UPDATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_UPDATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_UPDATE, variables)
     opts.emit(data.get("update_group") or {})
 
 
@@ -252,15 +207,7 @@ def update_cmd(
         "attribute": attribute.value,
         "value": value,
     }
-    if opts.dry_run:
-        _dry_run(opts, GROUP_UPDATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_UPDATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_UPDATE, variables)
     opts.emit(data.get("update_group") or {})
 
 
@@ -303,15 +250,7 @@ def reorder_cmd(
         assert position is not None
         value = position
     variables = {"board": board_id, "group": group_id, "attribute": attribute, "value": value}
-    if opts.dry_run:
-        _dry_run(opts, GROUP_UPDATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_UPDATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_UPDATE, variables)
     opts.emit(data.get("update_group") or {})
 
 
@@ -333,15 +272,7 @@ def duplicate_cmd(
         "title": title,
         "addToTop": True if add_to_top else None,
     }
-    if opts.dry_run:
-        _dry_run(opts, GROUP_DUPLICATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_DUPLICATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_DUPLICATE, variables)
     opts.emit(data.get("duplicate_group") or {})
 
 
@@ -355,15 +286,7 @@ def archive_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _confirm(opts, f"Archive group {group_id!r} on board {board_id}?")
     variables = {"board": board_id, "group": group_id}
-    if opts.dry_run:
-        _dry_run(opts, GROUP_ARCHIVE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_ARCHIVE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_ARCHIVE, variables)
     opts.emit(data.get("archive_group") or {})
 
 
@@ -395,13 +318,5 @@ def delete_cmd(
         f"PERMANENTLY delete group {group_id!r} and all its items on board {board_id}?",
     )
     variables = {"board": board_id, "group": group_id}
-    if opts.dry_run:
-        _dry_run(opts, GROUP_DELETE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, GROUP_DELETE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, GROUP_DELETE, variables)
     opts.emit(data.get("delete_group") or {})

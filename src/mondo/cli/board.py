@@ -13,7 +13,6 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, UsageError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.polling import wait_for_items_count_stable
@@ -30,6 +29,7 @@ from mondo.api.queries import (
 from mondo.cache.directory import get_boards as cache_get_boards
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import client_or_exit, execute, execute_read
 from mondo.cli._filters import apply_fuzzy, compile_name_filter
 from mondo.cli._filters import name_matches as _name_matches
 from mondo.cli._list_decorate import (
@@ -118,35 +118,9 @@ class DuplicateType(StrEnum):
 # ----- helpers -----
 
 
-def _dispatch_dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
-
-
-def _execute_mutation(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    if opts.dry_run:
-        _dispatch_dry_run(opts, query, variables)
-    return _execute_query(opts, query, variables)
-
-
-def _execute_query(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    """Run a query unconditionally (read-only — bypasses dry-run short-circuit)."""
-    try:
-        client = opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    try:
-        with client:
-            return _run(client, query, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
 def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
     """Look up the source board's workspace to default the duplicate destination."""
-    data = _execute_query(opts, BOARD_GET, {"id": board_id})
+    data = execute_read(opts, BOARD_GET, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
         typer.secho(
@@ -162,11 +136,6 @@ def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
         return int(ws)
     except (TypeError, ValueError):
         return None
-
-
-def _run(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    result = client.execute(query, variables=variables)
-    return result.get("data") or {}
 
 
 def _invalidate_boards_cache(opts: GlobalOpts) -> None:
@@ -362,11 +331,7 @@ def list_cmd(
         )
         raise typer.Exit(0)
 
-    try:
-        client = opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    client = client_or_exit(opts)
 
     try:
         with client:
@@ -451,8 +416,8 @@ def _list_via_cache(
         )
         raise typer.Exit(0)
 
+    client = client_or_exit(opts)
     try:
-        client = opts.build_client()
         store = opts.build_cache_store("boards")
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
@@ -527,7 +492,7 @@ def get_cmd(
     """Fetch a single board by ID with columns, groups, and subscribers."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
-    data = _execute_mutation(opts, BOARD_GET, {"id": board_id})
+    data = execute(opts, BOARD_GET, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
@@ -535,11 +500,7 @@ def get_cmd(
     board = boards[0]
     warn_cross_type(board, expected="board", id_=board_id)
     if with_url:
-        try:
-            client = opts.build_client()
-        except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+        client = client_or_exit(opts)
         with client:
             board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
     opts.emit(board)
@@ -591,7 +552,7 @@ def create_cmd(
         "subscriberTeamIds": subscriber_team or None,
         "empty": True if empty else None,
     }
-    data = _execute_mutation(opts, BOARD_CREATE, variables)
+    data = execute(opts, BOARD_CREATE, variables)
     _invalidate_boards_cache(opts)
     opts.emit(data.get("create_board") or {})
 
@@ -612,7 +573,7 @@ def update_cmd(
     """Update a single board attribute."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
-    data = _execute_mutation(
+    data = execute(
         opts,
         BOARD_UPDATE,
         {"board": board_id, "attribute": attribute.value, "value": value},
@@ -632,7 +593,7 @@ def archive_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     _confirm(opts, f"Archive board {board_id}?")
-    data = _execute_mutation(opts, BOARD_ARCHIVE, {"board": board_id})
+    data = execute(opts, BOARD_ARCHIVE, {"board": board_id})
     _invalidate_boards_cache(opts)
     opts.emit(data.get("archive_board") or {})
 
@@ -658,7 +619,7 @@ def delete_cmd(
         )
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete board {board_id}?")
-    data = _execute_mutation(opts, BOARD_DELETE, {"board": board_id})
+    data = execute(opts, BOARD_DELETE, {"board": board_id})
     _invalidate_boards_cache(opts)
     opts.emit(data.get("delete_board") or {})
 
@@ -722,7 +683,7 @@ def duplicate_cmd(
         "folder": folder,
         "keepSubscribers": True if keep_subscribers else None,
     }
-    data = _execute_mutation(opts, BOARD_DUPLICATE, variables)
+    data = execute(opts, BOARD_DUPLICATE, variables)
     _invalidate_boards_cache(opts)
     duplicate_payload = data.get("duplicate_board") or {}
 
@@ -746,11 +707,7 @@ def duplicate_cmd(
             )
             raise typer.Exit(code=1) from None
         source_items_count = _items_count_or_none(opts, board_id)
-        try:
-            client = opts.build_client()
-        except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+        client = client_or_exit(opts)
         try:
             with client:
                 final_count = wait_for_items_count_stable(
@@ -772,7 +729,7 @@ def duplicate_cmd(
 
 
 def _items_count_or_none(opts: GlobalOpts, board_id: int) -> int | None:
-    data = _execute_query(opts, BOARD_ITEMS_COUNT, {"ids": [board_id]})
+    data = execute_read(opts, BOARD_ITEMS_COUNT, {"ids": [board_id]})
     boards = data.get("boards") or []
     if not boards:
         return None

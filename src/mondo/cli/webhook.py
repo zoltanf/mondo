@@ -19,8 +19,6 @@ from typing import Any
 
 import typer
 
-from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
 from mondo.api.queries import (
     WEBHOOK_CREATE,
     WEBHOOK_DELETE,
@@ -28,6 +26,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import execute
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -35,31 +34,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-# ----- helpers -----
-
-
-def _client_or_exit(opts: GlobalOpts) -> MondayClient:
-    try:
-        return opts.build_client()
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-
-
-def _exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    try:
-        result = client.execute(query, variables=variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    return result.get("data") or {}
-
-
-def _dry_run(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> None:
-    opts.emit({"query": query, "variables": variables})
-    raise typer.Exit(0)
 
 
 # ----- commands -----
@@ -82,15 +56,7 @@ def list_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     variables = {"board": board_id, "appOnly": True if app_only else None}
-    if opts.dry_run:
-        _dry_run(opts, WEBHOOKS_LIST, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WEBHOOKS_LIST, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WEBHOOKS_LIST, variables)
     opts.emit(data.get("webhooks") or [])
 
 
@@ -142,15 +108,7 @@ def create_cmd(
         "event": event,
         "config": parsed_config,
     }
-    if opts.dry_run:
-        _dry_run(opts, WEBHOOK_CREATE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WEBHOOK_CREATE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WEBHOOK_CREATE, variables)
     opts.emit(data.get("create_webhook") or {})
 
 
@@ -165,13 +123,5 @@ def delete_cmd(
     webhook_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="webhook")
     _confirm(opts, f"Delete webhook {webhook_id}?")
     variables = {"id": webhook_id}
-    if opts.dry_run:
-        _dry_run(opts, WEBHOOK_DELETE, variables)
-    client = _client_or_exit(opts)
-    try:
-        with client:
-            data = _exec_or_exit(client, WEBHOOK_DELETE, variables)
-    except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+    data = execute(opts, WEBHOOK_DELETE, variables)
     opts.emit(data.get("delete_webhook") or {})
