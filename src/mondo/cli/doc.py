@@ -18,6 +18,7 @@ workspace with a block-structured body. The CLI covers:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from enum import StrEnum
 from pathlib import Path
@@ -26,7 +27,7 @@ from typing import Any
 import typer
 
 from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, UsageError
 from mondo.api.pagination import iter_boards_page
 from mondo.api.queries import (
     BOARD_GET,
@@ -40,6 +41,13 @@ from mondo.api.queries import (
 )
 from mondo.cache.directory import get_docs as cache_get_docs
 from mondo.cli._examples import epilog_for
+from mondo.cli._filters import apply_fuzzy, compile_name_filter
+from mondo.cli._filters import name_matches as _name_matches
+from mondo.cli._list_decorate import (
+    enrich_workspaces_best_effort,
+    strip_url_fields,
+)
+from mondo.cli._normalize import normalize_doc_entry
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
@@ -123,21 +131,77 @@ def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> s
 def list_cmd(
     ctx: typer.Context,
     workspace: list[int] | None = typer.Option(
-        None, "--workspace", help="Restrict to workspace IDs (repeatable)."
+        None,
+        "--workspace",
+        help="Restrict to workspace IDs (repeatable).",
+        rich_help_panel="Filters",
     ),
     object_id: list[int] | None = typer.Option(
-        None, "--object-id", help="Filter by doc object_id (repeatable)."
+        None,
+        "--object-id",
+        help="Filter by doc object_id (repeatable).",
+        rich_help_panel="Filters",
+    ),
+    kind: DocKind | None = typer.Option(
+        None,
+        "--kind",
+        help="Filter by doc kind (public/private/share), client-side.",
+        case_sensitive=False,
+        rich_help_panel="Filters",
     ),
     order_by: DocsOrderBy | None = typer.Option(
-        None, "--order-by", help="created_at or used_at.", case_sensitive=False
+        None,
+        "--order-by",
+        help="created_at or used_at.",
+        case_sensitive=False,
+        rich_help_panel="Filters",
+    ),
+    name_contains: str | None = typer.Option(
+        None,
+        "--name-contains",
+        help="Client-side substring filter on doc name (case-insensitive).",
+        rich_help_panel="Filters",
+    ),
+    name_matches: str | None = typer.Option(
+        None,
+        "--name-matches",
+        help="Client-side regex filter on doc name.",
+        rich_help_panel="Filters",
+    ),
+    name_fuzzy: str | None = typer.Option(
+        None,
+        "--name-fuzzy",
+        help="Client-side fuzzy filter on doc name (tolerates typos).",
+        rich_help_panel="Filters",
+    ),
+    fuzzy_threshold: int | None = typer.Option(
+        None,
+        "--fuzzy-threshold",
+        help="Minimum fuzzy match score (0-100). Defaults to config/70.",
+        rich_help_panel="Filters",
+    ),
+    fuzzy_score_flag: bool = typer.Option(
+        False,
+        "--fuzzy-score",
+        help="Include `_fuzzy_score` field and sort by score desc.",
+        rich_help_panel="Filters",
     ),
     limit: int = typer.Option(
         100,
         "--limit",
         help="Page size for live fetches; ignored when served from cache.",
+        rich_help_panel="Pagination",
     ),
     max_items: int | None = typer.Option(
-        None, "--max-items", help="Stop after this many docs total."
+        None,
+        "--max-items",
+        help="Stop after this many docs total.",
+        rich_help_panel="Pagination",
+    ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include `url` and `relative_url` on every emitted doc.",
     ),
     no_cache: bool = typer.Option(
         False,
@@ -152,7 +216,12 @@ def list_cmd(
         rich_help_panel="Cache",
     ),
 ) -> None:
-    """List docs (page-based)."""
+    """List docs (page-based).
+
+    Use --name-contains / --name-matches / --name-fuzzy to narrow by name,
+    --workspace to restrict to workspaces, and --kind to pick public/private/
+    share. Served from the local directory cache when available.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
     if no_cache and refresh_cache:
@@ -163,15 +232,33 @@ def list_cmd(
         )
         raise typer.Exit(code=2)
 
+    try:
+        needle_lower, pattern = compile_name_filter(
+            name_contains, name_matches, name_fuzzy
+        )
+    except UsageError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e
+
     cache_cfg = opts.resolve_cache_config()
+    effective_fuzzy_threshold = (
+        fuzzy_threshold if fuzzy_threshold is not None else cache_cfg.fuzzy_threshold
+    )
     if cache_cfg.enabled and not no_cache:
         _list_via_cache(
             opts,
             workspace=workspace,
             object_id=object_id,
+            kind=kind,
             order_by=order_by,
+            needle_lower=needle_lower,
+            pattern=pattern,
+            name_fuzzy=name_fuzzy,
+            fuzzy_threshold=effective_fuzzy_threshold,
+            fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            with_url=with_url,
         )
         return
 
@@ -184,26 +271,68 @@ def list_cmd(
         opts.emit(
             {
                 "query": query,
-                "variables": {**variables, "limit": limit, "max_items": max_items},
+                "variables": {
+                    **variables,
+                    "limit": limit,
+                    "max_items": max_items,
+                    "kind": kind.value if kind else None,
+                    "name_contains": name_contains,
+                    "name_matches": name_matches,
+                    "name_fuzzy": name_fuzzy,
+                },
             }
         )
         raise typer.Exit(0)
+    # Client-side filters (kind / name_*) require fetching every page before
+    # capping, otherwise we'd drop matches past the first `max_items` pre-filter
+    # rows. When no client-side filter is active, let pagination stop early.
+    client_side_filter_active = (
+        kind is not None
+        or needle_lower is not None
+        or pattern is not None
+        or name_fuzzy is not None
+    )
+    fetch_cap = None if client_side_filter_active else max_items
+
     client = _client_or_exit(opts)
     try:
         with client:
-            items = list(
-                iter_boards_page(
-                    client,
-                    query=query,
-                    variables=variables,
-                    collection_key="docs",
-                    limit=limit,
-                    max_items=max_items,
+            items = [
+                d
+                for d in (
+                    normalize_doc_entry(entry)
+                    for entry in iter_boards_page(
+                        client,
+                        query=query,
+                        variables=variables,
+                        collection_key="docs",
+                        limit=limit,
+                        max_items=fetch_cap,
+                    )
                 )
-            )
+                if (kind is None or (d.get("kind") or "") == kind.value)
+                and _name_matches(d, needle_lower, pattern)
+            ]
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+
+    if name_fuzzy is not None:
+        items = apply_fuzzy(
+            items,
+            name_fuzzy,
+            threshold=effective_fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+
+    if client_side_filter_active and max_items is not None:
+        items = items[:max_items]
+
+    if cache_cfg.enabled and not no_cache:
+        enrich_workspaces_best_effort(items, opts)
+    if not with_url:
+        strip_url_fields(items)
+
     opts.emit(items)
 
 
@@ -212,9 +341,16 @@ def _list_via_cache(
     *,
     workspace: list[int] | None,
     object_id: list[int] | None,
+    kind: DocKind | None,
     order_by: DocsOrderBy | None,
+    needle_lower: str | None,
+    pattern: re.Pattern[str] | None,
+    name_fuzzy: str | None,
+    fuzzy_threshold: int,
+    fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    with_url: bool,
 ) -> None:
     if opts.dry_run:
         opts.emit(
@@ -224,7 +360,10 @@ def _list_via_cache(
                 "filters": {
                     "workspace_ids": workspace or None,
                     "object_ids": object_id or None,
+                    "kind": kind.value if kind else None,
                     "order_by": order_by.value if order_by else None,
+                    "name_fuzzy": name_fuzzy,
+                    "fuzzy_threshold": fuzzy_threshold,
                     "max_items": max_items,
                 },
             }
@@ -241,17 +380,35 @@ def _list_via_cache(
         raise typer.Exit(code=int(e.exit_code)) from e
 
     entries = cached.entries
+    if kind is not None:
+        entries = [e for e in entries if (e.get("kind") or "") == kind.value]
     if workspace:
         wanted_ws = {str(w) for w in workspace}
         entries = [e for e in entries if str(e.get("workspace_id") or "") in wanted_ws]
     if object_id:
         wanted_obj = {str(o) for o in object_id}
         entries = [e for e in entries if str(e.get("object_id") or "") in wanted_obj]
+    entries = [e for e in entries if _name_matches(e, needle_lower, pattern)]
+
     if order_by is not None:
         key = order_by.value
         entries = sorted(entries, key=lambda e: e.get(key) or "", reverse=True)
+
+    if name_fuzzy is not None:
+        entries = apply_fuzzy(
+            entries,
+            name_fuzzy,
+            threshold=fuzzy_threshold,
+            include_score=fuzzy_score_flag,
+        )
+
     if max_items is not None:
         entries = entries[:max_items]
+
+    enrich_workspaces_best_effort(entries, opts)
+    if not with_url:
+        strip_url_fields(entries)
+
     opts.emit(entries)
 
 

@@ -22,6 +22,10 @@ from mondo.api.queries import (
     build_docs_list_query,
 )
 from mondo.cache.store import CachedDirectory, CacheStore
+from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry
+
+# Label for entries whose `workspace_id` is null (monday's "Main workspace").
+MAIN_WORKSPACE_NAME = "Main workspace"
 
 
 def _dedup_by_id(entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -33,6 +37,27 @@ def _dedup_by_id(entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         if key:
             by_id[key] = entry
     return list(by_id.values())
+
+
+def enrich_workspace_names(
+    entries: list[dict[str, Any]],
+    *,
+    client: MondayClient,
+    store: CacheStore,
+) -> None:
+    """Add `workspace_name` to each entry in-place.
+
+    Names come from the workspaces cache (auto-populated when cold).
+    `workspace_id=None` → `MAIN_WORKSPACE_NAME`; unknown id → None.
+    """
+    cached = get_workspaces(client, store=store)
+    names = {str(w["id"]): w.get("name") for w in cached.entries if w.get("id") is not None}
+    for entry in entries:
+        wid = entry.get("workspace_id")
+        if wid is None:
+            entry["workspace_name"] = MAIN_WORKSPACE_NAME
+        else:
+            entry["workspace_name"] = names.get(str(wid))
 
 
 def get_boards(
@@ -116,15 +141,16 @@ def _fetch_all_boards(client: MondayClient) -> list[dict[str, Any]]:
     # state="all" covers active+archived+deleted so the cache is usable for
     # every --state filter client-side.
     query, variables = build_boards_list_query(state="all")
-    return list(
-        iter_boards_page(
+    return [
+        normalize_board_entry(entry)
+        for entry in iter_boards_page(
             client,
             query=query,
             variables=variables,
             collection_key="boards",
             limit=MAX_BOARDS_PAGE_SIZE,
         )
-    )
+    ]
 
 
 def _fetch_all_workspaces(client: MondayClient) -> list[dict[str, Any]]:
@@ -185,13 +211,14 @@ def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
             except (TypeError, ValueError):
                 continue
             query, variables = build_docs_list_query(workspace_ids=[ws_id])
-            yield from iter_boards_page(
+            for entry in iter_boards_page(
                 client,
                 query=query,
                 variables=variables,
                 collection_key="docs",
                 limit=MAX_BOARDS_PAGE_SIZE,
-            )
+            ):
+                yield normalize_doc_entry(entry)
 
     return _dedup_by_id(_iter_all())
 

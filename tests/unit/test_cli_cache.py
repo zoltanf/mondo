@@ -9,6 +9,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 from typer.testing import CliRunner
 
+from mondo.cache.store import CacheStore
 from mondo.cli.main import app
 
 ENDPOINT = "https://api.monday.com/v2"
@@ -27,6 +28,18 @@ def _env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _ok(data: dict) -> dict:
     return {"data": data, "extensions": {"request_id": "r"}}
+
+
+def _prewarm_workspaces(tmp_path: Path) -> None:
+    """Populate the workspaces cache so `board list` / `doc list` enrichment
+    doesn't fire a workspaces fetch that's unrelated to the test's intent."""
+    store = CacheStore(
+        entity_type="workspaces",
+        cache_dir=tmp_path / "cache" / "default",
+        api_endpoint=ENDPOINT,
+        ttl_seconds=3600,
+    )
+    store.write([{"id": "1", "name": "Main"}])
 
 
 # -- status -----------------------------------------------------------------
@@ -52,7 +65,10 @@ class TestCacheStatus:
         result = runner.invoke(app, ["cache", "status", "nonsense"])
         assert result.exit_code == 2
 
-    def test_status_after_prime_reports_fresh(self, httpx_mock: HTTPXMock) -> None:
+    def test_status_after_prime_reports_fresh(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        _prewarm_workspaces(tmp_path)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -129,6 +145,7 @@ class TestCacheClear:
     def test_clear_deletes_file(
         self, httpx_mock: HTTPXMock, tmp_path: Path
     ) -> None:
+        _prewarm_workspaces(tmp_path)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -147,6 +164,7 @@ class TestCacheClear:
     def test_clear_dry_run_preserves_files(
         self, httpx_mock: HTTPXMock, tmp_path: Path
     ) -> None:
+        _prewarm_workspaces(tmp_path)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",

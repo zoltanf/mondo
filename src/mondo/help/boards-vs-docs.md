@@ -44,6 +44,10 @@ a canonical monday URL in the emitted payload:
 `mondo doc get` always includes `url` (monday's `docs()` endpoint returns
 it); `--with-url` there is accepted but has no effect.
 
+On `board list` and `doc list`, `--with-url` is opt-in: the default output
+has no `url` / `relative_url` so the two commands emit the same core shape.
+Pass `--with-url` on either to get URLs back.
+
 ## Agent workflow
 
 1. Paste any monday URL into the command that matches its shape.

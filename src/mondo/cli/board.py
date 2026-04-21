@@ -28,9 +28,15 @@ from mondo.api.queries import (
     build_boards_list_query,
 )
 from mondo.cache.directory import get_boards as cache_get_boards
-from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._filters import apply_fuzzy, compile_name_filter
+from mondo.cli._filters import name_matches as _name_matches
+from mondo.cli._list_decorate import (
+    apply_board_urls,
+    enrich_workspaces_best_effort,
+)
+from mondo.cli._normalize import normalize_board_entry
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam, board_url, get_tenant_slug, warn_cross_type
 from mondo.cli.context import GlobalOpts
@@ -163,62 +169,6 @@ def _run(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[st
     return result.get("data") or {}
 
 
-def _compile_name_filter(
-    name_contains: str | None,
-    name_matches: str | None,
-    name_fuzzy: str | None = None,
-) -> tuple[str | None, re.Pattern[str] | None]:
-    """Validate mutex on the three name-filter flags and compile the regex.
-
-    `name_fuzzy` is applied separately (see `_apply_fuzzy`); we only validate
-    here that no more than one of the three name filters is active.
-    """
-    active = sum(bool(x) for x in (name_contains, name_matches, name_fuzzy))
-    if active > 1:
-        raise UsageError(
-            "pass only one of --name-contains / --name-matches / --name-fuzzy."
-        )
-    pattern: re.Pattern[str] | None = None
-    if name_matches:
-        try:
-            pattern = re.compile(name_matches)
-        except re.error as exc:
-            raise UsageError(f"invalid --name-matches regex: {exc}") from exc
-    return (name_contains.lower() if name_contains else None, pattern)
-
-
-def _name_matches(
-    board: dict[str, Any],
-    needle_lower: str | None,
-    pattern: re.Pattern[str] | None,
-) -> bool:
-    name = board.get("name") or ""
-    if needle_lower is not None and needle_lower not in name.lower():
-        return False
-    return not (pattern is not None and pattern.search(name) is None)
-
-
-def _apply_fuzzy(
-    entries: list[dict[str, Any]],
-    query: str,
-    *,
-    threshold: int,
-    include_score: bool,
-) -> list[dict[str, Any]]:
-    """Apply fuzzy name filter to cached entries.
-
-    When `include_score` is True, a `_fuzzy_score` key is injected into each
-    returned entry (shallow-copied so the cache isn't mutated) and the list is
-    sorted by score descending. When False, entries are filtered by threshold
-    but the caller's order is preserved.
-    """
-    scored = fuzzy_score(query, entries, threshold=threshold)
-    if include_score:
-        return [{**entry, "_fuzzy_score": score} for entry, score in scored]
-    matching_ids = {id(entry) for entry, _ in scored}
-    return [e for e in entries if id(e) in matching_ids]
-
-
 def _invalidate_boards_cache(opts: GlobalOpts) -> None:
     """Drop the boards cache file after a successful mutation. Best-effort."""
     if opts.dry_run:
@@ -320,6 +270,11 @@ def list_cmd(
         "--with-item-counts",
         help="Include items_count per board (bypasses cache; ~500k complexity per 100 boards).",
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include a synthesized `url` field on every emitted board.",
+    ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -350,7 +305,7 @@ def list_cmd(
         raise typer.Exit(code=2)
 
     try:
-        needle_lower, pattern = _compile_name_filter(name_contains, name_matches, name_fuzzy)
+        needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
     except UsageError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
@@ -378,6 +333,7 @@ def list_cmd(
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            with_url=with_url,
         )
         return
 
@@ -416,12 +372,15 @@ def list_cmd(
         with client:
             boards = [
                 b
-                for b in iter_boards_page(
-                    client,
-                    query=query,
-                    variables=variables,
-                    limit=limit,
-                    max_items=None,  # client-side filters applied below
+                for b in (
+                    normalize_board_entry(entry)
+                    for entry in iter_boards_page(
+                        client,
+                        query=query,
+                        variables=variables,
+                        limit=limit,
+                        max_items=None,  # client-side filters applied below
+                    )
                 )
                 if _type_matches(b, type_filter) and _name_matches(b, needle_lower, pattern)
             ]
@@ -430,7 +389,7 @@ def list_cmd(
         raise typer.Exit(code=int(e.exit_code)) from e
 
     if name_fuzzy is not None:
-        boards = _apply_fuzzy(
+        boards = apply_fuzzy(
             boards,
             name_fuzzy,
             threshold=effective_fuzzy_threshold,
@@ -439,6 +398,15 @@ def list_cmd(
 
     if max_items is not None:
         boards = boards[:max_items]
+
+    # --no-cache opts the user out of cache writes, so skip the workspace
+    # enrichment step (which would transparently populate workspaces.json).
+    if cache_cfg.enabled and not no_cache:
+        enrich_workspaces_best_effort(boards, opts)
+
+    if with_url:
+        apply_board_urls(boards, opts)
+
     opts.emit(boards)
 
 
@@ -457,6 +425,7 @@ def _list_via_cache(
     fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    with_url: bool,
 ) -> None:
     """Serve `board list` from the local directory cache.
 
@@ -503,7 +472,7 @@ def _list_via_cache(
     if requested_state != "all":
         entries = [b for b in entries if (b.get("state") or "active") == requested_state]
     if kind is not None:
-        entries = [b for b in entries if (b.get("board_kind") or "") == kind.value]
+        entries = [b for b in entries if (b.get("kind") or "") == kind.value]
     if type_filter is not BoardTypeFilter.all:
         entries = [b for b in entries if _type_matches(b, type_filter)]
     if workspace:
@@ -517,7 +486,7 @@ def _list_via_cache(
         entries = sorted(entries, key=lambda b: b.get(key) or "", reverse=reverse)
 
     if name_fuzzy is not None:
-        entries = _apply_fuzzy(
+        entries = apply_fuzzy(
             entries,
             name_fuzzy,
             threshold=fuzzy_threshold,
@@ -526,6 +495,11 @@ def _list_via_cache(
 
     if max_items is not None:
         entries = entries[:max_items]
+
+    enrich_workspaces_best_effort(entries, opts)
+    if with_url:
+        apply_board_urls(entries, opts)
+
     opts.emit(entries)
 
 

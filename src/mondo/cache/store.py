@@ -21,11 +21,11 @@ from loguru import logger
 
 from mondo.version import __version__
 
-# Bumped to 2 in v0.4.0: boards envelopes now carry `type` on each entry to
-# distinguish real boards from workdoc-backing boards (`"document"`). Old
-# envelopes lack it; bumping the version forces a silent one-off refresh
-# rather than serving incomplete rows under the new --type filter.
-SCHEMA_VERSION = 2
+# Bumped to 3: board/doc envelopes now store normalized keys (`kind`,
+# `folder_id`) and extra fields (`created_at` on boards, `updated_at` +
+# `doc_folder_id` on docs). Old envelopes use the pre-normalization keys;
+# bump forces a silent one-off refresh.
+SCHEMA_VERSION = 3
 
 EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "docs"
 

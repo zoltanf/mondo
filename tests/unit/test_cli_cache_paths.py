@@ -10,10 +10,23 @@ import pytest
 from pytest_httpx import HTTPXMock
 from typer.testing import CliRunner
 
+from mondo.cache.store import CacheStore
 from mondo.cli.main import app
 
 ENDPOINT = "https://api.monday.com/v2"
 runner = CliRunner()
+
+
+def _prewarm_workspaces(tmp_path: Path) -> None:
+    """Lay down a warm workspaces cache so `board list` / `doc list` enrichment
+    doesn't trigger a workspaces fetch in tests that don't care about it."""
+    store = CacheStore(
+        entity_type="workspaces",
+        cache_dir=tmp_path / "cache" / "default",
+        api_endpoint=ENDPOINT,
+        ttl_seconds=3600,
+    )
+    store.write([{"id": "1", "name": "Main"}, {"id": "42", "name": "Engineering"}, {"id": "43", "name": "Sales"}])
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +37,7 @@ def _cached_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
     monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+    _prewarm_workspaces(tmp_path)
 
 
 def _ok(data: dict) -> dict:
@@ -171,6 +185,68 @@ class TestBoardListCache:
         parsed = json.loads(result.stdout)
         assert [b["id"] for b in parsed] == ["2", "3"]
 
+    def test_workspace_name_enriched_from_cache(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """workspace_name resolved from pre-warmed workspaces cache
+        (fixture seeds id=42 → 'Engineering')."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [_board("1", "A", workspace_id="42")]}),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["workspace_name"] == "Engineering"
+
+    def test_main_workspace_name_synthesized_for_null_id(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [_board("1", "A", workspace_id=None)]}),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["workspace_name"] == "Main workspace"
+
+    def test_with_url_synthesizes_board_url(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--with-url synthesizes a board URL via the monday account/me lookup."""
+        from mondo.cli import _url as url_mod
+
+        monkeypatch.setattr(url_mod, "_TENANT_SLUG_CACHE", None)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [_board("42", "Roadmap")]}),
+        )
+        # Tenant slug fetch for URL synthesis.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"me": {"account": {"slug": "acme"}}}),
+        )
+        result = runner.invoke(app, ["board", "list", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["url"] == "https://acme.monday.com/boards/42"
+
+    def test_url_hidden_by_default(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [_board("42", "Roadmap")]}),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "url" not in parsed[0]
+
 
 # -- board mutation invalidation --------------------------------------------
 
@@ -207,6 +283,10 @@ class TestWorkspaceListCache:
     def test_warm_cache_serves_without_new_http(
         self, httpx_mock: HTTPXMock, tmp_path: Path
     ) -> None:
+        # The autouse fixture pre-warms workspaces for board/doc enrichment;
+        # this test wants to exercise the cold-then-warm path explicitly, so
+        # drop that file before priming.
+        (tmp_path / "cache" / "default" / "workspaces.json").unlink(missing_ok=True)
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",

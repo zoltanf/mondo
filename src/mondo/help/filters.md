@@ -52,10 +52,32 @@ and keeps paging until the server runs out or `--max-items` is reached.
     # Cap the total items returned (approximate — cuts at page boundary)
     mondo item list --board 42 --max-items 500
 
+## Client-side name filters (boards & docs)
+
+`board list` and `doc list` accept three mutually-exclusive name filters,
+applied client-side after results are retrieved. Cached or live — same
+behavior either way.
+
+    # Substring (case-insensitive)
+    mondo board list --name-contains pager
+    mondo doc list  --name-contains spec
+
+    # Regex
+    mondo board list --name-matches '^team-\w+$'
+    mondo doc list  --name-matches '^rfc-\d+$'
+
+    # Fuzzy (tolerates typos — ranked by similarity)
+    mondo board list --name-fuzzy "prodct launc" --fuzzy-score --max-items 5
+    mondo doc list   --name-fuzzy "prodct launc" --fuzzy-score --max-items 5
+
+Fuzzy matching defaults to a similarity threshold of 70 (0-100). Override
+per-call with `--fuzzy-threshold 85`, or globally via
+`cache.fuzzy_threshold` in config. `--fuzzy-score` attaches the score to
+each entry as `_fuzzy_score` and sorts by it.
+
 ## Client-side filtering (`-q`)
 
-When the server has no matching filter operator (e.g. the `boards` query
-has no name filter), use JMESPath:
+For ad-hoc predicates not covered above, use JMESPath:
 
     mondo graphql 'query { boards(limit:200) { id name } }' \
         -q "data.boards[?contains(name,'Pager')]" -o table

@@ -253,6 +253,42 @@ class TestBoardList:
         assert result.exit_code == 0, result.stdout
         assert "items_count" not in _last_body(httpx_mock)["query"]
 
+    def test_created_at_field_included_in_query(self, httpx_mock: HTTPXMock) -> None:
+        """board list emits created_at so it can align with doc list's shape."""
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        assert "created_at" in _last_body(httpx_mock)["query"]
+
+    def test_output_uses_kind_not_board_kind(self, httpx_mock: HTTPXMock) -> None:
+        """board_kind → kind at the output layer (tier-1 hard rename)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"boards": [{"id": "1", "name": "X", "board_kind": "public"}]}
+            ),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["kind"] == "public"
+        assert "board_kind" not in parsed[0]
+
+    def test_output_uses_folder_id_not_board_folder_id(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"boards": [{"id": "1", "name": "X", "board_folder_id": "42"}]}
+            ),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["folder_id"] == "42"
+        assert "board_folder_id" not in parsed[0]
+
     def test_with_item_counts_flag_includes_items_count(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
         result = runner.invoke(app, ["board", "list", "--with-item-counts"])

@@ -9,10 +9,27 @@ import pytest
 from pytest_httpx import HTTPXMock
 from typer.testing import CliRunner
 
+from mondo.cache.store import CacheStore
 from mondo.cli.main import app
 
 ENDPOINT = "https://api.monday.com/v2"
 runner = CliRunner()
+
+
+def _prewarm_workspaces(tmp_path: Path) -> None:
+    """Lay down a warm workspaces cache so `doc list` enrichment doesn't
+    trigger a workspaces fetch in tests that don't care about it."""
+    store = CacheStore(
+        entity_type="workspaces",
+        cache_dir=tmp_path / "cache" / "default",
+        api_endpoint=ENDPOINT,
+        ttl_seconds=3600,
+    )
+    store.write([
+        {"id": "1", "name": "Main"},
+        {"id": "42", "name": "Engineering"},
+        {"id": "43", "name": "Sales"},
+    ])
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +42,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # opt back in by re-setting MONDO_CACHE_ENABLED=true.
     monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("MONDO_CACHE_ENABLED", "false")
+    _prewarm_workspaces(tmp_path)
 
 
 def _ok(data: dict) -> dict:
@@ -94,6 +112,171 @@ class TestList:
                 f"{forbidden} leaked into unfiltered query: {body['query']}"
             )
         assert body["variables"].keys() == {"limit", "page"}
+
+    def test_name_contains_filters_client_side(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "object_id": "10", "name": "Spec v1"},
+                        {"id": "2", "object_id": "20", "name": "Roadmap"},
+                        {"id": "3", "object_id": "30", "name": "spec doc"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list", "--name-contains", "spec"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["1", "3"]
+
+    def test_name_matches_regex(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "object_id": "10", "name": "rfc-1"},
+                        {"id": "2", "object_id": "20", "name": "rfc-002"},
+                        {"id": "3", "object_id": "30", "name": "spec"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app, ["doc", "list", "--name-matches", r"^rfc-\d+$"]
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["1", "2"]
+
+    def test_name_filters_mutually_exclusive(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["doc", "list", "--name-contains", "x", "--name-matches", "y"],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_invalid_regex_usage_error(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["doc", "list", "--name-matches", "["])
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_kind_filters_client_side(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "name": "A", "doc_kind": "public"},
+                        {"id": "2", "name": "B", "doc_kind": "private"},
+                        {"id": "3", "name": "C", "doc_kind": "private"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list", "--kind", "private"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["2", "3"]
+
+    def test_query_includes_doc_folder_id_and_updated_at(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """Both are native on Monday's `Doc` type and populate the
+        `folder_id` / `updated_at` core shape fields."""
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        query = _last_body(httpx_mock)["query"]
+        assert "doc_folder_id" in query
+        assert "updated_at" in query
+
+    def test_output_uses_kind_not_doc_kind(self, httpx_mock: HTTPXMock) -> None:
+        """doc_kind → kind at the output layer (tier-1 hard rename)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "1", "name": "A", "doc_kind": "private"}]}
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["kind"] == "private"
+        assert "doc_kind" not in parsed[0]
+
+    def test_output_uses_folder_id_not_doc_folder_id(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "1", "name": "A", "doc_folder_id": "42"}]}
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["folder_id"] == "42"
+        assert "doc_folder_id" not in parsed[0]
+
+    def test_url_hidden_by_default(self, httpx_mock: HTTPXMock) -> None:
+        """doc list no longer emits url/relative_url unless --with-url is passed.
+        Symmetric with board list's opt-in url behavior."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "1",
+                            "object_id": "100",
+                            "name": "Spec",
+                            "url": "https://acme.monday.com/docs/1",
+                            "relative_url": "/docs/1",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "url" not in parsed[0]
+        assert "relative_url" not in parsed[0]
+
+    def test_with_url_exposes_url_and_relative_url(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "1",
+                            "object_id": "100",
+                            "name": "Spec",
+                            "url": "https://acme.monday.com/docs/1",
+                            "relative_url": "/docs/1",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["url"] == "https://acme.monday.com/docs/1"
+        assert parsed[0]["relative_url"] == "/docs/1"
 
 
 class TestListCache:
@@ -261,6 +444,134 @@ class TestListCache:
         assert parsed["cache"] == "docs"
         assert parsed["filters"]["workspace_ids"] == [42]
         assert httpx_mock.get_requests() == []
+
+    def _queue_prime_for_fuzzy(self, httpx_mock: HTTPXMock) -> None:
+        """Seed the docs cache with a richer mix so fuzzy / kind tests can
+        distinguish matches. One workspace, four docs varying in name and
+        doc_kind."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"workspaces": [{"id": "42"}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "1",
+                            "object_id": "10",
+                            "name": "Product Launch",
+                            "workspace_id": "42",
+                            "doc_kind": "public",
+                        },
+                        {
+                            "id": "2",
+                            "object_id": "20",
+                            "name": "Marketing Plan",
+                            "workspace_id": "42",
+                            "doc_kind": "private",
+                        },
+                        {
+                            "id": "3",
+                            "object_id": "30",
+                            "name": "Product Roadmap",
+                            "workspace_id": "42",
+                            "doc_kind": "public",
+                        },
+                        {
+                            "id": "4",
+                            "object_id": "40",
+                            "name": "Unrelated Stuff",
+                            "workspace_id": "42",
+                            "doc_kind": "private",
+                        },
+                    ]
+                }
+            ),
+        )
+
+    def test_name_fuzzy_filters_with_threshold(self, httpx_mock: HTTPXMock) -> None:
+        self._queue_prime_for_fuzzy(httpx_mock)
+        result = runner.invoke(
+            app,
+            ["doc", "list", "--name-fuzzy", "prodct", "--fuzzy-threshold", "60"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        ids = {d["id"] for d in parsed}
+        # "Product Launch" and "Product Roadmap" match "prodct"; the others
+        # should be filtered out by the threshold.
+        assert ids == {"1", "3"}
+
+    def test_fuzzy_score_injected_and_sorted(self, httpx_mock: HTTPXMock) -> None:
+        self._queue_prime_for_fuzzy(httpx_mock)
+        result = runner.invoke(
+            app,
+            ["doc", "list", "--name-fuzzy", "product launch", "--fuzzy-score"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        # Every returned entry has a _fuzzy_score, and they're sorted desc.
+        assert all("_fuzzy_score" in d for d in parsed)
+        scores = [d["_fuzzy_score"] for d in parsed]
+        assert scores == sorted(scores, reverse=True)
+        # The exact match for "Product Launch" should lead.
+        assert parsed[0]["id"] == "1"
+
+    def test_kind_filters_client_side_cache(self, httpx_mock: HTTPXMock) -> None:
+        self._queue_prime_for_fuzzy(httpx_mock)
+        result = runner.invoke(app, ["doc", "list", "--kind", "private"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert sorted(d["id"] for d in parsed) == ["2", "4"]
+
+    def test_name_filters_mutually_exclusive_cache(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        # No priming required — validation happens before any cache read.
+        result = runner.invoke(
+            app,
+            ["doc", "list", "--name-contains", "x", "--name-fuzzy", "y"],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_workspace_name_enriched_from_cache(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """workspace_name is resolved from the workspaces cache
+        (pre-warmed by autouse fixture: id=42 → 'Engineering')."""
+        self._queue_prime(httpx_mock)
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        by_id = {d["id"]: d for d in parsed}
+        assert by_id["1"]["workspace_name"] == "Engineering"
+        assert by_id["2"]["workspace_name"] == "Sales"
+
+    def test_main_workspace_name_synthesized_for_null_id(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """monday returns workspace_id=null for docs in the Main workspace;
+        the CLI fills in the synthetic 'Main workspace' label."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"workspaces": [{"id": "42"}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "1", "object_id": "100", "name": "Homeless",
+                                "workspace_id": None}]}),
+        )
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["workspace_name"] == "Main workspace"
 
 
 # --- get ---

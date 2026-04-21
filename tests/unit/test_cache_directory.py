@@ -9,6 +9,7 @@ import pytest
 
 from mondo.api.errors import NotFoundError
 from mondo.cache.directory import (
+    enrich_workspace_names,
     get_boards,
     get_columns,
     get_docs,
@@ -319,3 +320,65 @@ def test_get_columns_missing_board_raises_not_found(tmp_path: Path) -> None:
     with pytest.raises(NotFoundError):
         get_columns(client, store=store, board_id=999)
     assert not store.path.exists()
+
+
+# -- enrich_workspace_names --------------------------------------------------
+
+
+def test_enrich_workspace_names_uses_warm_cache(tmp_path: Path) -> None:
+    store = _store(tmp_path, "workspaces")
+    store.write([
+        {"id": "10", "name": "Engineering"},
+        {"id": "20", "name": "Sales"},
+    ])
+    client = FakeClient([])
+    entries = [
+        {"id": "A", "workspace_id": "10"},
+        {"id": "B", "workspace_id": "20"},
+    ]
+
+    enrich_workspace_names(entries, client=client, store=store)
+
+    assert entries[0]["workspace_name"] == "Engineering"
+    assert entries[1]["workspace_name"] == "Sales"
+    assert client.calls == []  # warm cache — no API calls
+
+
+def test_enrich_workspace_names_populates_cold_cache(tmp_path: Path) -> None:
+    store = _store(tmp_path, "workspaces")
+    client = FakeClient([
+        {"data": {"workspaces": [{"id": "10", "name": "Engineering"}]}},
+    ])
+    entries = [{"id": "A", "workspace_id": "10"}]
+
+    enrich_workspace_names(entries, client=client, store=store)
+
+    assert entries[0]["workspace_name"] == "Engineering"
+    assert store.path.exists(), "cold cache must be populated"
+    assert len(client.calls) == 1
+
+
+def test_enrich_workspace_names_synthesizes_main_workspace(tmp_path: Path) -> None:
+    store = _store(tmp_path, "workspaces")
+    store.write([{"id": "10", "name": "Engineering"}])
+    client = FakeClient([])
+    entries = [
+        {"id": "A", "workspace_id": None},
+        {"id": "B", "workspace_id": "10"},
+    ]
+
+    enrich_workspace_names(entries, client=client, store=store)
+
+    assert entries[0]["workspace_name"] == "Main workspace"
+    assert entries[1]["workspace_name"] == "Engineering"
+
+
+def test_enrich_workspace_names_unknown_id_is_none(tmp_path: Path) -> None:
+    store = _store(tmp_path, "workspaces")
+    store.write([{"id": "10", "name": "Engineering"}])
+    client = FakeClient([])
+    entries = [{"id": "A", "workspace_id": "99"}]
+
+    enrich_workspace_names(entries, client=client, store=store)
+
+    assert entries[0]["workspace_name"] is None

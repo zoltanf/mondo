@@ -11,11 +11,11 @@ the live API.
 
 | Entity | What's stored |
 |---|---|
-| boards | id, name, description, state, board_kind, board_folder_id, workspace_id, updated_at |
+| boards | id, name, description, state, kind, folder_id, workspace_id, created_at, updated_at, type |
 | workspaces | id, name, kind, description, state, created_at |
 | users | id, name, email, enabled, is_admin, is_guest, is_pending, is_view_only, created_at, title |
 | teams | id, name, picture_url, is_guest (plus nested `users` and `owners`) |
-| docs | id, object_id, name, doc_kind, workspace_id, created_at, url, relative_url, created_by |
+| docs | id, object_id, name, kind, folder_id, workspace_id, created_at, updated_at, url, relative_url, created_by |
 | columns (per-board) | id, title, type, description, archived, settings_str — which includes status/dropdown label sets |
 
 ## What's NOT cached
@@ -163,6 +163,12 @@ score before acting on the id.
 
 Writes from *other* processes, users, or API clients are **not** detected.
 They're picked up at TTL expiry or via an explicit `mondo cache refresh`.
+
+Boards' `board_kind` / `board_folder_id` and docs' `doc_kind` / `doc_folder_id`
+are renamed to `kind` / `folder_id` at the cache boundary, so both directories
+emit the same core shape. `board list` and `doc list` also auto-populate the
+workspaces cache on first use to enrich each row with `workspace_name`
+(`"Main workspace"` when `workspace_id` is null).
 
 ## Management commands
 

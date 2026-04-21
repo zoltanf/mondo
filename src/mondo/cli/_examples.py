@@ -102,6 +102,14 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example("Bypass local cache for this call", "mondo board list --no-cache"),
         Example("Force-refresh the cache before serving", "mondo board list --refresh-cache"),
+        Example(
+            "Include a monday URL on every row",
+            "mondo board list --with-url --max-items 3",
+        ),
+        Example(
+            "Inspect the shared core shape (matches `doc list`)",
+            "mondo board list --max-items 1 -q '.[0] | keys'",
+        ),
     ],
     "board get": [
         Example("Fetch by id", "mondo board get --id 1234567890"),
@@ -404,6 +412,30 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Lookup by the URL-visible object id",
             "mondo doc list --object-id 77",
+        ),
+        Example(
+            "Filter by name (client-side substring)",
+            "mondo doc list --name-contains spec",
+        ),
+        Example(
+            "Regex-match names, most-recently-used first",
+            "mondo doc list --name-matches '^rfc-\\d+$' --order-by used_at",
+        ),
+        Example(
+            "Fuzzy name search — tolerates typos",
+            'mondo doc list --name-fuzzy "prodct launc" --fuzzy-score --max-items 5',
+        ),
+        Example(
+            "Private docs only",
+            "mondo doc list --kind private",
+        ),
+        Example(
+            "Include `url` / `relative_url` on every row (opt-in)",
+            "mondo doc list --with-url --max-items 3",
+        ),
+        Example(
+            "Inspect the shared core shape (matches `board list`)",
+            "mondo doc list --max-items 1 -q '.[0] | keys'",
         ),
     ],
     "doc get": [

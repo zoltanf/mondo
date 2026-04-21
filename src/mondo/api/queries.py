@@ -410,7 +410,11 @@ query ($objs: [ID!]!) {
     object_id
     name
     doc_kind
+    doc_folder_id
+    created_at
+    updated_at
     url
+    relative_url
     workspace_id
     blocks {
       id
@@ -516,7 +520,9 @@ def build_docs_list_query(
         "object_id",
         "name",
         "doc_kind",
+        "doc_folder_id",
         "created_at",
+        "updated_at",
         "url",
         "relative_url",
         "workspace_id",
@@ -540,7 +546,9 @@ query ($ids: [ID!]!) {
     object_id
     name
     doc_kind
+    doc_folder_id
     created_at
+    updated_at
     url
     relative_url
     workspace_id
@@ -1017,6 +1025,7 @@ def build_boards_list_query(
         "board_kind",
         "board_folder_id",
         "workspace_id",
+        "created_at",
         "updated_at",
         # monday's `boards()` returns both real boards and workdoc-backing
         # boards. `type` is how the schema distinguishes them — observed
