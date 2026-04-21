@@ -1,5 +1,5 @@
 """`mondo cache` command group: inspect, refresh, and clear the local
-directory cache for boards/workspaces/users/teams/docs/columns."""
+directory cache for boards/workspaces/users/teams/docs/folders/columns."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from mondo.cache.directory import (
     get_boards,
     get_columns,
     get_docs,
+    get_folders,
     get_teams,
     get_users,
     get_workspaces,
@@ -35,11 +36,12 @@ class CacheType(StrEnum):
     users = "users"
     teams = "teams"
     docs = "docs"
+    folders = "folders"
     columns = "columns"
     all = "all"
 
 
-_SINGLE_FILE_TYPES: tuple[str, ...] = ("boards", "workspaces", "users", "teams", "docs")
+_SINGLE_FILE_TYPES: tuple[str, ...] = ("boards", "workspaces", "users", "teams", "docs", "folders")
 _ALL_TYPES: tuple[str, ...] = (*_SINGLE_FILE_TYPES, "columns")
 
 _REFRESH_DISPATCH = {
@@ -48,6 +50,7 @@ _REFRESH_DISPATCH = {
     "users": get_users,
     "teams": get_teams,
     "docs": get_docs,
+    "folders": get_folders,
 }
 
 

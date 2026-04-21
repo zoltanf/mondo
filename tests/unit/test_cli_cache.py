@@ -50,7 +50,7 @@ class TestCacheStatus:
         result = runner.invoke(app, ["cache", "status", ])
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
-        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs"}
+        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs", "folders"}
         assert all(r["fresh"] is False for r in rows)
         assert all(r["entries"] is None for r in rows)
 
@@ -60,6 +60,13 @@ class TestCacheStatus:
         rows = json.loads(result.stdout)
         assert len(rows) == 1
         assert rows[0]["type"] == "workspaces"
+
+    def test_status_folders_type(self) -> None:
+        result = runner.invoke(app, ["cache", "status", "folders", ])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert len(rows) == 1
+        assert rows[0]["type"] == "folders"
 
     def test_status_unknown_type_is_usage_error(self) -> None:
         result = runner.invoke(app, ["cache", "status", "nonsense"])
@@ -99,6 +106,19 @@ class TestCacheRefresh:
         rows = json.loads(result.stdout)
         assert len(rows) == 1
         assert rows[0]["type"] == "teams"
+        assert rows[0]["count"] == 1
+
+    def test_refresh_folders_type(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"folders": [{"id": "1", "name": "Folder A"}]}),
+        )
+        result = runner.invoke(app, ["cache", "refresh", "folders", ])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert len(rows) == 1
+        assert rows[0]["type"] == "folders"
         assert rows[0]["count"] == 1
 
     def test_refresh_dry_run_emits_plan(self) -> None:
@@ -141,6 +161,14 @@ class TestCacheClear:
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert all(r["removed"] is False for r in rows)
+
+    def test_clear_folders_type(self) -> None:
+        result = runner.invoke(app, ["cache", "clear", "folders", ])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert len(rows) == 1
+        assert rows[0]["type"] == "folders"
+        assert rows[0]["removed"] is False
 
     def test_clear_deletes_file(
         self, httpx_mock: HTTPXMock, tmp_path: Path
@@ -215,7 +243,7 @@ class TestCacheColumns:
         result = runner.invoke(app, ["cache", "status"])
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
-        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs"}
+        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs", "folders"}
 
     def test_status_columns_only_empty_dir(self) -> None:
         result = runner.invoke(app, ["cache", "status", "columns"])
