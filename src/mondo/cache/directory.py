@@ -15,12 +15,12 @@ from mondo.api.errors import NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
     COLUMNS_ON_BOARD,
-    FOLDERS_LIST_PAGE,
     TEAMS_LIST,
     USERS_LIST_PAGE,
     WORKSPACES_LIST_PAGE,
     build_boards_list_query,
     build_docs_list_query,
+    build_folders_list_query,
 )
 from mondo.cache.store import CachedDirectory, CacheStore
 from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
@@ -217,12 +217,13 @@ def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:
 
 
 def _fetch_all_folders(client: MondayClient) -> list[dict[str, Any]]:
+    query, variables = build_folders_list_query()
     return [
         normalize_folder_entry(entry)
         for entry in iter_boards_page(
             client,
-            query=FOLDERS_LIST_PAGE,
-            variables={"ids": None, "workspaceIds": None},
+            query=query,
+            variables=variables,
             collection_key="folders",
             limit=MAX_BOARDS_PAGE_SIZE,
         )

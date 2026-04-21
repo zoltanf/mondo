@@ -339,6 +339,20 @@ def test_get_folders_entries_are_normalized(tmp_path: Path) -> None:
     assert "parent" not in entry
 
 
+def test_get_folders_omits_workspace_ids_when_unfiltered(tmp_path: Path) -> None:
+    store = _store(tmp_path, "folders")
+    client = FakeClient([{"data": {"folders": []}}])
+
+    get_folders(client, store=store)
+
+    assert client.calls, "expected an API call"
+    query, variables = client.calls[0]
+    assert variables is not None
+    assert variables == {"limit": 100, "page": 1}
+    assert "$workspaceIds" not in query
+    assert "workspace_ids:" not in query
+
+
 # -- columns (per-board scoped cache) ----------------------------------------
 
 

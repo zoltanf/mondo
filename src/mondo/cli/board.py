@@ -355,6 +355,8 @@ def list_cmd(
     if with_url:
         apply_board_urls(boards, opts)
 
+    # Re-normalize last so optional decorators don't break key-order invariants.
+    boards = [normalize_board_entry(b) for b in boards]
     opts.emit(boards)
 
 
@@ -448,6 +450,8 @@ def _list_via_cache(
     if with_url:
         apply_board_urls(entries, opts)
 
+    # Re-normalize last so optional decorators don't break key-order invariants.
+    entries = [normalize_board_entry(b) for b in entries]
     opts.emit(entries)
 
 
@@ -486,6 +490,7 @@ def get_cmd(
         client = client_or_exit(opts)
         with client:
             board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
+    board = normalize_board_entry(board)
     opts.emit(board)
 
 
@@ -537,7 +542,7 @@ def create_cmd(
     }
     data = execute(opts, BOARD_CREATE, variables)
     invalidate_entity(opts, "boards")
-    opts.emit(data.get("create_board") or {})
+    opts.emit(normalize_board_entry(data.get("create_board") or {}))
 
 
 @app.command("update", epilog=epilog_for("board update"))
@@ -707,6 +712,10 @@ def duplicate_cmd(
             **duplicate_payload,
             "_wait": {"final_items_count": final_count, "source_items_count": source_items_count},
         }
+
+    board_payload = duplicate_payload.get("board")
+    if isinstance(board_payload, dict):
+        duplicate_payload["board"] = normalize_board_entry(board_payload)
 
     opts.emit(duplicate_payload)
 

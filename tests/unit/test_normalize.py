@@ -43,6 +43,30 @@ class TestNormalizeBoard:
         out = normalize_board_entry({"id": "1", "board_folder_id": None})
         assert out["folder_id"] is None
 
+    def test_workspace_pair_stays_adjacent(self) -> None:
+        out = normalize_board_entry(
+            {
+                "id": "1",
+                "workspace_id": "42",
+                "name": "X",
+                "workspace_name": "Engineering",
+                "state": "active",
+            }
+        )
+        keys = list(out.keys())
+        assert keys[keys.index("workspace_id") + 1] == "workspace_name"
+
+    def test_created_and_updated_move_to_tail(self) -> None:
+        out = normalize_board_entry(
+            {
+                "id": "1",
+                "created_at": "2024-01-01",
+                "name": "X",
+                "updated_at": "2024-01-02",
+            }
+        )
+        assert list(out.keys())[-2:] == ["created_at", "updated_at"]
+
 
 class TestNormalizeDoc:
     def test_renames_doc_kind_to_kind(self) -> None:
@@ -83,6 +107,30 @@ class TestNormalizeDoc:
     def test_null_folder_id_passes_through(self) -> None:
         out = normalize_doc_entry({"id": "1", "doc_folder_id": None})
         assert out["folder_id"] is None
+
+    def test_workspace_pair_stays_adjacent(self) -> None:
+        out = normalize_doc_entry(
+            {
+                "id": "1",
+                "workspace_id": "42",
+                "name": "Spec",
+                "workspace_name": "Engineering",
+                "doc_kind": "private",
+            }
+        )
+        keys = list(out.keys())
+        assert keys[keys.index("workspace_id") + 1] == "workspace_name"
+
+    def test_created_and_updated_move_to_tail(self) -> None:
+        out = normalize_doc_entry(
+            {
+                "id": "1",
+                "updated_at": "2024-01-02",
+                "name": "Spec",
+                "created_at": "2024-01-01",
+            }
+        )
+        assert list(out.keys())[-2:] == ["created_at", "updated_at"]
 
 
 class TestNormalizeFolder:
@@ -188,6 +236,6 @@ class TestNormalizeFolder:
             "workspace_name",
             "parent_id",
             "parent_name",
-            "created_at",
             "owner_id",
+            "created_at",
         ]

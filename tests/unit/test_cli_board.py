@@ -302,6 +302,41 @@ class TestBoardList:
         assert "boards(" in parsed["query"]
         assert httpx_mock.get_requests() == []
 
+    def test_workspace_pair_adjacent_and_timestamps_at_end(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Enable cache path so workspace_name enrichment runs.
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "1",
+                            "name": "A",
+                            "workspace_id": "42",
+                            "board_kind": "public",
+                            "created_at": "2024-01-01T00:00:00Z",
+                            "updated_at": "2024-02-01T00:00:00Z",
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"workspaces": [{"id": "42", "name": "Engineering"}]}),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        row = json.loads(result.stdout)[0]
+        keys = list(row.keys())
+        assert keys[keys.index("workspace_id") + 1] == "workspace_name"
+        assert keys[-2:] == ["created_at", "updated_at"]
+
 
 # --- get ---
 
@@ -417,6 +452,62 @@ class TestBoardGet:
         assert result.exit_code == 0, result.stdout
         assert "url" not in json.loads(result.stdout)
 
+    def test_normalizes_kind_and_folder_id(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "X",
+                            "type": "board",
+                            "board_kind": "public",
+                            "board_folder_id": "7",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["kind"] == "public"
+        assert parsed["folder_id"] == "7"
+        assert "board_kind" not in parsed
+        assert "board_folder_id" not in parsed
+
+    def test_updated_at_is_last_even_with_url(self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch) -> None:
+        from mondo.cli import _url as url_mod
+
+        monkeypatch.setattr(url_mod, "_TENANT_SLUG_CACHE", None)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "X",
+                            "type": "board",
+                            "updated_at": "2024-02-01T00:00:00Z",
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"me": {"account": {"slug": "marktguru"}}}),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert list(parsed.keys())[-1] == "updated_at"
+
     def test_dump_spec_reports_integer_for_id(self) -> None:
         result = runner.invoke(app, ["-o", "json", "help", "--dump-spec"])
         assert result.exit_code == 0, result.stdout
@@ -453,6 +544,9 @@ class TestBoardCreate:
         body = _last_body(httpx_mock)
         assert body["variables"]["name"] == "New"
         assert body["variables"]["kind"] == "public"
+        parsed = json.loads(result.stdout)
+        assert parsed["kind"] == "public"
+        assert "board_kind" not in parsed
 
     def test_full_options(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -645,3 +739,21 @@ class TestBoardDuplicate:
         assert v["name"] == "Cloned"
         assert v["workspace"] == 7
         assert v["keepSubscribers"] is True
+
+    def test_output_normalizes_nested_board(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "duplicate_board": {
+                        "board": {"id": "101", "name": "Copy", "board_kind": "private"}
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "duplicate", "--id", "42", "--workspace", "7"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["board"]["kind"] == "private"
+        assert "board_kind" not in parsed["board"]

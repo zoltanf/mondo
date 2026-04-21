@@ -87,10 +87,7 @@ def rewrite(path: Path, group: str) -> int:
         new_rest = rest.rstrip()
         # Empty rest → we need a separator between the quoted name and the new
         # kwarg. Non-empty rest ending in `,` is already separated.
-        if new_rest.endswith(","):
-            sep = " "
-        else:
-            sep = ", "
+        sep = " " if new_rest.endswith(",") else ", "
         touched += 1
         return f'{indent}@app.command("{cmd}"{new_rest}{sep}epilog=epilog_for("{key}"))'
 

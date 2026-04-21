@@ -22,10 +22,11 @@ from mondo.api.queries import (
     FOLDER_DELETE,
     FOLDER_GET,
     FOLDER_UPDATE,
-    FOLDERS_LIST_PAGE,
+    build_folders_list_query,
 )
 from mondo.cache.directory import get_folders as cache_get_folders
 from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
@@ -101,14 +102,11 @@ def list_cmd(
         return
 
     # Live path
-    variables: dict[str, Any] = {
-        "ids": None,
-        "workspaceIds": workspace or None,
-    }
+    query, variables = build_folders_list_query(workspace_ids=workspace or None)
     if opts.dry_run:
         opts.emit(
             {
-                "query": "<folders page iterator>",
+                "query": query,
                 "variables": {**variables, "limit": limit, "max_items": max_items},
             }
         )
@@ -121,7 +119,7 @@ def list_cmd(
                 normalize_folder_entry(entry)
                 for entry in iter_boards_page(
                     client,
-                    query=FOLDERS_LIST_PAGE,
+                    query=query,
                     variables=variables,
                     collection_key="folders",
                     limit=limit,
@@ -136,10 +134,15 @@ def list_cmd(
 
 
 _TABLE_FORMATS: frozenset[str | None] = frozenset({"table", None})
+FolderEntry = dict[str, Any]
+FolderChildrenMap = dict[str | None, list[FolderEntry]]
+FolderTreeNode = dict[str, Any]
 
 
 def _render_tree_lines(
-    node_list: list[dict], children_map: dict[str | None, list[dict]], prefix: str = "  "
+    node_list: list[FolderEntry],
+    children_map: FolderChildrenMap,
+    prefix: str = "  ",
 ) -> list[str]:
     lines: list[str] = []
     for i, folder in enumerate(node_list):
@@ -153,7 +156,7 @@ def _render_tree_lines(
     return lines
 
 
-def _build_tree_node(folder: dict, children_map: dict[str | None, list[dict]]) -> dict:
+def _build_tree_node(folder: FolderEntry, children_map: FolderChildrenMap) -> FolderTreeNode:
     sub = children_map.get(str(folder["id"]), [])
     return {
         "id": folder["id"],
@@ -204,13 +207,10 @@ def tree_cmd(
         folders = cached.entries
     else:
         # Live path
-        variables: dict[str, Any] = {
-            "ids": None,
-            "workspaceIds": workspace or None,
-        }
+        query, variables = build_folders_list_query(workspace_ids=workspace or None)
         if opts.dry_run:
             opts.emit({
-                "query": "<folders page iterator>",
+                "query": query,
                 "variables": {**variables, "limit": 100},
             })
             raise typer.Exit(0)
@@ -222,7 +222,7 @@ def tree_cmd(
                     normalize_folder_entry(entry)
                     for entry in iter_boards_page(
                         client,
-                        query=FOLDERS_LIST_PAGE,
+                        query=query,
                         variables=variables,
                         collection_key="folders",
                         limit=100,
@@ -245,7 +245,7 @@ def tree_cmd(
     # Root folders have parent_id == None.
     # Orphan folders (parent references a non-existent folder) are treated as root.
     all_ids = {str(f["id"]) for f in folders}
-    children_map: dict[str | None, list[dict]] = defaultdict(list)
+    children_map: FolderChildrenMap = defaultdict(list)
     for f in folders:
         pid = f.get("parent_id")
         if pid is not None and str(pid) in all_ids:
@@ -256,7 +256,7 @@ def tree_cmd(
 
     # Group root folders (children_map[None]) by workspace
     root_folders = children_map.get(None, [])
-    by_workspace: dict[Any, list[dict]] = defaultdict(list)
+    by_workspace: dict[Any, list[FolderEntry]] = defaultdict(list)
     for f in root_folders:
         by_workspace[f.get("workspace_id")].append(f)
 
@@ -318,7 +318,7 @@ def get_cmd(
     if not folders:
         typer.secho(f"folder {folder_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(folders[0])
+    opts.emit(normalize_folder_entry(folders[0]))
 
 
 # ----- write commands -----
@@ -351,6 +351,7 @@ def create_cmd(
         "fontWeight": font_weight,
     }
     data = execute(opts, FOLDER_CREATE, variables)
+    invalidate_entity(opts, "folders")
     opts.emit(data.get("create_folder") or {})
 
 
@@ -390,6 +391,7 @@ def update_cmd(
         )
         raise typer.Exit(code=2)
     data = execute(opts, FOLDER_UPDATE, variables)
+    invalidate_entity(opts, "folders")
     opts.emit(data.get("update_folder") or {})
 
 
@@ -415,4 +417,5 @@ def delete_cmd(
     _confirm(opts, f"Delete folder {folder_id} (contained boards will be archived)?")
     variables = {"id": folder_id}
     data = execute(opts, FOLDER_DELETE, variables)
+    invalidate_entity(opts, "folders")
     opts.emit(data.get("delete_folder") or {})

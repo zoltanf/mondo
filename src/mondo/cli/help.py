@@ -104,8 +104,9 @@ def _walk(cmd: click.Command, path: list[str]) -> dict[str, Any]:
         children: list[dict[str, Any]] = []
         for child_name in cmd.list_commands(ctx):
             child = cmd.get_command(ctx, child_name)
-            if child is not None:
-                children.append(_walk(child, [*path, child_name]))
+            if child is None or bool(getattr(child, "hidden", False)):
+                continue
+            children.append(_walk(child, [*path, child_name]))
         node["commands"] = children
     return node
 

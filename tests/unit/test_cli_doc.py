@@ -552,6 +552,17 @@ class TestListCache:
         assert by_id["1"]["workspace_name"] == "Engineering"
         assert by_id["2"]["workspace_name"] == "Sales"
 
+    def test_workspace_pair_adjacent_and_created_at_last(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        self._queue_prime(httpx_mock)
+        result = runner.invoke(app, ["doc", "list"])
+        assert result.exit_code == 0, result.stdout
+        row = json.loads(result.stdout)[0]
+        keys = list(row.keys())
+        assert keys[keys.index("workspace_id") + 1] == "workspace_name"
+        assert keys[-1] == "created_at"
+
     def test_main_workspace_name_synthesized_for_null_id(
         self, httpx_mock: HTTPXMock
     ) -> None:
@@ -599,6 +610,36 @@ class TestGet:
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert parsed["id"] == "7"
+
+    def test_by_id_normalizes_kind_and_folder_and_timestamps(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "7",
+                            "object_id": "77",
+                            "name": "Spec",
+                            "doc_kind": "private",
+                            "doc_folder_id": "9",
+                            "created_at": "2024-01-01T00:00:00Z",
+                            "updated_at": "2024-01-02T00:00:00Z",
+                            "blocks": [],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "get", "--id", "7"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["kind"] == "private"
+        assert parsed["folder_id"] == "9"
+        assert "doc_kind" not in parsed
+        assert "doc_folder_id" not in parsed
+        assert list(parsed.keys())[-2:] == ["created_at", "updated_at"]
 
     def test_by_object_id(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -778,6 +819,9 @@ class TestCreate:
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
         assert v == {"workspace": 42, "name": "New", "kind": "private"}
+        parsed = json.loads(result.stdout)
+        assert parsed["id"] == "10"
+        assert parsed["object_id"] == "100"
 
 
 # --- blocks ---

@@ -89,24 +89,71 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 
-app.add_typer(auth_app, name="auth", help="Authenticate against monday.com.")
-app.add_typer(cache_app, name="cache", help="Inspect, refresh, and clear the local directory cache.")
-app.add_typer(board_app, name="board", help="Create, read, update, delete monday boards.")
-app.add_typer(item_app, name="item", help="Create, read, update, delete monday items.")
-app.add_typer(subitem_app, name="subitem", help="Create, read, update, delete subitems.")
-app.add_typer(
-    update_app, name="update", help="Post, edit, like, pin, and delete item updates (comments)."
+_PLURAL_ALIASES: dict[str, str] = {
+    "board": "boards",
+    "item": "items",
+    "subitem": "subitems",
+    "update": "updates",
+    "doc": "docs",
+    "webhook": "webhooks",
+    "file": "files",
+    "folder": "folders",
+    "tag": "tags",
+    "favorite": "favorites",
+    "activity": "activities",
+    "validation": "validations",
+    "group": "groups",
+    "column": "columns",
+    "workspace": "workspaces",
+    "user": "users",
+    "team": "teams",
+}
+
+
+def _add_group(subapp: typer.Typer, *, name: str, help_text: str) -> None:
+    """Register a top-level group and an optional hidden plural alias."""
+    app.add_typer(subapp, name=name, help=help_text)
+    plural = _PLURAL_ALIASES.get(name)
+    if plural is not None:
+        app.add_typer(subapp, name=plural, help=help_text, hidden=True)
+
+
+_add_group(auth_app, name="auth", help_text="Authenticate against monday.com.")
+_add_group(
+    cache_app,
+    name="cache",
+    help_text="Inspect, refresh, and clear the local directory cache.",
 )
-app.add_typer(doc_app, name="doc", help="Workspace-level docs (distinct from the `doc` column).")
-app.add_typer(webhook_app, name="webhook", help="Manage monday webhook subscriptions.")
-app.add_typer(file_app, name="file", help="Upload files to item columns/updates; download assets.")
-app.add_typer(folder_app, name="folder", help="Manage workspace folders.")
-app.add_typer(tag_app, name="tag", help="Read account-level tags; create-or-get for a board.")
-app.add_typer(favorite_app, name="favorite", help="List the current user's favorites.")
-app.add_typer(activity_app, name="activity", help="Read a board's activity logs.")
-app.add_typer(notify_app, name="notify", help="Send monday notifications.")
-app.add_typer(aggregate_app, name="aggregate", help="Run SUM/COUNT/AVG aggregations on a board.")
-app.add_typer(validation_app, name="validation", help="Manage server-side validation rules.")
+_add_group(board_app, name="board", help_text="Create, read, update, delete monday boards.")
+_add_group(item_app, name="item", help_text="Create, read, update, delete monday items.")
+_add_group(subitem_app, name="subitem", help_text="Create, read, update, delete subitems.")
+_add_group(
+    update_app,
+    name="update",
+    help_text="Post, edit, like, pin, and delete item updates (comments).",
+)
+_add_group(
+    doc_app,
+    name="doc",
+    help_text="Workspace-level docs (distinct from the `doc` column).",
+)
+_add_group(webhook_app, name="webhook", help_text="Manage monday webhook subscriptions.")
+_add_group(
+    file_app,
+    name="file",
+    help_text="Upload files to item columns/updates; download assets.",
+)
+_add_group(folder_app, name="folder", help_text="Manage workspace folders.")
+_add_group(tag_app, name="tag", help_text="Read account-level tags; create-or-get for a board.")
+_add_group(favorite_app, name="favorite", help_text="List the current user's favorites.")
+_add_group(activity_app, name="activity", help_text="Read a board's activity logs.")
+_add_group(notify_app, name="notify", help_text="Send monday notifications.")
+_add_group(
+    aggregate_app,
+    name="aggregate",
+    help_text="Run SUM/COUNT/AVG aggregations on a board.",
+)
+_add_group(validation_app, name="validation", help_text="Manage server-side validation rules.")
 app.command(
     name="me",
     help="Print the authenticated user (id, name, teams, account).",
@@ -117,19 +164,27 @@ app.command(
     help="Print the current monday account (tier, plan, products).",
     epilog=epilog_for("account"),
 )(account_command)
-app.add_typer(group_app, name="group", help="Manage groups within a board.")
-app.add_typer(column_app, name="column", help="Read and write monday column values.")
-app.add_typer(workspace_app, name="workspace", help="Manage workspaces and their members.")
-app.add_typer(
-    user_app, name="user", help="List and manage users (roles, team membership, activation)."
+_add_group(group_app, name="group", help_text="Manage groups within a board.")
+_add_group(column_app, name="column", help_text="Read and write monday column values.")
+_add_group(
+    workspace_app, name="workspace", help_text="Manage workspaces and their members."
 )
-app.add_typer(team_app, name="team", help="Manage teams and their owners.")
-app.add_typer(export_app, name="export", help="Export a board's data to CSV/JSON/XLSX/Markdown.")
-app.add_typer(import_app, name="import", help="Bulk-import items from CSV into a board.")
-app.add_typer(
+_add_group(
+    user_app,
+    name="user",
+    help_text="List and manage users (roles, team membership, activation).",
+)
+_add_group(team_app, name="team", help_text="Manage teams and their owners.")
+_add_group(
+    export_app,
+    name="export",
+    help_text="Export a board's data to CSV/JSON/XLSX/Markdown.",
+)
+_add_group(import_app, name="import", help_text="Bulk-import items from CSV into a board.")
+_add_group(
     complexity_app,
     name="complexity",
-    help="Inspect monday's per-minute complexity budget.",
+    help_text="Inspect monday's per-minute complexity budget.",
 )
 app.command(
     name="graphql",

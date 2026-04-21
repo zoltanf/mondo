@@ -52,7 +52,7 @@ def _walk(cmd: click.Command, path: list[str]):
         ctx = click.Context(cmd)
         for child_name in cmd.list_commands(ctx):
             child = cmd.get_command(ctx, child_name)
-            if child is not None:
+            if child is not None and not child.hidden:
                 yield from _walk(child, [*path, child_name])
 
 

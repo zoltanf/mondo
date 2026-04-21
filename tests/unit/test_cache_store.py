@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import stat
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -92,7 +92,7 @@ def test_envelope_with_wrong_schema_version_is_dropped(tmp_path: Path) -> None:
         json.dumps(
             {
                 "schema_version": 999,
-                "fetched_at": _format_utc(datetime.now(timezone.utc)),
+                "fetched_at": _format_utc(datetime.now(UTC)),
                 "ttl_seconds": 60,
                 "api_endpoint": ENDPOINT,
                 "entries": [],
@@ -111,7 +111,7 @@ def test_endpoint_mismatch_returns_none_without_deleting(tmp_path: Path) -> None
         json.dumps(
             {
                 "schema_version": SCHEMA_VERSION,
-                "fetched_at": _format_utc(datetime.now(timezone.utc)),
+                "fetched_at": _format_utc(datetime.now(UTC)),
                 "ttl_seconds": 60,
                 "api_endpoint": "https://other.endpoint/v2",
                 "entries": [{"id": 1}],
@@ -127,7 +127,7 @@ def test_endpoint_mismatch_returns_none_without_deleting(tmp_path: Path) -> None
 
 def test_expired_envelope_returns_none(tmp_path: Path) -> None:
     store = _store(tmp_path, ttl=60)
-    ancient = datetime.now(timezone.utc) - timedelta(hours=1)
+    ancient = datetime.now(UTC) - timedelta(hours=1)
     store.path.parent.mkdir(parents=True, exist_ok=True)
     store.path.write_text(
         json.dumps(
@@ -173,7 +173,7 @@ def test_atomic_write_leaves_no_tmp_files(tmp_path: Path) -> None:
 
 
 def test_parse_and_format_utc_roundtrip() -> None:
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     formatted = _format_utc(now)
     assert formatted.endswith("Z")
     parsed = _parse_utc(formatted)

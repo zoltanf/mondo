@@ -11,6 +11,7 @@ Precedence (lowest → highest):
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -228,11 +229,9 @@ def _resolve_ttl(
             value = attr
     env_raw = env.get(env_key)
     if env_raw is not None:
-        try:
+        # Silently ignore garbage env values; the user's config still wins.
+        with suppress(ValueError):
             value = int(env_raw)
-        except ValueError:
-            # Silently ignore garbage env values; the user's config still wins.
-            pass
     return max(0, value)
 
 
@@ -248,8 +247,6 @@ def _resolve_fuzzy_threshold(
         value = profile_cfg.fuzzy.threshold
     env_raw = env.get("MONDO_CACHE_FUZZY_THRESHOLD")
     if env_raw is not None:
-        try:
+        with suppress(ValueError):
             value = int(env_raw)
-        except ValueError:
-            pass
     return max(0, min(100, value))

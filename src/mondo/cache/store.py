@@ -12,8 +12,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -218,11 +219,8 @@ class CacheStore:
         # chmod is idempotent. We tighten both the cache root and the
         # scoped subdir (same path when no scope is set).
         for d in {self._cache_dir, target_dir}:
-            try:
+            with suppress(OSError):
                 os.chmod(d, 0o700)
-            except OSError:
-                # Windows / restricted FS — best effort.
-                pass
 
     def _atomic_write(self, envelope: dict[str, Any]) -> None:
         # Write to a tmp file in the same directory, then os.replace.
@@ -237,10 +235,8 @@ class CacheStore:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(envelope, fh, ensure_ascii=False)
-            try:
+            with suppress(OSError):
                 os.chmod(tmp_path, 0o600)
-            except OSError:
-                pass
             os.replace(tmp_path, self.path)
         except Exception:
             self._try_unlink(Path(tmp_path))
@@ -259,14 +255,14 @@ class CacheStore:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _format_utc(dt: datetime) -> str:
     """ISO-8601 with `Z` suffix."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _parse_utc(raw: str) -> datetime:
@@ -275,5 +271,5 @@ def _parse_utc(raw: str) -> datetime:
         raw = raw[:-1] + "+00:00"
     parsed = datetime.fromisoformat(raw)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

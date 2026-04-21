@@ -9,8 +9,8 @@ from mondo.cache.paths import cache_dir
 from mondo.cache.store import CachedDirectory, CacheStore
 
 __all__ = [
-    "CachedDirectory",
     "CacheStore",
+    "CachedDirectory",
     "ResolvedCacheConfig",
     "cache_dir",
     "resolve_cache_config",

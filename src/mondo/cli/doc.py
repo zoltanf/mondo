@@ -309,6 +309,8 @@ def list_cmd(
     if not with_url:
         strip_url_fields(items)
 
+    # Re-normalize last so optional decorators don't break key-order invariants.
+    items = [normalize_doc_entry(d) for d in items]
     opts.emit(items)
 
 
@@ -385,6 +387,8 @@ def _list_via_cache(
     if not with_url:
         strip_url_fields(entries)
 
+    # Re-normalize last so optional decorators don't break key-order invariants.
+    entries = [normalize_doc_entry(d) for d in entries]
     opts.emit(entries)
 
 
@@ -453,6 +457,7 @@ def get_cmd(
         blocks = doc.get("blocks") or []
         typer.echo(blocks_to_markdown(blocks))
         return
+    doc = normalize_doc_entry(doc)
     opts.emit(doc)
 
 
@@ -506,7 +511,7 @@ def create_cmd(
         "kind": kind.value if kind else None,
     }
     data = execute(opts, CREATE_DOC_IN_WORKSPACE, variables)
-    opts.emit(data.get("create_doc") or {})
+    opts.emit(normalize_doc_entry(data.get("create_doc") or {}))
 
 
 @app.command("add-block", epilog=epilog_for("doc add-block"))

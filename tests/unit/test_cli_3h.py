@@ -35,6 +35,30 @@ def _last_body(httpx_mock: HTTPXMock) -> dict:
     return json.loads(httpx_mock.get_requests()[-1].content)
 
 
+def _folder_entry(
+    folder_id: str = "7",
+    *,
+    name: str = "Eng",
+    workspace_id: str = "42",
+    workspace_name: str = "Main WS",
+    parent_id: str | None = None,
+    parent_name: str | None = None,
+) -> dict:
+    return {
+        "id": folder_id,
+        "name": name,
+        "color": None,
+        "created_at": "2024-01-01T00:00:00Z",
+        "owner_id": "10",
+        "workspace": {"id": workspace_id, "name": workspace_name},
+        "parent": (
+            {"id": parent_id, "name": parent_name}
+            if parent_id is not None
+            else None
+        ),
+    }
+
+
 # --- activity ---
 
 
@@ -135,6 +159,20 @@ class TestFolderList:
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [f["id"] for f in parsed] == ["1", "2"]
+
+    def test_unfiltered_omits_workspace_ids_arg(self, httpx_mock: HTTPXMock) -> None:
+        """Unfiltered folder list must omit workspace_ids entirely.
+
+        Monday undercounts or mis-scopes folder results when `workspace_ids:
+        null` is sent instead of omitting the arg.
+        """
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"folders": []}))
+        result = runner.invoke(app, ["folder", "list"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"].keys() == {"limit", "page"}
+        for forbidden in ("$ids", "$workspaceIds", "ids: $ids", "workspace_ids:"):
+            assert forbidden not in body["query"], body["query"]
 
     def test_workspace_filter(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"folders": []}))
@@ -406,8 +444,8 @@ class TestFolderTree:
         assert "[50] Backend" in output
         # Campaigns should be indented under Marketing
         lines = output.splitlines()
-        marketing_idx = next(i for i, l in enumerate(lines) if "[42] Marketing" in l)
-        campaigns_idx = next(i for i, l in enumerate(lines) if "[44] Campaigns" in l)
+        marketing_idx = next(i for i, line in enumerate(lines) if "[42] Marketing" in line)
+        campaigns_idx = next(i for i, line in enumerate(lines) if "[44] Campaigns" in line)
         assert campaigns_idx > marketing_idx
 
     def test_tree_workspace_filter(self, httpx_mock: HTTPXMock) -> None:
@@ -512,12 +550,18 @@ class TestFolderGet:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"folders": [{"id": "7", "name": "Eng"}]}),
+            json=_ok({"folders": [_folder_entry(parent_id="3", parent_name="Root")]}),
         )
         result = runner.invoke(app, ["folder", "get", "--id", "7"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert parsed["name"] == "Eng"
+        assert parsed["workspace_id"] == "42"
+        assert parsed["workspace_name"] == "Main WS"
+        assert parsed["parent_id"] == "3"
+        assert parsed["parent_name"] == "Root"
+        assert "workspace" not in parsed
+        assert "parent" not in parsed
 
     def test_missing_exits_6(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"folders": []}))
@@ -553,6 +597,31 @@ class TestFolderCreate:
         assert v["workspace"] == 42
         assert v["color"] == "DONE_GREEN"
         assert v["parent"] == 3
+
+    def test_invalidates_folder_cache(
+        self,
+        httpx_mock: HTTPXMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"folders": [_folder_entry()]}),
+        )
+        runner.invoke(app, ["folder", "list"])
+        cache_file = tmp_path / "cache" / "default" / "folders.json"
+        assert cache_file.exists()
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_folder": {"id": "8", "name": "New"}}),
+        )
+        result = runner.invoke(app, ["folder", "create", "--name", "New", "--workspace", "42"])
+        assert result.exit_code == 0, result.stdout
+        assert not cache_file.exists()
 
 
 class TestFolderUpdate:
@@ -603,6 +672,31 @@ class TestFolderUpdate:
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
+    def test_invalidates_folder_cache(
+        self,
+        httpx_mock: HTTPXMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"folders": [_folder_entry()]}),
+        )
+        runner.invoke(app, ["folder", "list"])
+        cache_file = tmp_path / "cache" / "default" / "folders.json"
+        assert cache_file.exists()
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_folder": {"id": "7", "name": "Renamed"}}),
+        )
+        result = runner.invoke(app, ["folder", "update", "--id", "7", "--name", "Renamed"])
+        assert result.exit_code == 0, result.stdout
+        assert not cache_file.exists()
+
 
 class TestFolderDelete:
     def test_without_hard_exits_2(self) -> None:
@@ -617,6 +711,31 @@ class TestFolderDelete:
         )
         result = runner.invoke(app, ["--yes", "folder", "delete", "--id", "7", "--hard"])
         assert result.exit_code == 0, result.stdout
+
+    def test_invalidates_folder_cache(
+        self,
+        httpx_mock: HTTPXMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"folders": [_folder_entry()]}),
+        )
+        runner.invoke(app, ["folder", "list"])
+        cache_file = tmp_path / "cache" / "default" / "folders.json"
+        assert cache_file.exists()
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"delete_folder": {"id": "7", "name": "Eng"}}),
+        )
+        result = runner.invoke(app, ["--yes", "folder", "delete", "--id", "7", "--hard"])
+        assert result.exit_code == 0, result.stdout
+        assert not cache_file.exists()
 
 
 # --- favorite ---
