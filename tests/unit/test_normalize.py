@@ -7,7 +7,7 @@ the entry came from the live API or the cache."""
 
 from __future__ import annotations
 
-from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry
+from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
 
 
 class TestNormalizeBoard:
@@ -83,3 +83,111 @@ class TestNormalizeDoc:
     def test_null_folder_id_passes_through(self) -> None:
         out = normalize_doc_entry({"id": "1", "doc_folder_id": None})
         assert out["folder_id"] is None
+
+
+class TestNormalizeFolder:
+    def test_both_workspace_and_parent_populated(self) -> None:
+        entry = {
+            "id": "10",
+            "name": "My Folder",
+            "color": "blue",
+            "created_at": "2024-01-01T00:00:00Z",
+            "owner_id": "99",
+            "workspace": {"id": "5", "name": "Main"},
+            "parent": {"id": "3", "name": "Parent Folder"},
+        }
+        out = normalize_folder_entry(entry)
+        assert out["id"] == "10"
+        assert out["name"] == "My Folder"
+        assert out["color"] == "blue"
+        assert out["created_at"] == "2024-01-01T00:00:00Z"
+        assert out["owner_id"] == "99"
+        assert out["workspace_id"] == "5"
+        assert out["workspace_name"] == "Main"
+        assert out["parent_id"] == "3"
+        assert out["parent_name"] == "Parent Folder"
+        assert "workspace" not in out
+        assert "parent" not in out
+
+    def test_parent_none_root_folder(self) -> None:
+        entry = {
+            "id": "10",
+            "name": "Root",
+            "color": None,
+            "created_at": "2024-01-01T00:00:00Z",
+            "owner_id": "99",
+            "workspace": {"id": "5", "name": "Main"},
+            "parent": None,
+        }
+        out = normalize_folder_entry(entry)
+        assert out["parent_id"] is None
+        assert out["parent_name"] is None
+        assert out["workspace_id"] == "5"
+
+    def test_workspace_none_main_workspace(self) -> None:
+        entry = {
+            "id": "10",
+            "name": "Folder",
+            "color": None,
+            "created_at": "2024-01-01T00:00:00Z",
+            "owner_id": "99",
+            "workspace": None,
+            "parent": {"id": "3", "name": "Parent"},
+        }
+        out = normalize_folder_entry(entry)
+        assert out["workspace_id"] is None
+        assert out["workspace_name"] is None
+        assert out["parent_id"] == "3"
+
+    def test_both_none(self) -> None:
+        entry = {
+            "id": "10",
+            "name": "Orphan",
+            "color": None,
+            "created_at": "2024-01-01T00:00:00Z",
+            "owner_id": None,
+            "workspace": None,
+            "parent": None,
+        }
+        out = normalize_folder_entry(entry)
+        assert out["workspace_id"] is None
+        assert out["workspace_name"] is None
+        assert out["parent_id"] is None
+        assert out["parent_name"] is None
+
+    def test_does_not_mutate_input(self) -> None:
+        entry = {
+            "id": "10",
+            "name": "Folder",
+            "color": "red",
+            "created_at": "2024-01-01T00:00:00Z",
+            "owner_id": "1",
+            "workspace": {"id": "5", "name": "Main"},
+            "parent": None,
+        }
+        original = dict(entry)
+        normalize_folder_entry(entry)
+        assert entry == original
+
+    def test_output_key_order(self) -> None:
+        entry = {
+            "id": "10",
+            "name": "Folder",
+            "color": "green",
+            "created_at": "2024-01-01T00:00:00Z",
+            "owner_id": "7",
+            "workspace": {"id": "5", "name": "WS"},
+            "parent": {"id": "3", "name": "P"},
+        }
+        out = normalize_folder_entry(entry)
+        assert list(out.keys()) == [
+            "id",
+            "name",
+            "color",
+            "workspace_id",
+            "workspace_name",
+            "parent_id",
+            "parent_name",
+            "created_at",
+            "owner_id",
+        ]

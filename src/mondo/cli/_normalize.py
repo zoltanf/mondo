@@ -28,3 +28,28 @@ def normalize_board_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_doc_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return _normalize_entry(entry, prefix="doc")
+
+
+def normalize_folder_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Flatten nested `workspace` and `parent` dicts into scalar keys.
+
+    Input shape (from GraphQL):
+        workspace: {id, name} | None
+        parent:    {id, name} | None
+
+    Output shape:
+        workspace_id, workspace_name, parent_id, parent_name
+    """
+    workspace = entry.get("workspace") or {}
+    parent = entry.get("parent") or {}
+    return {
+        "id": entry.get("id"),
+        "name": entry.get("name"),
+        "color": entry.get("color"),
+        "workspace_id": workspace.get("id"),
+        "workspace_name": workspace.get("name"),
+        "parent_id": parent.get("id"),
+        "parent_name": parent.get("name"),
+        "created_at": entry.get("created_at"),
+        "owner_id": entry.get("owner_id"),
+    }

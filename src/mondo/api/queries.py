@@ -723,9 +723,10 @@ query ($limit: Int!, $page: Int!, $ids: [ID!], $workspaceIds: [ID]) {
     id
     name
     color
+    created_at
+    owner_id
     parent { id name }
     workspace { id name }
-    children { id name }
   }
 }
 """.strip()
@@ -737,9 +738,10 @@ query ($ids: [ID!]!) {
     id
     name
     color
+    created_at
+    owner_id
     parent { id name }
     workspace { id name }
-    children { id name }
   }
 }
 """.strip()
