@@ -15,6 +15,7 @@ from mondo.api.errors import NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
     COLUMNS_ON_BOARD,
+    FOLDERS_LIST_PAGE,
     TEAMS_LIST,
     USERS_LIST_PAGE,
     WORKSPACES_LIST_PAGE,
@@ -22,7 +23,7 @@ from mondo.api.queries import (
     build_docs_list_query,
 )
 from mondo.cache.store import CachedDirectory, CacheStore
-from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry
+from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
 
 # Label for entries whose `workspace_id` is null (monday's "Main workspace").
 MAIN_WORKSPACE_NAME = "Main workspace"
@@ -137,6 +138,21 @@ def get_docs(
     return store.write(entries)
 
 
+def get_folders(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the full folders directory (all workspaces)."""
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = list(_fetch_all_folders(client))
+    return store.write(entries)
+
+
 def _fetch_all_boards(client: MondayClient) -> list[dict[str, Any]]:
     # state="all" covers active+archived+deleted so the cache is usable for
     # every --state filter client-side.
@@ -198,6 +214,19 @@ def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:
     if not isinstance(teams, list):
         return []
     return teams
+
+
+def _fetch_all_folders(client: MondayClient) -> list[dict[str, Any]]:
+    return [
+        normalize_folder_entry(entry)
+        for entry in iter_boards_page(
+            client,
+            query=FOLDERS_LIST_PAGE,
+            variables={"ids": None, "workspaceIds": None},
+            collection_key="folders",
+            limit=MAX_BOARDS_PAGE_SIZE,
+        )
+    ]
 
 
 def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:

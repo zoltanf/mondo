@@ -13,6 +13,7 @@ from mondo.cache.directory import (
     get_boards,
     get_columns,
     get_docs,
+    get_folders,
     get_teams,
     get_users,
     get_workspaces,
@@ -258,6 +259,84 @@ def test_get_docs_dedupes_across_workspaces(tmp_path: Path) -> None:
     result = get_docs(client, store=store)
 
     assert len(result.entries) == 1
+
+
+# -- folders -----------------------------------------------------------------
+
+
+def test_get_folders_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
+    store = _store(tmp_path, "folders")
+    client = FakeClient([
+        {"data": {"folders": [
+            {"id": "1", "name": "Design", "color": "blue",
+             "created_at": "2024-01-01", "owner_id": "99",
+             "workspace": {"id": "10", "name": "Engineering"},
+             "parent": None},
+        ]}},
+        {"data": {"folders": []}},  # stop signal
+    ])
+
+    result = get_folders(client, store=store)
+
+    assert [e["name"] for e in result.entries] == ["Design"]
+    assert store.path.exists()
+    assert store.read() is not None
+
+
+def test_get_folders_warm_cache_skips_api(tmp_path: Path) -> None:
+    store = _store(tmp_path, "folders")
+    store.write([{"id": "1", "name": "Cached", "workspace_id": "10",
+                  "workspace_name": "Engineering", "parent_id": None, "parent_name": None}])
+    client = FakeClient([])
+
+    result = get_folders(client, store=store)
+
+    assert [e["name"] for e in result.entries] == ["Cached"]
+    assert client.calls == []
+
+
+def test_get_folders_refresh_overrides_cache(tmp_path: Path) -> None:
+    store = _store(tmp_path, "folders")
+    store.write([{"id": "1", "name": "Stale", "workspace_id": "10",
+                  "workspace_name": "Engineering", "parent_id": None, "parent_name": None}])
+    client = FakeClient([
+        {"data": {"folders": [
+            {"id": "2", "name": "Fresh", "color": None,
+             "created_at": "2024-06-01", "owner_id": "99",
+             "workspace": {"id": "10", "name": "Engineering"},
+             "parent": None},
+        ]}},
+        {"data": {"folders": []}},
+    ])
+
+    result = get_folders(client, store=store, refresh=True)
+
+    assert [e["name"] for e in result.entries] == ["Fresh"]
+    assert client.calls, "refresh=True must call the API"
+
+
+def test_get_folders_entries_are_normalized(tmp_path: Path) -> None:
+    """Fetched entries must be normalized: nested workspace/parent → scalar keys."""
+    store = _store(tmp_path, "folders")
+    client = FakeClient([
+        {"data": {"folders": [
+            {"id": "5", "name": "Sub", "color": "red",
+             "created_at": "2024-03-01", "owner_id": "7",
+             "workspace": {"id": "10", "name": "Engineering"},
+             "parent": {"id": "3", "name": "Root"}},
+        ]}},
+        {"data": {"folders": []}},
+    ])
+
+    result = get_folders(client, store=store)
+
+    entry = result.entries[0]
+    assert entry["workspace_id"] == "10"
+    assert entry["workspace_name"] == "Engineering"
+    assert entry["parent_id"] == "3"
+    assert entry["parent_name"] == "Root"
+    assert "workspace" not in entry
+    assert "parent" not in entry
 
 
 # -- columns (per-board scoped cache) ----------------------------------------
