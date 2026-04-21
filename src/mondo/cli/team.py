@@ -28,9 +28,9 @@ from mondo.api.queries import (
     TEAMS_LIST,
 )
 from mondo.cache.directory import get_teams as cache_get_teams
-from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -72,20 +72,6 @@ def _invalidate_teams_cache(opts: GlobalOpts) -> None:
         opts.build_cache_store("teams").invalidate()
     except Exception:
         pass
-
-
-def _apply_fuzzy(
-    entries: list[dict[str, Any]],
-    query: str,
-    *,
-    threshold: int,
-    include_score: bool,
-) -> list[dict[str, Any]]:
-    scored = fuzzy_score(query, entries, threshold=threshold)
-    if include_score:
-        return [{**entry, "_fuzzy_score": score} for entry, score in scored]
-    matching_ids = {id(entry) for entry, _ in scored}
-    return [e for e in entries if id(e) in matching_ids]
 
 
 # ----- read commands -----
@@ -158,7 +144,7 @@ def list_cmd(
         raise typer.Exit(code=int(e.exit_code)) from e
     teams = data.get("teams") or []
     if name_fuzzy is not None:
-        teams = _apply_fuzzy(
+        teams = apply_fuzzy(
             teams,
             name_fuzzy,
             threshold=effective_fuzzy_threshold,
@@ -208,7 +194,7 @@ def _list_teams_via_cache(
 
     entries = cached.entries
     if name_fuzzy is not None:
-        entries = _apply_fuzzy(
+        entries = apply_fuzzy(
             entries,
             name_fuzzy,
             threshold=fuzzy_threshold,
