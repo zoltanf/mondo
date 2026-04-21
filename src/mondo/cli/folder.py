@@ -23,10 +23,13 @@ from mondo.api.queries import (
     FOLDER_UPDATE,
     FOLDERS_LIST_PAGE,
 )
+from mondo.cache.directory import get_folders as cache_get_folders
+from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
 from mondo.cli._json_flag import parse_json_flag
+from mondo.cli._normalize import normalize_folder_entry
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -49,9 +52,54 @@ def list_cmd(
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many folders total."
     ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Skip the local directory cache; fetch live.", rich_help_panel="Cache"
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local directory cache before serving.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """List folders (page-based)."""
+    """List folders (page-based). Served from the local directory cache when available."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=None)
+
+    if prefs.use_cache:
+        if opts.dry_run:
+            opts.emit(
+                {
+                    "cache": "folders",
+                    "refresh": refresh_cache,
+                    "filters": {
+                        "workspace_ids": workspace or None,
+                        "max_items": max_items,
+                    },
+                }
+            )
+            raise typer.Exit(0)
+
+        store = opts.build_cache_store("folders")
+        client = client_or_exit(opts)
+        try:
+            with client:
+                cached = cache_get_folders(client, store=store, refresh=refresh_cache)
+        except MondoError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=int(e.exit_code)) from e
+
+        items = cached.entries
+        if workspace:
+            wanted = {str(w) for w in workspace}
+            items = [f for f in items if str(f.get("workspace_id") or "") in wanted]
+        if max_items is not None:
+            items = items[:max_items]
+        opts.emit(items)
+        return
+
+    # Live path
     variables: dict[str, Any] = {
         "ids": None,
         "workspaceIds": workspace or None,
@@ -64,11 +112,13 @@ def list_cmd(
             }
         )
         raise typer.Exit(0)
+
     client = client_or_exit(opts)
     try:
         with client:
-            items = list(
-                iter_boards_page(
+            items = [
+                normalize_folder_entry(entry)
+                for entry in iter_boards_page(
                     client,
                     query=FOLDERS_LIST_PAGE,
                     variables=variables,
@@ -76,10 +126,16 @@ def list_cmd(
                     limit=limit,
                     max_items=max_items,
                 )
-            )
+            ]
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+
+    # Write to cache on live path (when cache is enabled and not --no-cache)
+    if prefs.cfg.enabled and not no_cache:
+        store = opts.build_cache_store("folders")
+        store.write(items)
+
     opts.emit(items)
 
 

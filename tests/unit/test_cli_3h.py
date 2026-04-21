@@ -21,6 +21,10 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    # Default to live (non-cache) path; cache-specific tests opt back in by
+    # re-setting MONDO_CACHE_ENABLED=true.
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MONDO_CACHE_ENABLED", "false")
 
 
 def _ok(data: dict) -> dict:
@@ -141,6 +145,200 @@ class TestFolderList:
         assert result.exit_code == 0, result.stdout
         v = _last_body(httpx_mock)["variables"]
         assert v["workspaceIds"] == [42, 43]
+
+
+class TestFolderListCache:
+    """Cache-backed `folder list` — enabled by re-setting MONDO_CACHE_ENABLED=true
+    on top of the module-level `_clean_env` default (which disables cache)."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+
+    def _folder_response(self, folders: list[dict]) -> dict:
+        """Wrap folders in an API-style ok envelope."""
+        return _ok({"folders": folders})
+
+    def _sample_folders(self) -> list[dict]:
+        return [
+            {
+                "id": "1",
+                "name": "Eng",
+                "color": None,
+                "created_at": "2024-01-01T00:00:00Z",
+                "owner_id": "10",
+                "workspace": {"id": "42", "name": "Main WS"},
+                "parent": None,
+            },
+            {
+                "id": "2",
+                "name": "Ops",
+                "color": "DONE_GREEN",
+                "created_at": "2024-02-01T00:00:00Z",
+                "owner_id": "10",
+                "workspace": {"id": "43", "name": "Other WS"},
+                "parent": {"id": "99", "name": "Root"},
+            },
+        ]
+
+    def test_cold_then_warm_cache(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """First call fetches from API and writes cache; second call is served from cache."""
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
+        )
+        first = runner.invoke(app, ["folder", "list"])
+        assert first.exit_code == 0, first.stdout
+        parsed = json.loads(first.stdout)
+        assert sorted(f["id"] for f in parsed) == ["1", "2"]
+        cache_file = tmp_path / "cache" / "default" / "folders.json"
+        assert cache_file.exists()
+        prime_requests = len(httpx_mock.get_requests())
+
+        # Second call: no new response queued — must be served from cache.
+        second = runner.invoke(app, ["folder", "list"])
+        assert second.exit_code == 0, second.stdout
+        assert sorted(f["id"] for f in json.loads(second.stdout)) == ["1", "2"]
+        assert len(httpx_mock.get_requests()) == prime_requests
+
+    def test_no_cache_bypasses(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        """--no-cache skips cache even when it's warm."""
+        # Prime the cache.
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
+        )
+        runner.invoke(app, ["folder", "list"])
+        assert (tmp_path / "cache" / "default" / "folders.json").exists()
+        prime_requests = len(httpx_mock.get_requests())
+
+        # --no-cache must hit the API again.
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response([])
+        )
+        result = runner.invoke(app, ["folder", "list", "--no-cache"])
+        assert result.exit_code == 0, result.stdout
+        assert len(httpx_mock.get_requests()) == prime_requests + 1
+
+    def test_refresh_cache_forces_refetch(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """--refresh-cache discards stale cache and re-fetches."""
+        # Prime with stale content.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response([
+                {
+                    "id": "1",
+                    "name": "Stale",
+                    "color": None,
+                    "created_at": None,
+                    "owner_id": None,
+                    "workspace": None,
+                    "parent": None,
+                }
+            ]),
+        )
+        runner.invoke(app, ["folder", "list"])
+        prime_requests = len(httpx_mock.get_requests())
+
+        # Re-fetch with fresh content.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response([
+                {
+                    "id": "9",
+                    "name": "Fresh",
+                    "color": None,
+                    "created_at": None,
+                    "owner_id": None,
+                    "workspace": None,
+                    "parent": None,
+                }
+            ]),
+        )
+        result = runner.invoke(app, ["folder", "list", "--refresh-cache"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout)[0]["name"] == "Fresh"
+        assert len(httpx_mock.get_requests()) == prime_requests + 1
+
+    def test_no_cache_and_refresh_cache_mutually_exclusive(self) -> None:
+        result = runner.invoke(
+            app, ["folder", "list", "--no-cache", "--refresh-cache"]
+        )
+        assert result.exit_code == 2
+        assert "mutually exclusive" in (result.stderr or result.stdout).lower()
+
+    def test_workspace_filter_applies_client_side(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """--workspace filters cache entries client-side without a new API call."""
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
+        )
+        result = runner.invoke(app, ["folder", "list", "--workspace", "42"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [f["id"] for f in parsed] == ["1"]
+
+    def test_workspace_filter_type_coercion(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """workspace_id stored as string in cache still matches int --workspace arg."""
+        # normalize_folder_entry stores workspace_id as the raw value from GraphQL
+        # (a string like "42"). The --workspace flag is int. Both are compared as
+        # strings, so "42" == str(42) == "42". This test verifies that.
+        folders_with_string_ws_id = [
+            {
+                "id": "10",
+                "name": "StringWS",
+                "color": None,
+                "created_at": None,
+                "owner_id": None,
+                "workspace": {"id": "99", "name": "WS 99"},
+                "parent": None,
+            }
+        ]
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response(folders_with_string_ws_id),
+        )
+        result = runner.invoke(app, ["folder", "list", "--workspace", "99"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [f["id"] for f in parsed] == ["10"]
+
+    def test_max_items_truncates_cache_results(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
+        )
+        result = runner.invoke(app, ["folder", "list", "--max-items", "1"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert len(parsed) == 1
+
+    def test_emitted_entries_have_flat_columns(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """Entries must have flat workspace_id/name and parent_id/name, not nested dicts."""
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
+        )
+        result = runner.invoke(app, ["folder", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        folder2 = next(f for f in parsed if f["id"] == "2")
+        assert folder2["workspace_id"] == "43"
+        assert folder2["workspace_name"] == "Other WS"
+        assert folder2["parent_id"] == "99"
+        assert folder2["parent_name"] == "Root"
+        assert "workspace" not in folder2
+        assert "parent" not in folder2
 
 
 class TestFolderGet:
