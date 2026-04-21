@@ -498,6 +498,14 @@ class TestFolderTree:
         assert result_json.exit_code == 0, result_json.stdout
         assert json.loads(result_json.stdout) == []
 
+    def test_dry_run_no_http_request(self, httpx_mock: HTTPXMock) -> None:
+        """--dry-run emits a plan dict and exits 0 without making any HTTP request."""
+        result = runner.invoke(app, ["--dry-run", "folder", "tree"])
+        assert result.exit_code == 0, result.stdout
+        assert httpx_mock.get_requests() == []
+        parsed = json.loads(result.stdout)
+        assert isinstance(parsed, dict)
+
 
 class TestFolderGet:
     def test_basic(self, httpx_mock: HTTPXMock) -> None:

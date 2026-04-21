@@ -185,6 +185,14 @@ def tree_cmd(
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=None)
 
     if prefs.use_cache:
+        if opts.dry_run:
+            opts.emit({
+                "cache": "folders",
+                "refresh": refresh_cache,
+                "filters": {"workspace_ids": workspace or None},
+            })
+            raise typer.Exit(0)
+
         store = opts.build_cache_store("folders")
         client = client_or_exit(opts)
         try:
@@ -200,6 +208,13 @@ def tree_cmd(
             "ids": None,
             "workspaceIds": workspace or None,
         }
+        if opts.dry_run:
+            opts.emit({
+                "query": "<folders page iterator>",
+                "variables": {**variables, "limit": 100},
+            })
+            raise typer.Exit(0)
+
         client = client_or_exit(opts)
         try:
             with client:
@@ -245,17 +260,19 @@ def tree_cmd(
     for f in root_folders:
         by_workspace[f.get("workspace_id")].append(f)
 
+    # Collect all workspace ids/names present in folder list for ordering.
+    # Computed once and shared by both output paths.
+    ws_meta: dict[Any, str] = {}
+    for f in folders:
+        wid = f.get("workspace_id")
+        wname = f.get("workspace_name") or ""
+        ws_meta.setdefault(wid, wname)
+
     if opts.output not in _TABLE_FORMATS:
         # Structured JSON output
         if not folders:
             opts.emit([])
             return
-        # Collect all workspace ids/names present in folder list for ordering
-        ws_meta: dict[Any, str] = {}
-        for f in folders:
-            wid = f.get("workspace_id")
-            wname = f.get("workspace_name") or ""
-            ws_meta.setdefault(wid, wname)
 
         structured = [
             {
@@ -274,18 +291,12 @@ def tree_cmd(
         opts.emit("")
         return
 
-    ws_meta_t: dict[Any, str] = {}
-    for f in folders:
-        wid = f.get("workspace_id")
-        wname = f.get("workspace_name") or ""
-        ws_meta_t.setdefault(wid, wname)
-
     all_lines: list[str] = []
-    for wid in sorted(ws_meta_t, key=lambda k: ws_meta_t[k]):
+    for wid in sorted(ws_meta, key=lambda k: ws_meta[k]):
         ws_roots = by_workspace.get(wid, [])
         if not ws_roots:
             continue
-        wname = ws_meta_t[wid]
+        wname = ws_meta[wid]
         all_lines.append(f"{wname}  (workspace_id: {wid})")
         all_lines.extend(_render_tree_lines(ws_roots, children_map))
 

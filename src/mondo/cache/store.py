@@ -27,7 +27,7 @@ from mondo.version import __version__
 # bump forces a silent one-off refresh.
 SCHEMA_VERSION = 3
 
-EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "docs"
+EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "docs" | "folders"
 
 
 @dataclass
