@@ -131,11 +131,6 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    # Write to cache on live path (when cache is enabled and not --no-cache)
-    if prefs.cfg.enabled and not no_cache:
-        store = opts.build_cache_store("folders")
-        store.write(items)
-
     opts.emit(items)
 
 
