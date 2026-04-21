@@ -341,6 +341,164 @@ class TestFolderListCache:
         assert "parent" not in folder2
 
 
+class TestFolderTree:
+    """Tests for `folder tree` subcommand."""
+
+    def _folder_response(self, folders: list[dict]) -> dict:
+        return _ok({"folders": folders})
+
+    def _two_workspace_folders(self) -> list[dict]:
+        """Two workspaces; Main WS has a nested sub-folder."""
+        return [
+            {
+                "id": "42",
+                "name": "Marketing",
+                "color": None,
+                "created_at": "2024-01-01T00:00:00Z",
+                "owner_id": "10",
+                "workspace": {"id": "999", "name": "Main Workspace"},
+                "parent": None,
+            },
+            {
+                "id": "44",
+                "name": "Campaigns",
+                "color": None,
+                "created_at": "2024-01-02T00:00:00Z",
+                "owner_id": "10",
+                "workspace": {"id": "999", "name": "Main Workspace"},
+                "parent": {"id": "42", "name": "Marketing"},
+            },
+            {
+                "id": "43",
+                "name": "Design",
+                "color": None,
+                "created_at": "2024-01-03T00:00:00Z",
+                "owner_id": "10",
+                "workspace": {"id": "999", "name": "Main Workspace"},
+                "parent": None,
+            },
+            {
+                "id": "50",
+                "name": "Backend",
+                "color": "DONE_GREEN",
+                "created_at": "2024-02-01T00:00:00Z",
+                "owner_id": "11",
+                "workspace": {"id": "888", "name": "Dev Workspace"},
+                "parent": None,
+            },
+        ]
+
+    def test_tree_two_workspaces(self, httpx_mock: HTTPXMock) -> None:
+        """Tree with two workspaces; Main WS has a nested sub-folder."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response(self._two_workspace_folders()),
+        )
+        result = runner.invoke(app, ["--output", "table", "folder", "tree"])
+        assert result.exit_code == 0, result.stdout
+        output = result.stdout
+        assert "Main Workspace" in output
+        assert "Dev Workspace" in output
+        assert "[42] Marketing" in output
+        assert "[44] Campaigns" in output
+        assert "[43] Design" in output
+        assert "[50] Backend" in output
+        # Campaigns should be indented under Marketing
+        lines = output.splitlines()
+        marketing_idx = next(i for i, l in enumerate(lines) if "[42] Marketing" in l)
+        campaigns_idx = next(i for i, l in enumerate(lines) if "[44] Campaigns" in l)
+        assert campaigns_idx > marketing_idx
+
+    def test_tree_workspace_filter(self, httpx_mock: HTTPXMock) -> None:
+        """--workspace restricts output to the given workspace."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response(self._two_workspace_folders()),
+        )
+        result = runner.invoke(app, ["--output", "table", "folder", "tree", "--workspace", "888"])
+        assert result.exit_code == 0, result.stdout
+        output = result.stdout
+        assert "Dev Workspace" in output
+        assert "[50] Backend" in output
+        assert "Main Workspace" not in output
+        assert "[42] Marketing" not in output
+
+    def test_tree_no_cache_forces_live_fetch(self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--no-cache bypasses cache and hits the API directly."""
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+        # Prime the cache with first response.
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response(self._two_workspace_folders())
+        )
+        runner.invoke(app, ["folder", "list"])
+        prime_requests = len(httpx_mock.get_requests())
+
+        # --no-cache must issue a new API request.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response([
+                {
+                    "id": "99",
+                    "name": "Live Only",
+                    "color": None,
+                    "created_at": None,
+                    "owner_id": None,
+                    "workspace": {"id": "1", "name": "WS1"},
+                    "parent": None,
+                }
+            ]),
+        )
+        result = runner.invoke(app, ["--output", "table", "folder", "tree", "--no-cache"])
+        assert result.exit_code == 0, result.stdout
+        assert len(httpx_mock.get_requests()) == prime_requests + 1
+        assert "Live Only" in result.stdout
+
+    def test_tree_json_output_structured(self, httpx_mock: HTTPXMock) -> None:
+        """JSON output returns a structured nested list."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=self._folder_response(self._two_workspace_folders()),
+        )
+        result = runner.invoke(app, ["-o", "json", "folder", "tree"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert isinstance(parsed, list)
+        # Find the Main Workspace entry
+        main_ws = next(e for e in parsed if e["workspace_id"] == "999")
+        assert main_ws["workspace_name"] == "Main Workspace"
+        top_level_ids = [f["id"] for f in main_ws["folders"]]
+        assert "42" in top_level_ids
+        assert "43" in top_level_ids
+        # Campaigns must be nested under Marketing
+        marketing = next(f for f in main_ws["folders"] if f["id"] == "42")
+        assert len(marketing["sub_folders"]) == 1
+        assert marketing["sub_folders"][0]["id"] == "44"
+        # Dev Workspace
+        dev_ws = next(e for e in parsed if e["workspace_id"] == "888")
+        assert len(dev_ws["folders"]) == 1
+        assert dev_ws["folders"][0]["id"] == "50"
+        assert dev_ws["folders"][0]["sub_folders"] == []
+
+    def test_tree_empty_folders(self, httpx_mock: HTTPXMock) -> None:
+        """Empty folder list → empty string (table) or [] (JSON)."""
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response([])
+        )
+        result_table = runner.invoke(app, ["--output", "table", "folder", "tree"])
+        assert result_table.exit_code == 0, result_table.stdout
+
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=self._folder_response([])
+        )
+        result_json = runner.invoke(app, ["-o", "json", "folder", "tree"])
+        assert result_json.exit_code == 0, result_json.stdout
+        assert json.loads(result_json.stdout) == []
+
+
 class TestFolderGet:
     def test_basic(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(

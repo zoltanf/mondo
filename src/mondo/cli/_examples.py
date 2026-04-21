@@ -542,6 +542,12 @@ EXAMPLES: dict[str, list[Example]] = {
         Example("Across every workspace", "mondo folder list"),
         Example("In one workspace", "mondo folder list --workspace 42"),
     ],
+    "folder tree": [
+        Example("ASCII tree of all folders, grouped by workspace", "mondo folder tree"),
+        Example("Restrict to one workspace", "mondo folder tree --workspace 42"),
+        Example("Structured JSON tree", "mondo folder tree -o json"),
+        Example("Bypass local cache", "mondo folder tree --no-cache"),
+    ],
     "folder get": [
         Example("One folder", "mondo folder get --id 7"),
     ],
