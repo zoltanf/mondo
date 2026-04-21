@@ -7,13 +7,13 @@ global formatter pipeline (so `-o json` / `-q` / etc. work uniformly).
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 import typer
 
 from mondo.api.errors import MondoError
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli.context import GlobalOpts
 
 
@@ -47,12 +47,7 @@ def graphql_command(
     query_text = _load_query(query)
     vars_dict: dict[str, object] = {}
     if variables:
-        vars_src = _load_query(variables)
-        try:
-            vars_dict = json.loads(vars_src)
-        except json.JSONDecodeError as e:
-            typer.secho(f"error: --variables is not valid JSON: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+        vars_dict = parse_json_flag(_load_query(variables), flag_name="--variables")
 
     try:
         client = opts.build_client()

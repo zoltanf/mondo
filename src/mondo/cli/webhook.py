@@ -14,7 +14,6 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -27,6 +26,7 @@ from mondo.api.queries import (
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import execute
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -93,15 +93,7 @@ def create_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     parsed_config: Any = None
     if config is not None:
-        try:
-            parsed_config = json.loads(config)
-        except json.JSONDecodeError as e:
-            typer.secho(
-                f"error: --config is not valid JSON: {e}",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2) from e
+        parsed_config = parse_json_flag(config, flag_name="--config")
     variables = {
         "board": board_id,
         "url": url,

@@ -21,7 +21,6 @@ response into `{alias: value}` dicts for easy JMESPath / table rendering.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -29,6 +28,7 @@ import typer
 from mondo.api.queries import AGGREGATE_BOARD
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import execute_read
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -193,11 +193,7 @@ def board_cmd(
 
     parsed_filter: Any = None
     if filter_query is not None:
-        try:
-            parsed_filter = json.loads(filter_query)
-        except json.JSONDecodeError as e:
-            typer.secho(f"error: --filter is not valid JSON: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+        parsed_filter = parse_json_flag(filter_query, flag_name="--filter")
 
     agg_input: dict[str, Any] = {
         "from": {"type": "TABLE", "id": str(board_id)},

@@ -50,6 +50,7 @@ from mondo.cli._exec import (
 )
 from mondo.cli._filters import apply_fuzzy, compile_name_filter
 from mondo.cli._filters import name_matches as _name_matches
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._list_decorate import (
     enrich_workspaces_best_effort,
     strip_url_fields,
@@ -532,11 +533,7 @@ def add_block_cmd(
 ) -> None:
     """Append a single block to a doc."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    try:
-        parsed_content = json.loads(content)
-    except json.JSONDecodeError as e:
-        typer.secho(f"error: --content is not valid JSON: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+    parsed_content = parse_json_flag(content, flag_name="--content")
     if opts.dry_run:
         dry_run_and_exit(
             opts,
@@ -654,11 +651,7 @@ def update_block_cmd(
     """Replace a single block's content."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
-    try:
-        parsed_content = json.loads(content)
-    except json.JSONDecodeError as e:
-        typer.secho(f"error: --content is not valid JSON: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+    parsed_content = parse_json_flag(content, flag_name="--content")
     # monday's JSON scalar wants the content as a JSON-encoded string (matches
     # what create_doc_block does). We validated the JSON above; now re-stringify.
     variables = {"block": block_id, "content": json.dumps(parsed_content)}

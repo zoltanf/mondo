@@ -11,23 +11,20 @@ from __future__ import annotations
 from typing import Any
 
 
-def normalize_board_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of `entry` with `board_kind` → `kind` and
-    `board_folder_id` → `folder_id`."""
+def _normalize_entry(entry: dict[str, Any], *, prefix: str) -> dict[str, Any]:
+    """Return a copy of `entry` with `<prefix>_kind` → `kind` and
+    `<prefix>_folder_id` → `folder_id`."""
     out = dict(entry)
-    if "board_kind" in out:
-        out["kind"] = out.pop("board_kind")
-    if "board_folder_id" in out:
-        out["folder_id"] = out.pop("board_folder_id")
+    if f"{prefix}_kind" in out:
+        out["kind"] = out.pop(f"{prefix}_kind")
+    if f"{prefix}_folder_id" in out:
+        out["folder_id"] = out.pop(f"{prefix}_folder_id")
     return out
+
+
+def normalize_board_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    return _normalize_entry(entry, prefix="board")
 
 
 def normalize_doc_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of `entry` with `doc_kind` → `kind` and
-    `doc_folder_id` → `folder_id`."""
-    out = dict(entry)
-    if "doc_kind" in out:
-        out["kind"] = out.pop("doc_kind")
-    if "doc_folder_id" in out:
-        out["folder_id"] = out.pop("doc_folder_id")
-    return out
+    return _normalize_entry(entry, prefix="doc")

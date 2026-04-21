@@ -32,6 +32,7 @@ from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cach
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, exec_or_exit, execute
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
@@ -415,11 +416,7 @@ def set_many_cmd(
     Humans usually want `column set` which dispatches via codecs.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    try:
-        parsed: Any = json.loads(values)
-    except json.JSONDecodeError as e:
-        typer.secho(f"error: --values is not valid JSON: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+    parsed: Any = parse_json_flag(values, flag_name="--values")
     if not isinstance(parsed, dict) or not parsed:
         typer.secho(
             "error: --values must be a non-empty JSON object", fg=typer.colors.RED, err=True

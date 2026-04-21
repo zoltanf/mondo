@@ -10,7 +10,6 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -27,6 +26,7 @@ from mondo.api.queries import (
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -154,15 +154,7 @@ def update_cmd(
     folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     position_obj: Any = None
     if position is not None:
-        try:
-            position_obj = json.loads(position)
-        except json.JSONDecodeError as e:
-            typer.secho(
-                f"error: --position is not valid JSON: {e}",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2) from e
+        position_obj = parse_json_flag(position, flag_name="--position")
     variables: dict[str, Any] = {
         "id": folder_id,
         "name": name,
