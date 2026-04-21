@@ -33,9 +33,9 @@ from mondo.api.queries import (
     USERS_UPDATE_AS_VIEWERS,
 )
 from mondo.cache.directory import get_users as cache_get_users
-from mondo.cache.fuzzy import fuzzy_score
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
+from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -108,20 +108,6 @@ def _invalidate_teams_cache(opts: GlobalOpts) -> None:
         opts.build_cache_store("teams").invalidate()
     except Exception:
         pass
-
-
-def _apply_fuzzy(
-    entries: list[dict[str, Any]],
-    query: str,
-    *,
-    threshold: int,
-    include_score: bool,
-) -> list[dict[str, Any]]:
-    scored = fuzzy_score(query, entries, threshold=threshold)
-    if include_score:
-        return [{**entry, "_fuzzy_score": score} for entry, score in scored]
-    matching_ids = {id(entry) for entry, _ in scored}
-    return [e for e in entries if id(e) in matching_ids]
 
 
 # ----- read commands -----
@@ -238,7 +224,7 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     if name_fuzzy is not None:
-        items = _apply_fuzzy(
+        items = apply_fuzzy(
             items,
             name_fuzzy,
             threshold=effective_fuzzy_threshold,
@@ -321,7 +307,7 @@ def _list_users_via_cache(
         )
 
     if name_fuzzy is not None:
-        entries = _apply_fuzzy(
+        entries = apply_fuzzy(
             entries,
             name_fuzzy,
             threshold=fuzzy_threshold,
