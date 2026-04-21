@@ -7,7 +7,7 @@ or uses the helper `build_client(opts)` to get a ready-to-use MondayClient.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TextIO
 
 from mondo.api.auth import ResolvedToken, resolve_token
@@ -15,13 +15,20 @@ from mondo.api.client import MondayClient
 from mondo.cache import CacheStore, ResolvedCacheConfig, resolve_cache_config
 from mondo.cache.store import EntityType
 from mondo.config.loader import config_path, load_config
+from mondo.config.schema import Config
 from mondo.output import choose_default_format, format_output
 from mondo.output.query import apply_query
 
 
 @dataclass
 class GlobalOpts:
-    """Carries parsed global options from the root Typer callback."""
+    """Carries parsed global options from the root Typer callback.
+
+    One instance per Typer invocation; `load_config()` is memoized on the
+    instance so sequential `resolve_token` / `build_client` /
+    `resolve_cache_config` / `api_endpoint` calls don't re-read the YAML each
+    time.
+    """
 
     profile_name: str | None
     flag_token: str | None
@@ -32,6 +39,13 @@ class GlobalOpts:
     query: str | None = None
     yes: bool = False
     dry_run: bool = False
+    _config: Config | None = field(default=None, init=False, repr=False)
+    _cache_config: ResolvedCacheConfig | None = field(default=None, init=False, repr=False)
+
+    def _load(self) -> Config:
+        if self._config is None:
+            self._config = load_config()
+        return self._config
 
     def emit(
         self,
@@ -57,7 +71,7 @@ class GlobalOpts:
 
     def resolve_token(self) -> ResolvedToken:
         """Run the token resolution chain using this invocation's options."""
-        cfg = load_config()
+        cfg = self._load()
         profile = cfg.get_profile(self.profile_name)
         return resolve_token(
             profile=profile,
@@ -68,7 +82,7 @@ class GlobalOpts:
 
     def build_client(self) -> MondayClient:
         """Convenience: resolve the token, pick the API version, build the client."""
-        cfg = load_config()
+        cfg = self._load()
         profile = cfg.get_profile(self.profile_name)
         resolved = resolve_token(
             profile=profile,
@@ -81,8 +95,11 @@ class GlobalOpts:
 
     def resolve_cache_config(self) -> ResolvedCacheConfig:
         """Resolve the fully-merged cache configuration for this invocation."""
-        cfg = load_config()
-        return resolve_cache_config(cfg, profile_name=self.profile_name)
+        if self._cache_config is None:
+            self._cache_config = resolve_cache_config(
+                self._load(), profile_name=self.profile_name
+            )
+        return self._cache_config
 
     def api_endpoint(self) -> str:
         """Effective monday API endpoint for the current profile.
@@ -90,7 +107,7 @@ class GlobalOpts:
         Used as the `api_endpoint` key for cache envelopes so switching profiles
         (e.g. to a different monday account) doesn't serve stale data.
         """
-        cfg = load_config()
+        cfg = self._load()
         profile = cfg.get_profile(self.profile_name)
         return profile.api_url
 
