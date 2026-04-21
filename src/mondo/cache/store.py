@@ -92,6 +92,22 @@ class CacheStore:
     def ttl_seconds(self) -> int:
         return self._ttl_seconds
 
+    def _read_envelope(self) -> dict[str, Any] | None:
+        """Parse the cache file if it exists. No side effects, no logging.
+
+        Returns `None` for missing file, malformed JSON, or a non-object
+        root. Shared by `read()` (which validates + unlinks on failure)
+        and `age()` (which only wants the timestamp).
+        """
+        p = self.path
+        if not p.exists():
+            return None
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return raw if isinstance(raw, dict) else None
+
     def read(self) -> CachedDirectory | None:
         """Return a validated CachedDirectory, or None for cold/corrupt/expired.
 
@@ -101,15 +117,9 @@ class CacheStore:
         p = self.path
         if not p.exists():
             return None
-        try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            logger.debug(f"cache[{self._entity_type}]: corrupt file ({exc}); dropping")
-            self._try_unlink(p)
-            return None
-
-        if not isinstance(raw, dict):
-            logger.debug(f"cache[{self._entity_type}]: envelope not an object; dropping")
+        raw = self._read_envelope()
+        if raw is None:
+            logger.debug(f"cache[{self._entity_type}]: corrupt file; dropping")
             self._try_unlink(p)
             return None
 
@@ -192,15 +202,13 @@ class CacheStore:
     def age(self) -> timedelta | None:
         """Age of the on-disk envelope regardless of freshness, or None if
         the file is missing/corrupt."""
-        p = self.path
-        if not p.exists():
+        raw = self._read_envelope()
+        if raw is None:
             return None
         try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
-            fetched_at = _parse_utc(raw["fetched_at"])
-        except (OSError, ValueError, KeyError, TypeError):
+            return _utcnow() - _parse_utc(raw["fetched_at"])
+        except (KeyError, TypeError, ValueError):
             return None
-        return _utcnow() - fetched_at
 
     def _ensure_dir(self) -> None:
         target_dir = self.path.parent
