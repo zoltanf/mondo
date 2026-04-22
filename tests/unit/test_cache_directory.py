@@ -54,13 +54,14 @@ def _store(tmp_path: Path, entity: str) -> CacheStore:
 def test_get_boards_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
     store = _store(tmp_path, "boards")
     client = FakeClient([
-        {"data": {"boards": [{"id": "1", "name": "Alpha"}]}},
+        {"data": {"boards": [{"id": "1", "name": "Alpha", "hierarchy_type": "multi_level"}]}},
         {"data": {"boards": []}},  # stop signal
     ])
 
     result = get_boards(client, store=store)
 
     assert [e["name"] for e in result.entries] == ["Alpha"]
+    assert result.entries[0]["hierarchy_type"] == "multi_level"
     assert store.path.exists()
     assert store.read() is not None  # populated cache
 
@@ -95,9 +96,10 @@ def test_get_boards_uses_state_all_for_priming(tmp_path: Path) -> None:
     client = FakeClient([{"data": {"boards": []}}])
     get_boards(client, store=store)
     assert client.calls, "expected an API call"
-    _query, variables = client.calls[0]
+    query, variables = client.calls[0]
     assert variables is not None
     assert variables.get("state") == "all"
+    assert "hierarchy_types: [classic, multi_level]" in query
 
 
 # -- workspaces --------------------------------------------------------------

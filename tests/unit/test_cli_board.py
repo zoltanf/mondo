@@ -246,6 +246,34 @@ class TestBoardList:
         query = _last_body(httpx_mock)["query"]
         assert " type " in query or "\ntype\n" in query or "type\n" in query
 
+    def test_hierarchy_types_included_in_query(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        query = _last_body(httpx_mock)["query"]
+        assert "hierarchy_types: [classic, multi_level]" in query
+
+    def test_hierarchy_type_passes_through_output(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "1",
+                            "name": "Roadmap",
+                            "hierarchy_type": "multi_level",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed[0]["hierarchy_type"] == "multi_level"
+
     def test_items_count_omitted_by_default(self, httpx_mock: HTTPXMock) -> None:
         """items_count costs ~500k complexity per page; opt-in only."""
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
@@ -353,6 +381,27 @@ class TestBoardGet:
         parsed = json.loads(result.stdout)
         assert parsed["name"] == "Roadmap"
         assert _last_body(httpx_mock)["variables"] == {"id": 42}
+
+    def test_hierarchy_type_passes_through(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "Roadmap",
+                            "hierarchy_type": "multi_level",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "get", "--id", "42"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["hierarchy_type"] == "multi_level"
 
     def test_missing_exits_6(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))

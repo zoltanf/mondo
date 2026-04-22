@@ -1187,7 +1187,11 @@ def build_boards_list_query(
     omitted; pass `with_item_counts=True` to include it.
     """
     var_decls: list[str] = ["$limit: Int!", "$page: Int!"]
-    args: list[str] = ["limit: $limit", "page: $page"]
+    args: list[str] = [
+        "limit: $limit",
+        "page: $page",
+        "hierarchy_types: [classic, multi_level]",
+    ]
     variables: dict[str, Any] = {}
 
     if state is not None:
@@ -1215,6 +1219,7 @@ def build_boards_list_query(
         "board_kind",
         "board_folder_id",
         "workspace_id",
+        "hierarchy_type",
         "created_at",
         "updated_at",
         # monday's `boards()` returns both real boards and workdoc-backing
@@ -1259,6 +1264,7 @@ query ($id: ID!) {
     type
     board_folder_id
     workspace_id
+    hierarchy_type
     items_count
     updated_at
     permissions

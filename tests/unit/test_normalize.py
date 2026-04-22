@@ -67,6 +67,10 @@ class TestNormalizeBoard:
         )
         assert list(out.keys())[-2:] == ["created_at", "updated_at"]
 
+    def test_hierarchy_type_passes_through(self) -> None:
+        out = normalize_board_entry({"id": "1", "hierarchy_type": "multi_level"})
+        assert out["hierarchy_type"] == "multi_level"
+
 
 class TestNormalizeDoc:
     def test_renames_doc_kind_to_kind(self) -> None:

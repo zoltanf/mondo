@@ -22,11 +22,11 @@ from loguru import logger
 
 from mondo.version import __version__
 
-# Bumped to 3: board/doc envelopes now store normalized keys (`kind`,
-# `folder_id`) and extra fields (`created_at` on boards, `updated_at` +
-# `doc_folder_id` on docs). Old envelopes use the pre-normalization keys;
-# bump forces a silent one-off refresh.
-SCHEMA_VERSION = 3
+# Bumped to 4: board directory queries now include both classic and
+# multi-level boards plus `hierarchy_type`. Older board caches may be
+# functionally incomplete, not just missing a cosmetic field, so force a
+# silent one-off refresh.
+SCHEMA_VERSION = 4
 
 EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "docs" | "folders"
 
