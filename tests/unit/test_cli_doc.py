@@ -727,7 +727,7 @@ class TestGet:
             ],
         )
         assert result.exit_code == 0, result.stdout
-        assert _last_body(httpx_mock)["variables"] == {"objs": [99]}
+        assert _last_body(httpx_mock)["variables"] == {"objs": [99], "limit": 100, "page": 1}
 
     def test_accepts_url_for_id(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -751,7 +751,7 @@ class TestGet:
             ["doc", "get", "--id", "https://marktguru.monday.com/boards/7"],
         )
         assert result.exit_code == 0, result.stdout
-        assert _last_body(httpx_mock)["variables"] == {"ids": [7]}
+        assert _last_body(httpx_mock)["variables"] == {"ids": [7], "limit": 100, "page": 1}
 
     def test_not_found_falls_back_to_board_get(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
@@ -1046,3 +1046,223 @@ class TestBlocks:
         )
         result = runner.invoke(app, ["doc", "delete-block", "--id", "b1"])
         assert result.exit_code == 0, result.stdout
+
+
+class TestDocPagination:
+    def test_get_markdown_paginates_blocks(self, httpx_mock: HTTPXMock) -> None:
+        first_page_blocks = [
+            {"id": f"b{i}", "type": "normal_text", "content": {"deltaFormat": [{"insert": f"L{i}"}]}}
+            for i in range(1, 101)
+        ]
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "7", "blocks": first_page_blocks}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "7",
+                            "blocks": [
+                                {
+                                    "id": "b101",
+                                    "type": "normal_text",
+                                    "content": {"deltaFormat": [{"insert": "Last line"}]},
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "get", "--id", "7", "--format", "markdown"])
+        assert result.exit_code == 0, result.stdout
+        assert "L1" in result.stdout
+        assert "Last line" in result.stdout
+        reqs = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        assert reqs[0]["variables"]["page"] == 1
+        assert reqs[1]["variables"]["page"] == 2
+        assert reqs[0]["variables"]["limit"] == 100
+
+    def test_add_block_seeds_after_from_last_paged_block(self, httpx_mock: HTTPXMock) -> None:
+        first_page_blocks = [{"id": f"b{i}", "type": "normal_text", "content": {}} for i in range(1, 101)]
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": first_page_blocks}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "b101", "type": "normal_text", "content": {}}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "new-1", "type": "normal_text"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "add-block",
+                "--doc",
+                "10",
+                "--type",
+                "normal_text",
+                "--content",
+                '{"deltaFormat":[{"insert":"hi"}]}',
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        create_body = json.loads(httpx_mock.get_requests()[-1].content)
+        assert create_body["variables"]["after"] == "b101"
+
+
+class TestDocNewOps:
+    def test_create_requires_name(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["doc", "create", "--workspace", "42"])
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_rename(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"update_doc_name": "Renamed"}))
+        result = runner.invoke(app, ["doc", "rename", "--doc", "10", "--name", "Renamed"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10, "name": "Renamed"}
+
+    def test_duplicate(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"duplicate_doc": {"id": "88"}}))
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "duplicate",
+                "--doc",
+                "10",
+                "--duplicate-type",
+                "duplicate_doc_with_content_and_updates",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10, "dup": "duplicate_doc_with_content_and_updates"}
+
+    def test_delete(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"delete_doc": {"id": "10"}}))
+        result = runner.invoke(app, ["doc", "delete", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10}
+
+    def test_export_markdown_plain(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"export_markdown_from_doc": {"success": True, "error": None, "markdown": "# Title"}}),
+        )
+        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        assert "# Title" in result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10, "blocks": None}
+
+    def test_export_markdown_failure_exits_5(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "export_markdown_from_doc": {
+                        "success": False,
+                        "error": "boom",
+                        "markdown": "",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
+        assert result.exit_code == 5
+
+    def test_add_markdown(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"add_content_to_doc_from_markdown": {"success": True, "block_ids": ["b1"], "error": None}}),
+        )
+        result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", "# Hi"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10, "md": "# Hi", "after": None}
+
+    def test_import_html(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"import_doc_from_html": {"success": True, "doc_id": "99", "error": None}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "import-html",
+                "--workspace",
+                "42",
+                "--html",
+                "<h1>Hi</h1>",
+                "--title",
+                "Imported",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {
+            "html": "<h1>Hi</h1>",
+            "workspace": 42,
+            "title": "Imported",
+            "folder": None,
+            "kind": None,
+        }
+
+    def test_version_history(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"doc_version_history": {"doc_id": "10", "restoring_points": []}}),
+        )
+        result = runner.invoke(app, ["doc", "version-history", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10, "since": None, "until": None}
+
+    def test_version_diff(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"doc_version_diff": {"doc_id": "10", "blocks": []}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "version-diff",
+                "--doc",
+                "10",
+                "--date",
+                "2026-01-08T10:24:02.469Z",
+                "--prev-date",
+                "2025-01-01T00:00:00Z",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {
+            "doc": 10,
+            "date": "2026-01-08T10:24:02.469Z",
+            "prev": "2025-01-01T00:00:00Z",
+        }

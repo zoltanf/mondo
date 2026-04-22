@@ -465,6 +465,18 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo doc add-content --doc 7 --from-file spec.md",
         ),
     ],
+    "doc add-markdown": [
+        Example(
+            "Append markdown using monday's server-side parser",
+            'mondo doc add-markdown --doc 7 --markdown "# Title\\n\\nBody"',
+        ),
+    ],
+    "doc import-html": [
+        Example(
+            "Create a doc from HTML",
+            'mondo doc import-html --workspace 42 --html "<h1>Spec</h1><p>Body</p>" --title "Imported"',
+        ),
+    ],
     "doc add-block": [
         Example(
             "Append one paragraph",
@@ -487,6 +499,37 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "doc delete-block": [
         Example("Delete one block", "mondo doc delete-block --id <block-id>"),
+    ],
+    "doc rename": [
+        Example("Rename a doc", 'mondo doc rename --doc 7 --name "New name"'),
+    ],
+    "doc duplicate": [
+        Example(
+            "Duplicate content and updates",
+            "mondo doc duplicate --doc 7 --duplicate-type duplicate_doc_with_content_and_updates",
+        ),
+    ],
+    "doc delete": [
+        Example("Delete a doc", "mondo doc delete --doc 7"),
+    ],
+    "doc export-markdown": [
+        Example("Export the whole doc as markdown", "mondo doc export-markdown --doc 7"),
+        Example(
+            "Export specific blocks only",
+            "mondo doc export-markdown --doc 7 --block <block-1> --block <block-2> --raw",
+        ),
+    ],
+    "doc version-history": [
+        Example(
+            "List restoring points since a date (API 2026-04+)",
+            'mondo doc version-history --doc 7 --since "2026-01-01T00:00:00Z"',
+        ),
+    ],
+    "doc version-diff": [
+        Example(
+            "Diff two restoring points (API 2026-04+)",
+            'mondo doc version-diff --doc 7 --date "2026-01-08T10:24:02.469Z" --prev-date "2026-01-08T09:00:00Z"',
+        ),
     ],
     # --- webhook -----------------------------------------------------------
     "webhook list": [
@@ -852,7 +895,7 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "column doc clear": [
         Example(
-            "Unlink the doc (monday has no delete_doc mutation)",
+            "Unlink the doc from the item (keeps the underlying workspace doc)",
             "mondo column doc clear --item 987 --column spec",
         ),
     ],

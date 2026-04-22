@@ -427,6 +427,32 @@ query ($objs: [ID!]!) {
 """.strip()
 
 
+# Fetch one page of blocks for a doc selected by object_id.
+# Used to assemble full docs without relying on the default `blocks` page size.
+DOCS_BY_OBJECT_ID_BLOCKS_PAGE = """
+query ($objs: [ID!]!, $limit: Int!, $page: Int!) {
+  docs(object_ids: $objs) {
+    id
+    object_id
+    name
+    doc_kind
+    doc_folder_id
+    created_at
+    updated_at
+    url
+    relative_url
+    workspace_id
+    blocks(limit: $limit, page: $page) {
+      id
+      type
+      content
+      parent_block_id
+    }
+  }
+}
+""".strip()
+
+
 # Create a new doc attached to an item's doc-column (populates the column).
 CREATE_DOC_ON_ITEM = """
 mutation ($item: ID!, $col: String!) {
@@ -559,6 +585,33 @@ query ($ids: [ID!]!) {
 """.strip()
 
 
+# Fetch one page of blocks for a doc selected by internal id.
+# Used to assemble full docs without relying on the default `blocks` page size.
+DOC_GET_BY_ID_BLOCKS_PAGE = """
+query ($ids: [ID!]!, $limit: Int!, $page: Int!) {
+  docs(ids: $ids) {
+    id
+    object_id
+    name
+    doc_kind
+    doc_folder_id
+    created_at
+    updated_at
+    url
+    relative_url
+    workspace_id
+    created_by { id name }
+    blocks(limit: $limit, page: $page) {
+      id
+      type
+      content
+      parent_block_id
+    }
+  }
+}
+""".strip()
+
+
 # Create a new doc inside a workspace (vs. the already-shipped
 # CREATE_DOC_ON_ITEM which creates one attached to a doc-column on an item).
 CREATE_DOC_IN_WORKSPACE = """
@@ -572,6 +625,113 @@ mutation ($workspace: ID!, $name: String!, $kind: BoardKind) {
     object_id
     name
     url
+  }
+}
+""".strip()
+
+
+UPDATE_DOC_NAME = """
+mutation ($doc: Int!, $name: String!) {
+  update_doc_name(docId: $doc, name: $name)
+}
+""".strip()
+
+
+DUPLICATE_DOC = """
+mutation ($doc: Int!, $dup: DuplicateType) {
+  duplicate_doc(docId: $doc, duplicateType: $dup)
+}
+""".strip()
+
+
+DELETE_DOC = """
+mutation ($doc: ID!) {
+  delete_doc(docId: $doc)
+}
+""".strip()
+
+
+EXPORT_MARKDOWN_FROM_DOC = """
+query ($doc: ID!, $blocks: [String!]) {
+  export_markdown_from_doc(docId: $doc, blockIds: $blocks) {
+    error
+    markdown
+    success
+  }
+}
+""".strip()
+
+
+ADD_CONTENT_TO_DOC_FROM_MARKDOWN = """
+mutation ($doc: ID!, $md: String!, $after: String) {
+  add_content_to_doc_from_markdown(
+    docId: $doc
+    markdown: $md
+    afterBlockId: $after
+  ) {
+    success
+    block_ids
+    error
+  }
+}
+""".strip()
+
+
+IMPORT_DOC_FROM_HTML = """
+mutation (
+  $html: String!
+  $workspace: ID!
+  $title: String
+  $folder: ID
+  $kind: DocKind
+) {
+  import_doc_from_html(
+    html: $html
+    workspaceId: $workspace
+    title: $title
+    folderId: $folder
+    kind: $kind
+  ) {
+    error
+    success
+    doc_id
+  }
+}
+""".strip()
+
+
+DOC_VERSION_HISTORY = """
+query ($doc: ID!, $since: String, $until: String) {
+  doc_version_history(doc_id: $doc, since: $since, until: $until) {
+    doc_id
+    restoring_points {
+      date
+      user_ids
+      type
+    }
+  }
+}
+""".strip()
+
+
+DOC_VERSION_DIFF = """
+query ($doc: ID!, $date: String!, $prev: String!) {
+  doc_version_diff(doc_id: $doc, date: $date, prev_date: $prev) {
+    doc_id
+    date
+    prev_date
+    blocks {
+      id
+      type
+      content
+      summary
+      parent_block_id
+      changes {
+        added
+        deleted
+        changed
+      }
+    }
   }
 }
 """.strip()

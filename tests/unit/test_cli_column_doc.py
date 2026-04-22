@@ -154,6 +154,49 @@ class TestDocGet:
         parsed = json.loads(result.stdout)
         assert parsed == [{"type": "heading", "content": {"deltaFormat": [{"insert": "Spec"}]}}]
 
+    def test_markdown_paginates_blocks(self, httpx_mock: HTTPXMock) -> None:
+        first_page_blocks = [
+            {"id": f"b{i}", "type": "normal_text", "content": {"deltaFormat": [{"insert": f"L{i}"}]}}
+            for i in range(1, 101)
+        ]
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_context_for_doc_column(_DOC_COLUMN_VALUE)
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "700", "object_id": 5000, "blocks": first_page_blocks}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "700",
+                            "object_id": 5000,
+                            "blocks": [
+                                {
+                                    "id": "b101",
+                                    "type": "normal_text",
+                                    "content": {"deltaFormat": [{"insert": "Last"}]},
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["column", "doc", "get", "--item", "1", "--column", "spec"])
+        assert result.exit_code == 0, result.stdout
+        assert "L1" in result.stdout
+        assert "Last" in result.stdout
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        assert bodies[1]["variables"]["page"] == 1
+        assert bodies[2]["variables"]["page"] == 2
+        assert bodies[1]["variables"]["limit"] == 100
+
     def test_empty_column_emits_empty(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_context_for_doc_column(None))
         result = runner.invoke(app, ["column", "doc", "get", "--item", "1", "--column", "spec"])
@@ -395,6 +438,44 @@ class TestDocAppend:
             ],
         )
         assert result.exit_code == 2
+
+    def test_uses_last_block_from_later_page(self, httpx_mock: HTTPXMock) -> None:
+        first_page_blocks = [{"id": f"b{i}", "type": "normal_text", "content": {}} for i in range(1, 101)]
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_context_for_doc_column(_DOC_COLUMN_VALUE)
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "700", "object_id": 5000, "blocks": first_page_blocks}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "700", "object_id": 5000, "blocks": [{"id": "b101"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "new1", "type": "normal_text"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "doc",
+                "append",
+                "--item",
+                "1",
+                "--column",
+                "spec",
+                "--markdown",
+                "tail",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        create_body = json.loads(httpx_mock.get_requests()[-1].content)
+        assert create_body["variables"]["after"] == "b101"
 
 
 # --- clear ---

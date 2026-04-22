@@ -7,12 +7,11 @@ workspace with a block-structured body. The CLI covers:
 - `list` / `get` — page-based listing with optional workspace / object-id
   filters; get emits the full block tree (or a markdown rendering).
 - `create` — bootstrap a doc inside a workspace (`CreateDocInput.workspace`).
-- `add-block` / `add-content` — single / bulk block inserts. `add-content`
-  feeds a markdown file through `docs.markdown_to_blocks` (reused from
-  Phase 1f).
+- `add-block` / `add-content` — single / bulk block inserts.
+- `add-markdown` / `import-html` — server-side markdown/html conversion flows.
 - `update-block` / `delete-block` — edit individual blocks.
-- `delete` — left un-wired (monday has no top-level `delete_doc` mutation);
-  we surface the limitation with a pointer.
+- `rename` / `duplicate` / `delete` — document-level mutations.
+- `export-markdown` / `version-history` / `version-diff` — read-side extras.
 """
 
 from __future__ import annotations
@@ -28,12 +27,20 @@ import typer
 
 from mondo.api.errors import MondoError
 from mondo.api.queries import (
+    ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
     CREATE_DOC_BLOCK,
     CREATE_DOC_IN_WORKSPACE,
+    DELETE_DOC,
     DELETE_DOC_BLOCK,
-    DOC_GET_BY_ID,
-    DOCS_BY_OBJECT_ID,
+    DOC_GET_BY_ID_BLOCKS_PAGE,
+    DOC_VERSION_DIFF,
+    DOC_VERSION_HISTORY,
+    DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
+    DUPLICATE_DOC,
+    EXPORT_MARKDOWN_FROM_DOC,
+    IMPORT_DOC_FROM_HTML,
     UPDATE_DOC_BLOCK,
+    UPDATE_DOC_NAME,
 )
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -72,7 +79,14 @@ class DocFormat(StrEnum):
     markdown = "markdown"
 
 
+class DuplicateDocType(StrEnum):
+    duplicate_doc_with_content = "duplicate_doc_with_content"
+    duplicate_doc_with_content_and_updates = "duplicate_doc_with_content_and_updates"
+
+
 # ----- helpers -----
+
+_DOC_BLOCKS_PAGE_SIZE = 100
 
 
 def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> str:
@@ -97,6 +111,100 @@ def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> s
         return sys.stdin.read()
     assert inline is not None
     return inline
+
+
+def _load_html(inline: str | None, path: Path | None, from_stdin: bool) -> str:
+    sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
+    if sources == 0:
+        typer.secho(
+            "error: provide --html, --from-file @path, or --from-stdin",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if sources > 1:
+        typer.secho(
+            "error: --html, --from-file, and --from-stdin are mutually exclusive",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if path is not None:
+        return path.read_text()
+    if from_stdin:
+        return sys.stdin.read()
+    assert inline is not None
+    return inline
+
+
+def _fetch_doc_with_all_blocks(
+    client: MondayClient,
+    *,
+    query: str,
+    identity: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Fetch all block pages for a single doc and return one merged payload."""
+    page = 1
+    merged: dict[str, Any] | None = None
+    all_blocks: list[dict[str, Any]] = []
+
+    while True:
+        data = exec_or_exit(
+            client,
+            query,
+            {
+                **identity,
+                "limit": _DOC_BLOCKS_PAGE_SIZE,
+                "page": page,
+            },
+        )
+        docs = data.get("docs") or []
+        if not docs:
+            return None
+        doc = docs[0]
+        page_blocks = doc.get("blocks") or []
+
+        if merged is None:
+            merged = {k: v for k, v in doc.items() if k != "blocks"}
+        if isinstance(page_blocks, list):
+            all_blocks.extend(page_blocks)
+
+        if len(page_blocks) < _DOC_BLOCKS_PAGE_SIZE:
+            break
+        page += 1
+
+    assert merged is not None
+    merged["blocks"] = all_blocks
+    return merged
+
+
+def _fetch_doc_by_id_all_blocks(client: MondayClient, doc_id: int) -> dict[str, Any] | None:
+    return _fetch_doc_with_all_blocks(
+        client,
+        query=DOC_GET_BY_ID_BLOCKS_PAGE,
+        identity={"ids": [doc_id]},
+    )
+
+
+def _fetch_doc_by_object_id_all_blocks(
+    client: MondayClient, object_id: int
+) -> dict[str, Any] | None:
+    return _fetch_doc_with_all_blocks(
+        client,
+        query=DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
+        identity={"objs": [object_id]},
+    )
+
+
+def _last_block_id(doc: dict[str, Any]) -> str | None:
+    blocks = doc.get("blocks") or []
+    if not blocks:
+        return None
+    last = blocks[-1]
+    if not isinstance(last, dict):
+        return None
+    last_id = last.get("id")
+    return str(last_id) if last_id else None
 
 
 # ----- read commands -----
@@ -442,27 +550,38 @@ def get_cmd(
         raise typer.Exit(code=2)
 
     if doc_id is not None:
-        query = DOC_GET_BY_ID
-        variables = {"ids": [doc_id]}
+        query = DOC_GET_BY_ID_BLOCKS_PAGE
+        variables = {
+            "ids": [doc_id],
+            "limit": _DOC_BLOCKS_PAGE_SIZE,
+            "page": "<1..N>",
+        }
     else:
         assert object_id is not None  # guaranteed by the sources != 1 check above
-        query = DOCS_BY_OBJECT_ID
-        variables = {"objs": [object_id]}
+        query = DOCS_BY_OBJECT_ID_BLOCKS_PAGE
+        variables = {
+            "objs": [object_id],
+            "limit": _DOC_BLOCKS_PAGE_SIZE,
+            "page": "<1..N>",
+        }
 
     if opts.dry_run:
         dry_run_and_exit(opts, query, variables)
     client = client_or_exit(opts)
     try:
         with client:
-            data = exec_or_exit(client, query, variables)
-            docs = data.get("docs") or []
-            if not docs:
+            doc = (
+                _fetch_doc_by_id_all_blocks(client, doc_id)
+                if doc_id is not None
+                else _fetch_doc_by_object_id_all_blocks(client, object_id or 0)
+            )
+            if doc is None:
                 _emit_doc_not_found(client, doc_id=doc_id, object_id=object_id)
                 raise typer.Exit(code=6)
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    doc = docs[0]
+
     if fmt is DocFormat.markdown:
         blocks = doc.get("blocks") or []
         typer.echo(blocks_to_markdown(blocks))
@@ -510,7 +629,7 @@ def _emit_doc_not_found(
 def create_cmd(
     ctx: typer.Context,
     workspace: int = typer.Option(..., "--workspace", help="Target workspace ID."),
-    name: str | None = typer.Option(None, "--name", help="Doc name."),
+    name: str = typer.Option(..., "--name", help="Doc name."),
     kind: DocKind | None = typer.Option(
         None, "--kind", help="public / private / share.", case_sensitive=False
     ),
@@ -535,8 +654,8 @@ def add_block_cmd(
     block_type: str = typer.Option(
         ...,
         "--type",
-        help="Block type (normal_text, heading, bullet_list, numbered_list, "
-        "quote, code, divider, …).",
+        help="Block type (normal_text, large_title, medium_title, small_title, "
+        "bulleted_list, numbered_list, quote, code, divider, …).",
     ),
     content: str = typer.Option(..., "--content", metavar="JSON", help="Block content as JSON."),
     after: str | None = typer.Option(
@@ -570,11 +689,11 @@ def add_block_cmd(
         with client:
             effective_after = after
             if effective_after is None:
-                pre = exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
-                docs_list = pre.get("docs") or []
-                existing = (docs_list[0].get("blocks") or []) if docs_list else []
-                if existing:
-                    effective_after = str(existing[-1].get("id"))
+                existing_doc = _fetch_doc_by_id_all_blocks(client, doc_id)
+                if existing_doc is None:
+                    typer.secho(f"doc id={doc_id} not found.", fg=typer.colors.RED, err=True)
+                    raise typer.Exit(code=6)
+                effective_after = _last_block_id(existing_doc)
             data = exec_or_exit(
                 client,
                 CREATE_DOC_BLOCK,
@@ -633,10 +752,11 @@ def add_content_cmd(
         with client:
             # Seed `after_block_id` from the doc's current last block so blocks
             # land at the end (monday's default for `after=null` is TOP insert).
-            pre = exec_or_exit(client, DOC_GET_BY_ID, {"ids": [doc_id]})
-            docs_list = pre.get("docs") or []
-            existing_blocks = (docs_list[0].get("blocks") or []) if docs_list else []
-            prev_id: str | None = str(existing_blocks[-1].get("id")) if existing_blocks else None
+            existing_doc = _fetch_doc_by_id_all_blocks(client, doc_id)
+            if existing_doc is None:
+                typer.secho(f"doc id={doc_id} not found.", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=6)
+            prev_id = _last_block_id(existing_doc)
             for block in blocks:
                 data = exec_or_exit(
                     client,
@@ -658,6 +778,168 @@ def add_content_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     opts.emit(created)
+
+
+@app.command("add-markdown", epilog=epilog_for("doc add-markdown"))
+def add_markdown_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    markdown: str | None = typer.Option(None, "--markdown", help="Markdown source."),
+    from_file: Path | None = typer.Option(None, "--from-file", help="Load markdown from a file."),
+    from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
+    after: str | None = typer.Option(None, "--after", help="Insert after this block ID."),
+) -> None:
+    """Append markdown using monday's server-side markdown parser."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    md = _load_markdown(markdown, from_file, from_stdin)
+    variables = {"doc": doc_id, "md": md, "after": after}
+    data = execute(opts, ADD_CONTENT_TO_DOC_FROM_MARKDOWN, variables)
+    opts.emit(data.get("add_content_to_doc_from_markdown") or {})
+
+
+@app.command("import-html", epilog=epilog_for("doc import-html"))
+def import_html_cmd(
+    ctx: typer.Context,
+    workspace: int = typer.Option(..., "--workspace", help="Target workspace ID."),
+    html: str | None = typer.Option(None, "--html", help="Raw HTML content."),
+    from_file: Path | None = typer.Option(None, "--from-file", help="Load HTML from a file."),
+    from_stdin: bool = typer.Option(False, "--from-stdin", help="Load HTML from stdin."),
+    title: str | None = typer.Option(None, "--title", help="Optional doc title override."),
+    folder_id: int | None = typer.Option(None, "--folder", help="Optional folder ID."),
+    kind: DocKind | None = typer.Option(
+        None,
+        "--kind",
+        help="Doc visibility (public/private/share).",
+        case_sensitive=False,
+    ),
+) -> None:
+    """Create a new doc by importing HTML content."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    rendered_html = _load_html(html, from_file, from_stdin)
+    variables = {
+        "html": rendered_html,
+        "workspace": workspace,
+        "title": title,
+        "folder": folder_id,
+        "kind": kind.value if kind else None,
+    }
+    data = execute(opts, IMPORT_DOC_FROM_HTML, variables)
+    opts.emit(data.get("import_doc_from_html") or {})
+
+
+@app.command("rename", epilog=epilog_for("doc rename"))
+def rename_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    name: str = typer.Option(..., "--name", help="New document title."),
+) -> None:
+    """Rename a doc."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    data = execute(opts, UPDATE_DOC_NAME, {"doc": doc_id, "name": name})
+    opts.emit(data.get("update_doc_name"))
+
+
+@app.command("duplicate", epilog=epilog_for("doc duplicate"))
+def duplicate_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    duplicate_type: DuplicateDocType | None = typer.Option(
+        None,
+        "--duplicate-type",
+        help="Copy only content, or content+updates.",
+        case_sensitive=False,
+    ),
+) -> None:
+    """Duplicate a doc."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    data = execute(
+        opts,
+        DUPLICATE_DOC,
+        {"doc": doc_id, "dup": duplicate_type.value if duplicate_type else None},
+    )
+    opts.emit(data.get("duplicate_doc"))
+
+
+@app.command("delete", epilog=epilog_for("doc delete"))
+def delete_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+) -> None:
+    """Delete a doc."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    data = execute(opts, DELETE_DOC, {"doc": doc_id})
+    opts.emit(data.get("delete_doc"))
+
+
+@app.command("export-markdown", epilog=epilog_for("doc export-markdown"))
+def export_markdown_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    block_id: list[str] | None = typer.Option(
+        None,
+        "--block",
+        help="Block ID to export (repeatable). Default: export full doc.",
+    ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Emit API JSON envelope instead of plain markdown text.",
+    ),
+) -> None:
+    """Export doc content as markdown."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    data = execute(
+        opts,
+        EXPORT_MARKDOWN_FROM_DOC,
+        {"doc": doc_id, "blocks": block_id or None},
+    )
+    result = data.get("export_markdown_from_doc") or {}
+    if raw:
+        opts.emit(result)
+        return
+    if not result.get("success"):
+        err = result.get("error") or "export_markdown_from_doc failed"
+        typer.secho(f"error: {err}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=5)
+    typer.echo(result.get("markdown") or "")
+
+
+@app.command("version-history", epilog=epilog_for("doc version-history"))
+def version_history_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help="Optional lower-bound ISO8601 timestamp.",
+    ),
+    until: str | None = typer.Option(
+        None,
+        "--until",
+        help="Optional upper-bound ISO8601 timestamp.",
+    ),
+) -> None:
+    """Fetch restoring points for a doc (API 2026-04+)."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    data = execute(opts, DOC_VERSION_HISTORY, {"doc": doc_id, "since": since, "until": until})
+    opts.emit(data.get("doc_version_history") or {})
+
+
+@app.command("version-diff", epilog=epilog_for("doc version-diff"))
+def version_diff_cmd(
+    ctx: typer.Context,
+    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    date: str = typer.Option(..., "--date", help="Newer restoring-point ISO8601 timestamp."),
+    prev_date: str = typer.Option(
+        ...,
+        "--prev-date",
+        help="Older restoring-point ISO8601 timestamp.",
+    ),
+) -> None:
+    """Fetch block-level diff between two restoring points (API 2026-04+)."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    data = execute(opts, DOC_VERSION_DIFF, {"doc": doc_id, "date": date, "prev": prev_date})
+    opts.emit(data.get("doc_version_diff") or {})
 
 
 @app.command("update-block", epilog=epilog_for("doc update-block"))

@@ -28,7 +28,7 @@ from mondo.api.queries import (
     COLUMN_CONTEXT,
     CREATE_DOC_BLOCK,
     CREATE_DOC_ON_ITEM,
-    DOCS_BY_OBJECT_ID,
+    DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
 )
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit
@@ -43,6 +43,8 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+
+_DOC_BLOCKS_PAGE_SIZE = 100
 
 
 class DocFormat(StrEnum):
@@ -84,12 +86,32 @@ def _fetch_doc_column_value(
 
 
 def _fetch_doc_blocks(client: MondayClient, object_id: int) -> dict[str, Any]:
-    data = _exec(client, DOCS_BY_OBJECT_ID, {"objs": [object_id]})
-    docs = data.get("docs") or []
-    if not docs:
-        raise NotFoundError(f"no workspace doc found for object_id {object_id}")
-    doc: dict[str, Any] = docs[0]
-    return doc
+    page = 1
+    merged: dict[str, Any] | None = None
+    all_blocks: list[dict[str, Any]] = []
+
+    while True:
+        data = _exec(
+            client,
+            DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
+            {"objs": [object_id], "limit": _DOC_BLOCKS_PAGE_SIZE, "page": page},
+        )
+        docs = data.get("docs") or []
+        if not docs:
+            raise NotFoundError(f"no workspace doc found for object_id {object_id}")
+        doc = docs[0]
+        page_blocks = doc.get("blocks") or []
+        if merged is None:
+            merged = {k: v for k, v in doc.items() if k != "blocks"}
+        if isinstance(page_blocks, list):
+            all_blocks.extend(page_blocks)
+        if len(page_blocks) < _DOC_BLOCKS_PAGE_SIZE:
+            break
+        page += 1
+
+    assert merged is not None
+    merged["blocks"] = all_blocks
+    return merged
 
 
 def _create_blocks(
