@@ -6,43 +6,26 @@ are mounted as sub-apps.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from difflib import get_close_matches
+from importlib import import_module
 import sys
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
+import click
 import typer
+from typer.core import TyperGroup
+from typer.main import get_command_from_info
+from typer.main import get_group as get_typer_group
+from typer.models import CommandInfo
 
 from mondo.cli._examples import epilog_for
-from mondo.cli.activity import app as activity_app
-from mondo.cli.aggregate import app as aggregate_app
 from mondo.cli.argv import reorder_argv
-from mondo.cli.auth import app as auth_app
-from mondo.cli.board import app as board_app
-from mondo.cli.cache import app as cache_app
-from mondo.cli.column import app as column_app
-from mondo.cli.complexity import app as complexity_app
-from mondo.cli.context import GlobalOpts
-from mondo.cli.doc import app as doc_app
-from mondo.cli.export import app as export_app
-from mondo.cli.favorite import app as favorite_app
-from mondo.cli.file import app as file_app
-from mondo.cli.folder import app as folder_app
-from mondo.cli.graphql import graphql_command
-from mondo.cli.group import app as group_app
-from mondo.cli.help import help_command
-from mondo.cli.import_ import app as import_app
-from mondo.cli.item import app as item_app
-from mondo.cli.me import account_command, me_command
-from mondo.cli.notify import app as notify_app
-from mondo.cli.subitem import app as subitem_app
-from mondo.cli.tag import app as tag_app
-from mondo.cli.team import app as team_app
-from mondo.cli.update import app as update_app
-from mondo.cli.user import app as user_app
-from mondo.cli.validation import app as validation_app
-from mondo.cli.webhook import app as webhook_app
-from mondo.cli.workspace import app as workspace_app
-from mondo.logging_ import configure_logging
 from mondo.version import __version__
+
+if TYPE_CHECKING:
+    from mondo.cli.context import GlobalOpts
 
 
 class OutputFormat(StrEnum):
@@ -53,6 +36,20 @@ class OutputFormat(StrEnum):
     tsv = "tsv"
     csv = "csv"
     none = "none"
+
+
+_HELP_OPTION_NAMES = {"help_option_names": ["-h", "--help"]}
+
+
+@dataclass(frozen=True)
+class _LazyEntry:
+    name: str
+    module: str
+    attr: str
+    help_text: str | None = None
+    epilog: str | None = None
+    hidden: bool = False
+    is_group: bool = True
 
 
 _ROOT_EPILOG = "\n\n".join(
@@ -79,16 +76,6 @@ _ROOT_EPILOG = "\n\n".join(
     ]
 )
 
-app = typer.Typer(
-    name="mondo",
-    help="Power-user CLI for the monday.com GraphQL API — az/gh/gam style.",
-    epilog=_ROOT_EPILOG,
-    no_args_is_help=True,
-    add_completion=True,
-    rich_markup_mode="rich",
-    context_settings={"help_option_names": ["-h", "--help"]},
-)
-
 _PLURAL_ALIASES: dict[str, str] = {
     "board": "boards",
     "item": "items",
@@ -110,91 +97,192 @@ _PLURAL_ALIASES: dict[str, str] = {
 }
 
 
-def _add_group(subapp: typer.Typer, *, name: str, help_text: str) -> None:
-    """Register a top-level group and an optional hidden plural alias."""
-    app.add_typer(subapp, name=name, help=help_text)
+def _group_entry(name: str, module: str, help_text: str) -> list[_LazyEntry]:
+    out = [_LazyEntry(name=name, module=module, attr="app", help_text=help_text)]
     plural = _PLURAL_ALIASES.get(name)
     if plural is not None:
-        app.add_typer(subapp, name=plural, help=help_text, hidden=True)
+        out.append(
+            _LazyEntry(
+                name=plural,
+                module=module,
+                attr="app",
+                help_text=help_text,
+                hidden=True,
+            )
+        )
+    return out
 
 
-_add_group(auth_app, name="auth", help_text="Authenticate against monday.com.")
-_add_group(
-    cache_app,
-    name="cache",
-    help_text="Inspect, refresh, and clear the local directory cache.",
+_TOP_LEVEL_ENTRIES: tuple[_LazyEntry, ...] = (
+    *_group_entry("auth", "mondo.cli.auth", "Authenticate against monday.com."),
+    *_group_entry(
+        "cache",
+        "mondo.cli.cache",
+        "Inspect, refresh, and clear the local directory cache.",
+    ),
+    *_group_entry("board", "mondo.cli.board", "Create, read, update, delete monday boards."),
+    *_group_entry("item", "mondo.cli.item", "Create, read, update, delete monday items."),
+    *_group_entry("subitem", "mondo.cli.subitem", "Create, read, update, delete subitems."),
+    *_group_entry(
+        "update",
+        "mondo.cli.update",
+        "Post, edit, like, pin, and delete item updates (comments).",
+    ),
+    *_group_entry(
+        "doc",
+        "mondo.cli.doc",
+        "Workspace-level docs (distinct from the `doc` column).",
+    ),
+    *_group_entry("webhook", "mondo.cli.webhook", "Manage monday webhook subscriptions."),
+    *_group_entry(
+        "file",
+        "mondo.cli.file",
+        "Upload files to item columns/updates; download assets.",
+    ),
+    *_group_entry("folder", "mondo.cli.folder", "Manage workspace folders."),
+    *_group_entry(
+        "tag",
+        "mondo.cli.tag",
+        "Read account-level tags; create-or-get for a board.",
+    ),
+    *_group_entry("favorite", "mondo.cli.favorite", "List the current user's favorites."),
+    *_group_entry("activity", "mondo.cli.activity", "Read a board's activity logs."),
+    *_group_entry("notify", "mondo.cli.notify", "Send monday notifications."),
+    *_group_entry(
+        "aggregate",
+        "mondo.cli.aggregate",
+        "Run SUM/COUNT/AVG aggregations on a board.",
+    ),
+    *_group_entry(
+        "validation",
+        "mondo.cli.validation",
+        "Manage server-side validation rules.",
+    ),
+    _LazyEntry(
+        name="me",
+        module="mondo.cli.me",
+        attr="me_command",
+        help_text="Print the authenticated user (id, name, teams, account).",
+        epilog=epilog_for("me"),
+        is_group=False,
+    ),
+    _LazyEntry(
+        name="account",
+        module="mondo.cli.me",
+        attr="account_command",
+        help_text="Print the current monday account (tier, plan, products).",
+        epilog=epilog_for("account"),
+        is_group=False,
+    ),
+    *_group_entry("group", "mondo.cli.group", "Manage groups within a board."),
+    *_group_entry("column", "mondo.cli.column", "Read and write monday column values."),
+    *_group_entry(
+        "workspace",
+        "mondo.cli.workspace",
+        "Manage workspaces and their members.",
+    ),
+    *_group_entry(
+        "user",
+        "mondo.cli.user",
+        "List and manage users (roles, team membership, activation).",
+    ),
+    *_group_entry("team", "mondo.cli.team", "Manage teams and their owners."),
+    *_group_entry(
+        "export",
+        "mondo.cli.export",
+        "Export a board's data to CSV/JSON/XLSX/Markdown.",
+    ),
+    *_group_entry("import", "mondo.cli.import_", "Bulk-import items from CSV into a board."),
+    *_group_entry(
+        "complexity",
+        "mondo.cli.complexity",
+        "Inspect monday's per-minute complexity budget.",
+    ),
+    _LazyEntry(
+        name="graphql",
+        module="mondo.cli.graphql",
+        attr="graphql_command",
+        help_text="Send a raw GraphQL query/mutation to monday.com.",
+        epilog=epilog_for("graphql"),
+        is_group=False,
+    ),
+    _LazyEntry(
+        name="help",
+        module="mondo.cli.help",
+        attr="help_command",
+        help_text="Show a bundled help topic, or dump the full CLI spec as JSON.",
+        is_group=False,
+    ),
 )
-_add_group(board_app, name="board", help_text="Create, read, update, delete monday boards.")
-_add_group(item_app, name="item", help_text="Create, read, update, delete monday items.")
-_add_group(subitem_app, name="subitem", help_text="Create, read, update, delete subitems.")
-_add_group(
-    update_app,
-    name="update",
-    help_text="Post, edit, like, pin, and delete item updates (comments).",
+_LAZY_ENTRY_MAP: dict[str, _LazyEntry] = {entry.name: entry for entry in _TOP_LEVEL_ENTRIES}
+_LAZY_ENTRY_ORDER: tuple[str, ...] = tuple(entry.name for entry in _TOP_LEVEL_ENTRIES)
+
+
+def _load_lazy_entry(entry: _LazyEntry) -> click.Command:
+    module = import_module(entry.module)
+    if entry.is_group:
+        click_command = get_typer_group(getattr(module, entry.attr))
+        click_command.name = entry.name
+        click_command.help = entry.help_text or click_command.help
+        click_command.hidden = entry.hidden
+        return click_command
+
+    command_info = CommandInfo(
+        name=entry.name,
+        callback=getattr(module, entry.attr),
+        context_settings=_HELP_OPTION_NAMES,
+        help=entry.help_text,
+        epilog=entry.epilog,
+        hidden=entry.hidden,
+    )
+    return get_command_from_info(
+        command_info,
+        pretty_exceptions_short=True,
+        rich_markup_mode="rich",
+    )
+
+
+class LazyMondoGroup(TyperGroup):
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        return list(_LAZY_ENTRY_ORDER)
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        command = self.commands.get(cmd_name)
+        if command is not None:
+            return command
+        entry = _LAZY_ENTRY_MAP.get(cmd_name)
+        if entry is None:
+            return None
+        command = _load_lazy_entry(entry)
+        self.commands[cmd_name] = command
+        return command
+
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError as e:
+            if self.suggest_commands and args:
+                typo = args[0]
+                matches = get_close_matches(typo, list(_LAZY_ENTRY_ORDER))
+                if matches:
+                    suggestions = ", ".join(f"{m!r}" for m in matches)
+                    message = e.message.rstrip(".")
+                    e.message = f"{message}. Did you mean {suggestions}?"
+            raise
+
+
+app = typer.Typer(
+    cls=LazyMondoGroup,
+    name="mondo",
+    help="Power-user CLI for the monday.com GraphQL API — az/gh/gam style.",
+    epilog=_ROOT_EPILOG,
+    no_args_is_help=True,
+    add_completion=True,
+    rich_markup_mode="rich",
+    context_settings=_HELP_OPTION_NAMES,
 )
-_add_group(
-    doc_app,
-    name="doc",
-    help_text="Workspace-level docs (distinct from the `doc` column).",
-)
-_add_group(webhook_app, name="webhook", help_text="Manage monday webhook subscriptions.")
-_add_group(
-    file_app,
-    name="file",
-    help_text="Upload files to item columns/updates; download assets.",
-)
-_add_group(folder_app, name="folder", help_text="Manage workspace folders.")
-_add_group(tag_app, name="tag", help_text="Read account-level tags; create-or-get for a board.")
-_add_group(favorite_app, name="favorite", help_text="List the current user's favorites.")
-_add_group(activity_app, name="activity", help_text="Read a board's activity logs.")
-_add_group(notify_app, name="notify", help_text="Send monday notifications.")
-_add_group(
-    aggregate_app,
-    name="aggregate",
-    help_text="Run SUM/COUNT/AVG aggregations on a board.",
-)
-_add_group(validation_app, name="validation", help_text="Manage server-side validation rules.")
-app.command(
-    name="me",
-    help="Print the authenticated user (id, name, teams, account).",
-    epilog=epilog_for("me"),
-)(me_command)
-app.command(
-    name="account",
-    help="Print the current monday account (tier, plan, products).",
-    epilog=epilog_for("account"),
-)(account_command)
-_add_group(group_app, name="group", help_text="Manage groups within a board.")
-_add_group(column_app, name="column", help_text="Read and write monday column values.")
-_add_group(
-    workspace_app, name="workspace", help_text="Manage workspaces and their members."
-)
-_add_group(
-    user_app,
-    name="user",
-    help_text="List and manage users (roles, team membership, activation).",
-)
-_add_group(team_app, name="team", help_text="Manage teams and their owners.")
-_add_group(
-    export_app,
-    name="export",
-    help_text="Export a board's data to CSV/JSON/XLSX/Markdown.",
-)
-_add_group(import_app, name="import", help_text="Bulk-import items from CSV into a board.")
-_add_group(
-    complexity_app,
-    name="complexity",
-    help_text="Inspect monday's per-minute complexity budget.",
-)
-app.command(
-    name="graphql",
-    help="Send a raw GraphQL query/mutation to monday.com.",
-    epilog=epilog_for("graphql"),
-)(graphql_command)
-app.command(
-    name="help",
-    help="Show a bundled help topic, or dump the full CLI spec as JSON.",
-)(help_command)
 
 
 def _version_callback(value: bool) -> None:
@@ -260,6 +348,9 @@ def _root(
     ),
 ) -> None:
     """Global options available on every command."""
+    from mondo.cli.context import GlobalOpts
+    from mondo.logging_ import configure_logging
+
     configure_logging(verbose=verbose, debug=debug)
     ctx.obj = GlobalOpts(
         profile_name=profile,

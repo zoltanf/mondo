@@ -12,7 +12,7 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -26,15 +26,13 @@ from mondo.api.queries import (
     TEAM_DELETE,
     TEAMS_LIST,
 )
-from mondo.cache.directory import get_teams as cache_get_teams
-from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-from mondo.cli._cache_invalidate import invalidate_entity
-from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
-from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -71,6 +69,8 @@ def list_cmd(
     ),
 ) -> None:
     """List teams (optionally filtered to specific IDs or by fuzzy name)."""
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
@@ -92,6 +92,8 @@ def list_cmd(
     data = execute(opts, TEAMS_LIST, variables)
     teams = data.get("teams") or []
     if name_fuzzy is not None:
+        from mondo.cli._filters import apply_fuzzy
+
         teams = apply_fuzzy(
             teams,
             name_fuzzy,
@@ -112,6 +114,9 @@ def _list_teams_via_cache(
     max_items: int | None,
     refresh: bool,
 ) -> None:
+    from mondo.cache.directory import get_teams as cache_get_teams
+    from mondo.cli._filters import apply_fuzzy
+
     if opts.dry_run:
         opts.emit(
             {
@@ -190,6 +195,8 @@ def create_cmd(
     ),
 ) -> None:
     """Create a new team."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     attrs: dict[str, Any] = {"name": name}
     if subscriber:
@@ -213,6 +220,9 @@ def delete_cmd(
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a team (permanent)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._confirm import confirm_or_abort as _confirm
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     team_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="team")
     if not hard:
@@ -236,6 +246,8 @@ def add_users_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
 ) -> None:
     """Add one or more users to a team."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, ADD_USERS_TO_TEAM, variables)
@@ -250,6 +262,8 @@ def remove_users_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
 ) -> None:
     """Remove one or more users from a team."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, REMOVE_USERS_FROM_TEAM, variables)
@@ -264,6 +278,8 @@ def assign_owners_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID to promote to owner (repeatable)."),
 ) -> None:
     """Promote one or more users to team owner."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, ASSIGN_TEAM_OWNERS, variables)
@@ -280,6 +296,8 @@ def remove_owners_cmd(
     ),
 ) -> None:
     """Demote one or more users from team owner."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, REMOVE_TEAM_OWNERS, variables)

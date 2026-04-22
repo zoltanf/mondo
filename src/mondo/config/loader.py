@@ -14,8 +14,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ruamel.yaml import YAML
-
 from mondo.config.schema import Config
 
 DEFAULT_API_URL = "https://api.monday.com/v2"
@@ -62,6 +60,8 @@ def load_config(path: Path | None = None, *, strict: bool = False) -> Config:
         if strict:
             raise ConfigFileNotFoundError(f"config file not found: {p}")
         return Config()
+
+    from ruamel.yaml import YAML
 
     yaml = YAML(typ="safe")
     raw = yaml.load(p.read_text()) or {}

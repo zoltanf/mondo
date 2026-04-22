@@ -5,7 +5,6 @@ from __future__ import annotations
 import getpass
 import sys
 
-import keyring
 import typer
 
 from mondo.api.auth import ENV_VAR, KEYRING_SERVICE
@@ -96,6 +95,8 @@ def login(
     ),
 ) -> None:
     """Store an API token for this profile, preferring the OS keyring."""
+    import keyring
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     username = opts.profile_name or "default"
 
@@ -136,6 +137,8 @@ def login(
 @app.command(epilog=epilog_for("auth logout"))
 def logout(ctx: typer.Context) -> None:
     """Remove the stored token for this profile from the keyring."""
+    import keyring
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     username = opts.profile_name or "default"
 

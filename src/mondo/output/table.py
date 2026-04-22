@@ -12,9 +12,6 @@ from __future__ import annotations
 
 from typing import Any, TextIO
 
-from rich.console import Console
-from rich.table import Table
-
 _SCALAR_TYPES = (str, int, float, bool, type(None))
 
 
@@ -46,6 +43,9 @@ def _ordered_columns(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def render(data: Any, stream: TextIO, tty: bool) -> None:
+    from rich.console import Console
+    from rich.table import Table
+
     console = Console(
         file=stream,
         force_terminal=tty,

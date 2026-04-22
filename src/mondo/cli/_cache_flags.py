@@ -9,11 +9,13 @@ copy-pasted in each caller. This module centralizes them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import typer
 
-from mondo.cache import ResolvedCacheConfig
-from mondo.cli.context import GlobalOpts
+if TYPE_CHECKING:
+    from mondo.cache import ResolvedCacheConfig
+    from mondo.cli.context import GlobalOpts
 
 
 def reject_mutually_exclusive(no_cache: bool, refresh_cache: bool) -> None:

@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError, UsageError
-from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
-from mondo.api.polling import wait_for_items_count_stable
+from mondo.api.errors import MondoError
+from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE
 from mondo.api.queries import (
     BOARD_ARCHIVE,
     BOARD_CREATE,
@@ -24,24 +23,15 @@ from mondo.api.queries import (
     BOARD_GET,
     BOARD_ITEMS_COUNT,
     BOARD_UPDATE,
-    build_boards_list_query,
 )
-from mondo.cache.directory import get_boards as cache_get_boards
-from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-from mondo.cli._cache_invalidate import invalidate_entity
-from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, execute_read
-from mondo.cli._filters import apply_fuzzy, compile_name_filter
-from mondo.cli._filters import name_matches as _name_matches
-from mondo.cli._list_decorate import (
-    apply_board_urls,
-    enrich_workspaces_best_effort,
-)
-from mondo.cli._normalize import normalize_board_entry
 from mondo.cli._resolve import resolve_required_id
-from mondo.cli._url import MondayIdParam, board_url, get_tenant_slug, warn_cross_type
+from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -254,6 +244,15 @@ def list_cmd(
     --workspace to restrict to a workspace, and --state to include archived
     boards. Served from the local directory cache when available.
     """
+    from mondo.api.errors import UsageError
+    from mondo.api.pagination import iter_boards_page
+    from mondo.api.queries import build_boards_list_query
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+    from mondo.cli._filters import apply_fuzzy, compile_name_filter
+    from mondo.cli._filters import name_matches as _name_matches
+    from mondo.cli._list_decorate import apply_board_urls, enrich_workspaces_best_effort
+    from mondo.cli._normalize import normalize_board_entry
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
 
@@ -382,6 +381,12 @@ def _list_via_cache(
     The cache stores the full unfiltered directory; every filter here runs
     client-side against that list.
     """
+    from mondo.cache.directory import get_boards as cache_get_boards
+    from mondo.cli._filters import apply_fuzzy
+    from mondo.cli._filters import name_matches as _name_matches
+    from mondo.cli._list_decorate import apply_board_urls, enrich_workspaces_best_effort
+    from mondo.cli._normalize import normalize_board_entry
+
     if opts.dry_run:
         opts.emit(
             {
@@ -477,6 +482,9 @@ def get_cmd(
     ),
 ) -> None:
     """Fetch a single board by ID with columns, groups, and subscribers."""
+    from mondo.cli._normalize import normalize_board_entry
+    from mondo.cli._url import board_url, get_tenant_slug, warn_cross_type
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     data = execute(opts, BOARD_GET, {"id": board_id})
@@ -526,6 +534,9 @@ def create_cmd(
     ),
 ) -> None:
     """Create a new board."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._normalize import normalize_board_entry
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables: dict[str, Any] = {
         "name": name,
@@ -559,6 +570,8 @@ def update_cmd(
     value: str = typer.Option(..., "--value", help="New value for the attribute."),
 ) -> None:
     """Update a single board attribute."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     data = execute(
@@ -578,6 +591,9 @@ def archive_cmd(
     id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
 ) -> None:
     """Archive a board (reversible via monday UI within 30 days)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._confirm import confirm_or_abort as _confirm
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     _confirm(opts, f"Archive board {board_id}?")
@@ -596,6 +612,9 @@ def delete_cmd(
     ),
 ) -> None:
     """Delete a board (permanent — prefer `archive` unless --hard is passed)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._confirm import confirm_or_abort as _confirm
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     if not hard:
@@ -659,6 +678,9 @@ def duplicate_cmd(
     Pass --wait to block until the copy's items_count stabilises; useful in
     scripts that depend on the copy being fully populated before the next step.
     """
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._normalize import normalize_board_entry
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     if workspace is None:
@@ -697,6 +719,8 @@ def duplicate_cmd(
         source_items_count = _items_count_or_none(opts, board_id)
         client = client_or_exit(opts)
         try:
+            from mondo.api.polling import wait_for_items_count_stable
+
             with client:
                 final_count = wait_for_items_count_stable(
                     client,

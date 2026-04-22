@@ -9,11 +9,13 @@ a silent exit 1.
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING
 
 import click
 import typer
 
-from mondo.cli.context import GlobalOpts
+if TYPE_CHECKING:
+    from mondo.cli.context import GlobalOpts
 
 
 def confirm_or_abort(opts: GlobalOpts, prompt: str) -> None:

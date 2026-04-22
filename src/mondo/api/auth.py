@@ -16,11 +16,26 @@ import os
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-
-import keyring
+from typing import TYPE_CHECKING, Any
 
 from mondo.api.errors import AuthError
-from mondo.config.schema import Profile
+
+if TYPE_CHECKING:
+    from mondo.config.schema import Profile
+
+
+class _LazyKeyring:
+    def __getattr__(self, name: str) -> Any:
+        import keyring as _keyring
+
+        return getattr(_keyring, name)
+
+
+keyring: Any = _LazyKeyring()
+
+
+def _keyring_backend() -> Any:
+    return keyring
 
 ENV_VAR = "MONDAY_API_TOKEN"
 KEYRING_SERVICE = "mondo"
@@ -85,9 +100,11 @@ def resolve_token(
             config_path=config_path,
         )
 
+    keyring_backend = _keyring_backend()
+
     if profile.api_token_keyring:
         service, username = _parse_keyring_key(profile.api_token_keyring)
-        stored = keyring.get_password(service, username)
+        stored = keyring_backend.get_password(service, username)
         if stored:
             return ResolvedToken(
                 token=stored,
@@ -101,7 +118,7 @@ def resolve_token(
     # {KEYRING_SERVICE}:{profile_name or "default"}. Check that slot as a
     # fallback so the login → status roundtrip works without config.yaml.
     implicit_username = profile_name or "default"
-    stored = keyring.get_password(KEYRING_SERVICE, implicit_username)
+    stored = keyring_backend.get_password(KEYRING_SERVICE, implicit_username)
     if stored:
         return ResolvedToken(
             token=stored,

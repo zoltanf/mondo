@@ -7,12 +7,12 @@ Main Workspace cannot be deleted. Uses page-based pagination like boards.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from mondo.api.errors import MondoError
-from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
+from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE
 from mondo.api.queries import (
     WORKSPACE_ADD_TEAMS,
     WORKSPACE_ADD_USERS,
@@ -24,15 +24,13 @@ from mondo.api.queries import (
     WORKSPACE_UPDATE,
     WORKSPACES_LIST_PAGE,
 )
-from mondo.cache.directory import get_workspaces as cache_get_workspaces
-from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-from mondo.cli._cache_invalidate import invalidate_entity
-from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, execute_read
-from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -94,6 +92,8 @@ def list_cmd(
     ),
 ) -> None:
     """List workspaces. Served from the local directory cache when available."""
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
@@ -126,6 +126,8 @@ def list_cmd(
         )
         raise typer.Exit(0)
 
+    from mondo.api.pagination import iter_boards_page
+
     client = client_or_exit(opts)
     try:
         with client:
@@ -143,6 +145,8 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     if name_fuzzy is not None:
+        from mondo.cli._filters import apply_fuzzy
+
         items = apply_fuzzy(
             items,
             name_fuzzy,
@@ -165,6 +169,9 @@ def _list_workspaces_via_cache(
     max_items: int | None,
     refresh: bool,
 ) -> None:
+    from mondo.cache.directory import get_workspaces as cache_get_workspaces
+    from mondo.cli._filters import apply_fuzzy
+
     if opts.dry_run:
         opts.emit(
             {
@@ -250,6 +257,8 @@ def create_cmd(
     ),
 ) -> None:
     """Create a new workspace."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {
         "name": name,
@@ -276,6 +285,8 @@ def update_cmd(
     ),
 ) -> None:
     """Update a workspace's name / description / kind."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
     attributes: dict[str, Any] = {}
@@ -308,6 +319,9 @@ def delete_cmd(
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a workspace (permanent; Main Workspace cannot be deleted)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._confirm import confirm_or_abort as _confirm
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
     if not hard:

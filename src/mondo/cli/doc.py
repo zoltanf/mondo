@@ -22,25 +22,19 @@ import re
 import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError, UsageError
-from mondo.api.pagination import iter_boards_page
+from mondo.api.errors import MondoError
 from mondo.api.queries import (
-    BOARD_GET,
     CREATE_DOC_BLOCK,
     CREATE_DOC_IN_WORKSPACE,
     DELETE_DOC_BLOCK,
     DOC_GET_BY_ID,
     DOCS_BY_OBJECT_ID,
     UPDATE_DOC_BLOCK,
-    build_docs_list_query,
 )
-from mondo.cache.directory import get_docs as cache_get_docs
-from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
     client_or_exit,
@@ -48,18 +42,13 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
 )
-from mondo.cli._filters import apply_fuzzy, compile_name_filter
-from mondo.cli._filters import name_matches as _name_matches
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._list_decorate import (
-    enrich_workspaces_best_effort,
-    strip_url_fields,
-)
-from mondo.cli._normalize import normalize_doc_entry
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
-from mondo.docs import blocks_to_markdown, markdown_to_blocks
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -208,6 +197,10 @@ def list_cmd(
     --workspace to restrict to workspaces, and --kind to pick public/private/
     share. Served from the local directory cache when available.
     """
+    from mondo.api.errors import UsageError
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+    from mondo.cli._filters import compile_name_filter
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
 
@@ -237,6 +230,8 @@ def list_cmd(
             with_url=with_url,
         )
         return
+
+    from mondo.api.queries import build_docs_list_query
 
     query, variables = build_docs_list_query(
         object_ids=object_id or None,
@@ -269,6 +264,12 @@ def list_cmd(
         or name_fuzzy is not None
     )
     fetch_cap = None if client_side_filter_active else max_items
+
+    from mondo.api.pagination import iter_boards_page
+    from mondo.cli._filters import apply_fuzzy
+    from mondo.cli._filters import name_matches as _name_matches
+    from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
+    from mondo.cli._normalize import normalize_doc_entry
 
     client = client_or_exit(opts)
     try:
@@ -330,6 +331,12 @@ def _list_via_cache(
     refresh: bool,
     with_url: bool,
 ) -> None:
+    from mondo.cache.directory import get_docs as cache_get_docs
+    from mondo.cli._filters import apply_fuzzy
+    from mondo.cli._filters import name_matches as _name_matches
+    from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
+    from mondo.cli._normalize import normalize_doc_entry
+
     if opts.dry_run:
         opts.emit(
             {
@@ -420,6 +427,9 @@ def get_cmd(
     ),
 ) -> None:
     """Fetch a single doc by id or object_id, with its full block tree."""
+    from mondo.cli._normalize import normalize_doc_entry
+    from mondo.docs import blocks_to_markdown
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
     sources = sum(x is not None for x in (doc_id, object_id))
@@ -476,6 +486,8 @@ def _emit_doc_not_found(
     skipped for --id (internal doc ids don't overlap with board ids in
     practice).
     """
+    from mondo.api.queries import BOARD_GET
+
     if object_id is not None:
         probe = exec_or_exit(client, BOARD_GET, {"id": object_id})
         boards = probe.get("boards") or []
@@ -504,6 +516,8 @@ def create_cmd(
     ),
 ) -> None:
     """Create a new doc inside a workspace."""
+    from mondo.cli._normalize import normalize_doc_entry
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {
         "workspace": workspace,
@@ -595,6 +609,8 @@ def add_content_cmd(
     Block types supported via `mondo.docs.markdown_to_blocks`: headings h1-h3,
     paragraphs, bullet / numbered lists, blockquotes, fenced code, horizontal rules.
     """
+    from mondo.docs import markdown_to_blocks
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     md = _load_markdown(markdown, from_file, from_stdin)
     blocks = markdown_to_blocks(md)

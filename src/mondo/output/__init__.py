@@ -9,24 +9,37 @@ Public surface:
 from __future__ import annotations
 
 from collections.abc import Callable
+from importlib import import_module
 from typing import Any, TextIO
-
-from mondo.output import csv_, json_, jsonc, none_, table, tsv, yaml_
 
 Formatter = Callable[[Any, TextIO, bool], None]
 
-
-_REGISTRY: dict[str, Formatter] = {
-    "json": json_.render,
-    "jsonc": jsonc.render,
-    "yaml": yaml_.render,
-    "csv": csv_.render,
-    "tsv": tsv.render,
-    "none": none_.render,
-    "table": table.render,
+_MODULES: dict[str, str] = {
+    "json": "mondo.output.json_",
+    "jsonc": "mondo.output.jsonc",
+    "yaml": "mondo.output.yaml_",
+    "csv": "mondo.output.csv_",
+    "tsv": "mondo.output.tsv",
+    "none": "mondo.output.none_",
+    "table": "mondo.output.table",
 }
 
-AVAILABLE_FORMATS: frozenset[str] = frozenset(_REGISTRY)
+AVAILABLE_FORMATS: frozenset[str] = frozenset(_MODULES)
+_FORMATTER_CACHE: dict[str, Formatter] = {}
+
+
+def _resolve_formatter(fmt: str) -> Formatter:
+    renderer = _FORMATTER_CACHE.get(fmt)
+    if renderer is not None:
+        return renderer
+    try:
+        module_name = _MODULES[fmt]
+    except KeyError as e:
+        raise ValueError(f"unknown format {fmt!r}; choose from {sorted(AVAILABLE_FORMATS)}") from e
+    module = import_module(module_name)
+    renderer = module.render
+    _FORMATTER_CACHE[fmt] = renderer
+    return renderer
 
 
 def format_output(
@@ -41,10 +54,7 @@ def format_output(
     `tty` hints formatters that support colorization (jsonc, table) whether
     the destination is a terminal. Non-terminal streams get plain output.
     """
-    try:
-        renderer = _REGISTRY[fmt]
-    except KeyError as e:
-        raise ValueError(f"unknown format {fmt!r}; choose from {sorted(AVAILABLE_FORMATS)}") from e
+    renderer = _resolve_formatter(fmt)
     renderer(data, stream, tty)
 
 

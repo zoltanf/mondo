@@ -11,29 +11,25 @@ Per monday-api.md §14:
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from mondo.api.errors import MondoError
-from mondo.api.pagination import iter_boards_page
 from mondo.api.queries import (
     FOLDER_CREATE,
     FOLDER_DELETE,
     FOLDER_GET,
     FOLDER_UPDATE,
-    build_folders_list_query,
 )
-from mondo.cache.directory import get_folders as cache_get_folders
-from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-from mondo.cli._cache_invalidate import invalidate_entity
-from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._normalize import normalize_folder_entry
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -65,6 +61,8 @@ def list_cmd(
     ),
 ) -> None:
     """List folders (page-based). Served from the local directory cache when available."""
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=None)
@@ -82,6 +80,8 @@ def list_cmd(
                 }
             )
             raise typer.Exit(0)
+
+        from mondo.cache.directory import get_folders as cache_get_folders
 
         store = opts.build_cache_store("folders")
         client = client_or_exit(opts)
@@ -102,6 +102,10 @@ def list_cmd(
         return
 
     # Live path
+    from mondo.api.pagination import iter_boards_page
+    from mondo.api.queries import build_folders_list_query
+    from mondo.cli._normalize import normalize_folder_entry
+
     query, variables = build_folders_list_query(workspace_ids=workspace or None)
     if opts.dry_run:
         opts.emit(
@@ -183,6 +187,8 @@ def tree_cmd(
     ),
 ) -> None:
     """Show folders as a hierarchy tree, grouped by workspace."""
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=None)
@@ -196,6 +202,8 @@ def tree_cmd(
             })
             raise typer.Exit(0)
 
+        from mondo.cache.directory import get_folders as cache_get_folders
+
         store = opts.build_cache_store("folders")
         client = client_or_exit(opts)
         try:
@@ -207,6 +215,10 @@ def tree_cmd(
         folders = cached.entries
     else:
         # Live path
+        from mondo.api.pagination import iter_boards_page
+        from mondo.api.queries import build_folders_list_query
+        from mondo.cli._normalize import normalize_folder_entry
+
         query, variables = build_folders_list_query(workspace_ids=workspace or None)
         if opts.dry_run:
             opts.emit({
@@ -310,6 +322,8 @@ def get_cmd(
     id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
 ) -> None:
     """Fetch a single folder by ID."""
+    from mondo.cli._normalize import normalize_folder_entry
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     variables = {"ids": [folder_id]}
@@ -341,6 +355,8 @@ def create_cmd(
     ),
 ) -> None:
     """Create a new folder inside a workspace."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables: dict[str, Any] = {
         "name": name,
@@ -371,6 +387,8 @@ def update_cmd(
     ),
 ) -> None:
     """Update a folder (name / color / position)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     position_obj: Any = None
@@ -405,6 +423,9 @@ def delete_cmd(
     ),
 ) -> None:
     """Delete a folder (only the creator can delete; contained boards are archived)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._confirm import confirm_or_abort as _confirm
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
     if not hard:

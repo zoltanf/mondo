@@ -13,12 +13,12 @@ Per monday-api.md §14:
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from mondo.api.errors import MondoError
-from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
+from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE
 from mondo.api.queries import (
     ADD_USERS_TO_TEAM,
     REMOVE_USERS_FROM_TEAM,
@@ -31,15 +31,13 @@ from mondo.api.queries import (
     USERS_UPDATE_AS_MEMBERS,
     USERS_UPDATE_AS_VIEWERS,
 )
-from mondo.cache.directory import get_users as cache_get_users
-from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-from mondo.cli._cache_invalidate import invalidate_entity
-from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute
-from mondo.cli._filters import apply_fuzzy
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -121,6 +119,8 @@ def list_cmd(
     ),
 ) -> None:
     """List users. Served from the local directory cache when available."""
+    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
@@ -159,6 +159,8 @@ def list_cmd(
         )
         raise typer.Exit(0)
 
+    from mondo.api.pagination import iter_boards_page
+
     client = client_or_exit(opts)
     try:
         with client:
@@ -176,6 +178,8 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     if name_fuzzy is not None:
+        from mondo.cli._filters import apply_fuzzy
+
         items = apply_fuzzy(
             items,
             name_fuzzy,
@@ -201,6 +205,9 @@ def _list_users_via_cache(
     max_items: int | None,
     refresh: bool,
 ) -> None:
+    from mondo.cache.directory import get_users as cache_get_users
+    from mondo.cli._filters import apply_fuzzy
+
     if opts.dry_run:
         opts.emit(
             {
@@ -297,6 +304,9 @@ def deactivate_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID to deactivate (repeatable)."),
 ) -> None:
     """Deactivate one or more users."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._confirm import confirm_or_abort as _confirm
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _confirm(opts, f"Deactivate {len(user)} user(s)?")
     variables = {"ids": user}
@@ -311,6 +321,8 @@ def activate_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID to reactivate (repeatable)."),
 ) -> None:
     """Reactivate one or more users."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"ids": user}
     data = execute(opts, USERS_ACTIVATE, variables)
@@ -333,6 +345,8 @@ def update_role_cmd(
 
     monday ships four separate mutations; mondo dispatches to the right one.
     """
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     query, response_key = _ROLE_TO_MUTATION[role]
     variables = {"ids": user}
@@ -348,6 +362,8 @@ def add_to_team_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
 ) -> None:
     """Add one or more users to a team."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, ADD_USERS_TO_TEAM, variables)
@@ -362,6 +378,8 @@ def remove_from_team_cmd(
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
 ) -> None:
     """Remove one or more users from a team."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables = {"team": team_id, "users": user}
     data = execute(opts, REMOVE_USERS_FROM_TEAM, variables)

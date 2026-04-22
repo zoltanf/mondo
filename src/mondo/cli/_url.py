@@ -15,12 +15,13 @@ Monday's `Item.url` is the authoritative source for item URLs; the
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import click
 import typer
 
-from mondo.api.client import MondayClient
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 IdKind = Literal["board", "item"]
 

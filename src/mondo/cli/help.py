@@ -18,8 +18,6 @@ from typing import Any
 
 import click
 import typer
-from rich.console import Console
-from rich.markdown import Markdown
 
 from mondo.cli._examples import EXAMPLES
 
@@ -178,6 +176,9 @@ def help_command(
     import sys
 
     if sys.stdout.isatty():
+        from rich.console import Console
+        from rich.markdown import Markdown
+
         Console().print(Markdown(body))
     else:
         typer.echo(body)

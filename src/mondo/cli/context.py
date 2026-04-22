@@ -8,16 +8,14 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
-from mondo.api.auth import ResolvedToken, resolve_token
-from mondo.api.client import MondayClient
-from mondo.cache import CacheStore, ResolvedCacheConfig, resolve_cache_config
-from mondo.cache.store import EntityType
-from mondo.config.loader import config_path, load_config
-from mondo.config.schema import Config
-from mondo.output import choose_default_format, format_output
-from mondo.output.query import apply_query
+if TYPE_CHECKING:
+    from mondo.api.auth import ResolvedToken
+    from mondo.api.client import MondayClient
+    from mondo.cache import CacheStore, ResolvedCacheConfig
+    from mondo.cache.store import EntityType
+    from mondo.config.schema import Config
 
 
 @dataclass
@@ -44,6 +42,8 @@ class GlobalOpts:
 
     def _load(self) -> Config:
         if self._config is None:
+            from mondo.config.loader import load_config
+
             self._config = load_config()
         return self._config
 
@@ -65,12 +65,18 @@ class GlobalOpts:
             if default_tty_override is not None
             else hasattr(out, "isatty") and out.isatty()
         )
+        from mondo.output import choose_default_format, format_output
+        from mondo.output.query import apply_query
+
         fmt = self.output or choose_default_format(is_tty=is_tty)
         projected = apply_query(data, self.query)
         format_output(projected, fmt=fmt, stream=out, tty=is_tty)
 
     def resolve_token(self) -> ResolvedToken:
         """Run the token resolution chain using this invocation's options."""
+        from mondo.api.auth import resolve_token
+        from mondo.config.loader import config_path
+
         cfg = self._load()
         profile = cfg.get_profile(self.profile_name)
         return resolve_token(
@@ -82,6 +88,10 @@ class GlobalOpts:
 
     def build_client(self) -> MondayClient:
         """Convenience: resolve the token, pick the API version, build the client."""
+        from mondo.api.auth import resolve_token
+        from mondo.api.client import MondayClient
+        from mondo.config.loader import config_path
+
         cfg = self._load()
         profile = cfg.get_profile(self.profile_name)
         resolved = resolve_token(
@@ -96,6 +106,8 @@ class GlobalOpts:
     def resolve_cache_config(self) -> ResolvedCacheConfig:
         """Resolve the fully-merged cache configuration for this invocation."""
         if self._cache_config is None:
+            from mondo.cache import resolve_cache_config
+
             self._cache_config = resolve_cache_config(
                 self._load(), profile_name=self.profile_name
             )
@@ -120,6 +132,8 @@ class GlobalOpts:
         `scope` turns the store into a per-scope file at
         `<cache_dir>/<entity_type>/<scope>.json` (e.g. per-board for columns).
         """
+        from mondo.cache import CacheStore
+
         resolved = self.resolve_cache_config()
         return CacheStore(
             entity_type=entity_type,

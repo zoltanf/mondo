@@ -884,6 +884,17 @@ uv run ruff format src tests # format
 uv run mypy src              # strict type-check
 ```
 
+The default suite skips live monday.com writes. To run the real playground
+integration test that creates and deletes folders, boards, groups, columns,
+and items in workspace `592446`:
+
+```bash
+export MONDAY_TEST_TOKEN="<personal-api-token>"
+uv run pytest -m integration tests/integration/test_live_writes.py
+```
+
+Override the workspace if needed with `MONDAY_TEST_WORKSPACE_ID=<id>`.
+
 ## Releasing
 
 Releases are fully automated once you push a `v*` tag. The local driver script

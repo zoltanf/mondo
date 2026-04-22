@@ -12,16 +12,18 @@ mutation query in dry-run mode) uses `execute_read`.
 
 from __future__ import annotations
 
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import typer
 
-from mondo.api.client import MondayClient
-from mondo.api.errors import MondoError
-from mondo.cli.context import GlobalOpts
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
+    from mondo.cli.context import GlobalOpts
 
 
 def client_or_exit(opts: GlobalOpts) -> MondayClient:
+    from mondo.api.errors import MondoError
+
     try:
         return opts.build_client()
     except MondoError as e:
@@ -32,6 +34,8 @@ def client_or_exit(opts: GlobalOpts) -> MondayClient:
 def exec_or_exit(
     client: MondayClient, query: str, variables: dict[str, Any]
 ) -> dict[str, Any]:
+    from mondo.api.errors import MondoError
+
     try:
         result = client.execute(query, variables=variables)
     except MondoError as e:
@@ -51,6 +55,8 @@ def execute_read(
     opts: GlobalOpts, query: str, variables: dict[str, Any]
 ) -> dict[str, Any]:
     """Build client, run the query, handle `MondoError`. No dry-run gate."""
+    from mondo.api.errors import MondoError
+
     client = client_or_exit(opts)
     try:
         with client:

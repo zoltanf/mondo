@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from openpyxl import Workbook  # type: ignore[import-untyped]
 
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError
@@ -146,6 +145,8 @@ def _write_xlsx(
     subitems_headers: list[str] | None,
     out_path: Path,
 ) -> None:
+    from openpyxl import Workbook  # type: ignore[import-untyped]
+
     wb = Workbook()
     ws = wb.active
     assert ws is not None

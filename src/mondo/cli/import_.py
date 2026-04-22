@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from ruamel.yaml import YAML
 
 from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError, UsageError
@@ -61,6 +60,8 @@ def _parse_settings(raw: str | None) -> dict[str, Any]:
 def _load_mapping(path: Path | None) -> dict[str, Any]:
     if path is None:
         return {}
+    from ruamel.yaml import YAML
+
     yaml = YAML(typ="safe")
     with path.open("r", encoding="utf-8") as f:
         data = yaml.load(f) or {}
