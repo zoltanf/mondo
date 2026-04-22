@@ -51,6 +51,7 @@ jobs:
         run: |
           uv run pyinstaller --onefile --name mondo --paths src \
             --collect-data mondo.help --hidden-import mondo.help \
+            --collect-submodules mondo.cli --collect-submodules mondo.output \
             src/mondo/cli/main.py
 
       - name: Build binary (windows)
@@ -59,6 +60,7 @@ jobs:
         run: |
           uv run pyinstaller --onefile --name mondo --paths src `
             --collect-data mondo.help --hidden-import mondo.help `
+            --collect-submodules mondo.cli --collect-submodules mondo.output `
             src/mondo/cli/main.py
 
       - name: Smoke test (unix)
