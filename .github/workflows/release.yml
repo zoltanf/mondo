@@ -51,6 +51,7 @@ jobs:
         run: |
           uv run pyinstaller --onefile --name mondo --paths src \
             --collect-data mondo.help --hidden-import mondo.help \
+            --collect-data mondo.skill --hidden-import mondo.skill \
             --collect-submodules mondo.cli --collect-submodules mondo.output \
             src/mondo/cli/main.py
 
@@ -60,6 +61,7 @@ jobs:
         run: |
           uv run pyinstaller --onefile --name mondo --paths src `
             --collect-data mondo.help --hidden-import mondo.help `
+            --collect-data mondo.skill --hidden-import mondo.skill `
             --collect-submodules mondo.cli --collect-submodules mondo.output `
             src/mondo/cli/main.py
 
@@ -69,6 +71,8 @@ jobs:
           ./dist/mondo --version
           ./dist/mondo --help > /dev/null
           ./dist/mondo help codecs > /dev/null
+          ./dist/mondo skill install --global
+          test -f "$HOME/.claude/skills/mondo/SKILL.md"
 
       - name: Smoke test (windows)
         if: runner.os == 'Windows'
@@ -77,6 +81,8 @@ jobs:
           .\dist\mondo.exe --version
           .\dist\mondo.exe --help | Out-Null
           .\dist\mondo.exe help codecs | Out-Null
+          .\dist\mondo.exe skill install --global | Out-Null
+          if (-not (Test-Path "$HOME/.claude/skills/mondo/SKILL.md")) { throw "SKILL.md missing" }
 
       - name: Archive (unix)
         if: runner.os != 'Windows'
