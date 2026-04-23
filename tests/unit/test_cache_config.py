@@ -13,6 +13,7 @@ from mondo.config.schema import (
     DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_DOCS,
     DEFAULT_CACHE_TTL_FOLDERS,
+    DEFAULT_CACHE_TTL_GROUPS,
     DEFAULT_CACHE_TTL_USERS,
     DEFAULT_CACHE_TTL_WORKSPACES,
     CacheConfig,
@@ -31,6 +32,7 @@ def test_built_in_defaults_when_config_is_empty() -> None:
     assert resolved.ttl_users == DEFAULT_CACHE_TTL_USERS
     assert resolved.ttl_teams == DEFAULT_CACHE_TTL_WORKSPACES  # same 24h default
     assert resolved.ttl_columns == DEFAULT_CACHE_TTL_COLUMNS
+    assert resolved.ttl_groups == DEFAULT_CACHE_TTL_GROUPS
     assert resolved.ttl_docs == DEFAULT_CACHE_TTL_DOCS
     assert resolved.ttl_folders == DEFAULT_CACHE_TTL_FOLDERS
     assert resolved.fuzzy_threshold == DEFAULT_CACHE_FUZZY_THRESHOLD
@@ -134,6 +136,7 @@ def test_ttl_for_method() -> None:
     assert resolved.ttl_for("users") == resolved.ttl_users
     assert resolved.ttl_for("teams") == resolved.ttl_teams
     assert resolved.ttl_for("columns") == resolved.ttl_columns
+    assert resolved.ttl_for("groups") == resolved.ttl_groups
     assert resolved.ttl_for("docs") == resolved.ttl_docs
     assert resolved.ttl_for("folders") == resolved.ttl_folders
     with pytest.raises(ValueError):
@@ -157,6 +160,25 @@ def test_columns_ttl_profile_overrides_global() -> None:
     )
     resolved = resolve_cache_config(cfg, profile_name="acme", env={})
     assert resolved.ttl_columns == 120
+
+
+def test_groups_ttl_env_override() -> None:
+    resolved = resolve_cache_config(
+        Config(), profile_name=None, env={"MONDO_CACHE_TTL_GROUPS": "77"}
+    )
+    assert resolved.ttl_groups == 77
+
+
+def test_groups_ttl_profile_overrides_global() -> None:
+    cfg = Config(
+        default_profile="acme",
+        cache=CacheConfig(ttl=CacheTTLConfig(groups=600)),
+        profiles={
+            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(groups=120))),
+        },
+    )
+    resolved = resolve_cache_config(cfg, profile_name="acme", env={})
+    assert resolved.ttl_groups == 120
 
 
 def test_docs_ttl_env_override() -> None:

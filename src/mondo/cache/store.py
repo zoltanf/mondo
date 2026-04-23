@@ -28,7 +28,7 @@ from mondo.version import __version__
 # silent one-off refresh.
 SCHEMA_VERSION = 4
 
-EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "docs" | "folders"
+EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "groups" | "docs" | "folders"
 
 
 @dataclass

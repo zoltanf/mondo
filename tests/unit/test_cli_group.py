@@ -21,6 +21,8 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
 
 
 def _ok(data: dict) -> dict:
@@ -31,6 +33,14 @@ def _last_body(httpx_mock: HTTPXMock) -> dict:
     return json.loads(httpx_mock.get_requests()[-1].content)
 
 
+def _groups_ok(*groups: dict[str, object]) -> dict:
+    return _ok({"boards": [{"id": "42", "name": "B", "groups": list(groups)}]})
+
+
+def _groups_cache_path(tmp_path: Path, board_id: int = 42) -> Path:
+    return tmp_path / "cache" / "default" / "groups" / f"{board_id}.json"
+
+
 # --- list ---
 
 
@@ -39,25 +49,72 @@ class TestGroupList:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "boards": [
-                        {
-                            "id": "42",
-                            "name": "B",
-                            "groups": [
-                                {"id": "topics", "title": "Topics"},
-                                {"id": "new_group", "title": "New"},
-                            ],
-                        }
-                    ]
-                }
+            json=_groups_ok(
+                {"id": "topics", "title": "Topics"},
+                {"id": "new_group", "title": "New"},
             ),
         )
         result = runner.invoke(app, ["group", "list", "--board", "42"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [g["id"] for g in parsed] == ["topics", "new_group"]
+
+    def test_list_writes_cache_then_warm_hit(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "topics", "title": "Topics"}),
+        )
+        first = runner.invoke(app, ["group", "list", "--board", "42"])
+        assert first.exit_code == 0, first.stdout
+        assert _groups_cache_path(tmp_path).exists()
+
+        # No second response registered. A warm-cache hit should still succeed.
+        second = runner.invoke(app, ["group", "list", "--board", "42"])
+        assert second.exit_code == 0, second.stdout
+
+    def test_no_cache_bypasses_cache_and_does_not_write(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "topics", "title": "Topics"}),
+        )
+        result = runner.invoke(app, ["group", "list", "--board", "42", "--no-cache"])
+        assert result.exit_code == 0, result.stdout
+        assert not _groups_cache_path(tmp_path).exists()
+
+    def test_refresh_cache_forces_refetch(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "stale", "title": "Stale"}),
+        )
+        warm = runner.invoke(app, ["group", "list", "--board", "42"])
+        assert warm.exit_code == 0, warm.stdout
+        assert _groups_cache_path(tmp_path).exists()
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "fresh", "title": "Fresh"}),
+        )
+        refreshed = runner.invoke(app, ["group", "list", "--board", "42", "--refresh-cache"])
+        assert refreshed.exit_code == 0, refreshed.stdout
+        parsed = json.loads(refreshed.stdout)
+        assert [g["id"] for g in parsed] == ["fresh"]
+
+    def test_no_cache_plus_refresh_cache_rejected(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app, ["group", "list", "--board", "42", "--no-cache", "--refresh-cache"]
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
 
     def test_board_not_found_exits_6(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
@@ -438,3 +495,71 @@ class TestGroupDelete:
         parsed = json.loads(result.stdout)
         assert "delete_group" in parsed["query"]
         assert httpx_mock.get_requests() == []
+
+
+class TestGroupMutationInvalidation:
+    @pytest.mark.parametrize(
+        ("argv", "payload"),
+        [
+            (
+                ["group", "create", "--board", "42", "--name", "Planning"],
+                _ok({"create_group": {"id": "g1"}}),
+            ),
+            (
+                ["group", "rename", "--board", "42", "--id", "topics", "--title", "Renamed"],
+                _ok({"update_group": {"id": "topics", "title": "Renamed"}}),
+            ),
+            (
+                [
+                    "group",
+                    "update",
+                    "--board",
+                    "42",
+                    "--id",
+                    "topics",
+                    "--attribute",
+                    "position",
+                    "--value",
+                    "2",
+                ],
+                _ok({"update_group": {"id": "topics"}}),
+            ),
+            (
+                ["group", "reorder", "--board", "42", "--id", "topics", "--after", "done"],
+                _ok({"update_group": {"id": "topics"}}),
+            ),
+            (
+                ["group", "duplicate", "--board", "42", "--id", "topics"],
+                _ok({"duplicate_group": {"id": "topics_copy"}}),
+            ),
+            (
+                ["--yes", "group", "archive", "--board", "42", "--id", "topics"],
+                _ok({"archive_group": {"id": "topics", "archived": True}}),
+            ),
+            (
+                ["--yes", "group", "delete", "--board", "42", "--id", "topics", "--hard"],
+                _ok({"delete_group": {"id": "topics", "deleted": True}}),
+            ),
+        ],
+    )
+    def test_successful_group_mutations_invalidate_groups_cache(
+        self,
+        httpx_mock: HTTPXMock,
+        tmp_path: Path,
+        argv: list[str],
+        payload: dict,
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "topics", "title": "Topics"}),
+        )
+        warm = runner.invoke(app, ["group", "list", "--board", "42"])
+        assert warm.exit_code == 0, warm.stdout
+        cache_file = _groups_cache_path(tmp_path)
+        assert cache_file.exists()
+
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=payload)
+        result = runner.invoke(app, argv)
+        assert result.exit_code == 0, result.stdout
+        assert not cache_file.exists()

@@ -23,6 +23,7 @@ from mondo.config.schema import (
     DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_DOCS,
     DEFAULT_CACHE_TTL_FOLDERS,
+    DEFAULT_CACHE_TTL_GROUPS,
     DEFAULT_CACHE_TTL_TEAMS,
     DEFAULT_CACHE_TTL_USERS,
     DEFAULT_CACHE_TTL_WORKSPACES,
@@ -45,6 +46,7 @@ class ResolvedCacheConfig:
     ttl_users: int
     ttl_teams: int
     ttl_columns: int
+    ttl_groups: int
     ttl_docs: int
     ttl_folders: int
     fuzzy_threshold: int
@@ -61,6 +63,8 @@ class ResolvedCacheConfig:
                 return self.ttl_teams
             case "columns":
                 return self.ttl_columns
+            case "groups":
+                return self.ttl_groups
             case "docs":
                 return self.ttl_docs
             case "folders":
@@ -133,6 +137,14 @@ def resolve_cache_config(
         profile_cfg=profile_cache,
         env=environ,
     )
+    ttl_groups = _resolve_ttl(
+        "groups",
+        default=DEFAULT_CACHE_TTL_GROUPS,
+        env_key="MONDO_CACHE_TTL_GROUPS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
     ttl_docs = _resolve_ttl(
         "docs",
         default=DEFAULT_CACHE_TTL_DOCS,
@@ -159,6 +171,7 @@ def resolve_cache_config(
         ttl_users=ttl_users,
         ttl_teams=ttl_teams,
         ttl_columns=ttl_columns,
+        ttl_groups=ttl_groups,
         ttl_docs=ttl_docs,
         ttl_folders=ttl_folders,
         fuzzy_threshold=fuzzy_threshold,

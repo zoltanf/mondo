@@ -1,5 +1,5 @@
 """`mondo cache` command group: inspect, refresh, and clear the local
-directory cache for boards/workspaces/users/teams/docs/folders/columns."""
+directory cache for boards/workspaces/users/teams/docs/folders/columns/groups."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from mondo.cache.directory import (
     get_columns,
     get_docs,
     get_folders,
+    get_groups,
     get_teams,
     get_users,
     get_workspaces,
@@ -38,11 +39,13 @@ class CacheType(StrEnum):
     docs = "docs"
     folders = "folders"
     columns = "columns"
+    groups = "groups"
     all = "all"
 
 
 _SINGLE_FILE_TYPES: tuple[str, ...] = ("boards", "workspaces", "users", "teams", "docs", "folders")
-_ALL_TYPES: tuple[str, ...] = (*_SINGLE_FILE_TYPES, "columns")
+_SCOPED_TYPES: tuple[str, ...] = ("columns", "groups")
+_ALL_TYPES: tuple[str, ...] = (*_SINGLE_FILE_TYPES, *_SCOPED_TYPES)
 
 _REFRESH_DISPATCH = {
     "boards": get_boards,
@@ -60,18 +63,18 @@ def _resolve_types(selector: CacheType) -> list[str]:
     return [selector.value]
 
 
-def _scoped_board_ids(opts: GlobalOpts) -> list[str]:
-    """Return the list of board ids already present in the columns cache dir.
+def _scoped_board_ids(opts: GlobalOpts, entity: str) -> list[str]:
+    """Return board ids already present in a scoped cache directory.
 
-    Scans `<cache_dir>/columns/*.json`. Missing dir → empty list. Ignores
+    Scans `<cache_dir>/<entity>/*.json`. Missing dir → empty list. Ignores
     hidden tempfiles. Order is sorted lexicographically for stable output.
     """
     resolved = opts.resolve_cache_config()
-    columns_dir = resolved.directory / "columns"
-    if not columns_dir.exists():
+    scoped_dir = resolved.directory / entity
+    if not scoped_dir.exists():
         return []
     ids: list[str] = []
-    for p in columns_dir.glob("*.json"):
+    for p in scoped_dir.glob("*.json"):
         if p.name.startswith("."):
             continue
         ids.append(p.stem)
@@ -103,13 +106,14 @@ def status_cmd(
 ) -> None:
     """Show age / freshness / entry count for each cache file.
 
-    For `columns`, one row per board already present in the columns cache dir.
+    For `columns`/`groups`, one row per board already present in that scoped
+    cache directory.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     rows: list[dict[str, Any]] = []
     for entity in _resolve_types(cache_type):
-        if entity == "columns":
-            rows.extend(_status_rows_for_columns(opts))
+        if entity in _SCOPED_TYPES:
+            rows.extend(_status_rows_for_scoped(opts, entity))
         else:
             rows.append(_status_row(opts, entity))
     opts.emit(rows)
@@ -143,9 +147,9 @@ def _status_row(
     return row
 
 
-def _status_rows_for_columns(opts: GlobalOpts) -> list[dict[str, Any]]:
-    board_ids = _scoped_board_ids(opts)
-    return [_status_row(opts, "columns", scope=bid) for bid in board_ids]
+def _status_rows_for_scoped(opts: GlobalOpts, entity: str) -> list[dict[str, Any]]:
+    board_ids = _scoped_board_ids(opts, entity)
+    return [_status_row(opts, entity, scope=bid) for bid in board_ids]
 
 
 def _lookup_fetched_at(store: CacheStore) -> str | None:
@@ -175,23 +179,23 @@ def refresh_cmd(
         [],
         "--board",
         help=(
-            "Board id(s) to refresh (columns only; repeatable). "
-            "Omit to refresh every board already present in the columns cache."
+            "Board id(s) to refresh (columns/groups only; repeatable). "
+            "Omit to refresh every board already present in the selected scoped cache."
         ),
     ),
 ) -> None:
     """Force-fetch the selected cache(s) and rewrite disk.
 
-    For `columns`, refreshes one file per board id. Without `--board`,
-    refreshes every board already cached on disk (does not discover
-    additional boards on the account).
+    For `columns`/`groups`, refreshes one file per board id. Without `--board`,
+    refreshes every board already cached on disk per selected scoped type
+    (does not discover additional boards on the account).
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     types = _resolve_types(cache_type)
 
-    if boards and "columns" not in types:
+    if boards and not any(t in _SCOPED_TYPES for t in types):
         typer.secho(
-            "error: --board only applies when refreshing `columns`.",
+            "error: --board only applies when refreshing `columns` or `groups`.",
             fg=typer.colors.RED,
             err=True,
         )
@@ -200,10 +204,10 @@ def refresh_cmd(
     if opts.dry_run:
         dry: list[dict[str, Any]] = []
         for t in types:
-            if t == "columns":
-                target_ids = [str(b) for b in boards] or _scoped_board_ids(opts)
+            if t in _SCOPED_TYPES:
+                target_ids = [str(b) for b in boards] or _scoped_board_ids(opts, t)
                 for bid in target_ids:
-                    dry.append({"type": "columns", "board": bid, "action": "refresh"})
+                    dry.append({"type": t, "board": bid, "action": "refresh"})
             else:
                 dry.append({"type": t, "action": "refresh"})
         opts.emit(dry)
@@ -219,8 +223,8 @@ def refresh_cmd(
     try:
         with client:
             for entity in types:
-                if entity == "columns":
-                    results.extend(_refresh_columns(opts, client, boards))
+                if entity in _SCOPED_TYPES:
+                    results.extend(_refresh_scoped(opts, client, boards, entity))
                     continue
                 store = opts.build_cache_store(entity)
                 fetcher = _REFRESH_DISPATCH[entity]
@@ -241,30 +245,38 @@ def refresh_cmd(
 def _for_each_board_scope(
     opts: GlobalOpts,
     boards: list[int],
+    entity: str,
     op: Callable[[CacheStore, str], dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Apply `op(store, board_id)` to every target columns cache file.
+    """Apply `op(store, board_id)` to every target scoped cache file.
 
     Target set is the explicit `boards` list if given, otherwise every board
-    already present in the columns cache directory.
+    already present in the selected scoped cache directory.
     """
-    target_ids: list[str] = [str(b) for b in boards] if boards else _scoped_board_ids(opts)
-    return [op(opts.build_cache_store("columns", scope=bid), bid) for bid in target_ids]
+    target_ids: list[str] = [str(b) for b in boards] if boards else _scoped_board_ids(opts, entity)
+    return [op(opts.build_cache_store(entity, scope=bid), bid) for bid in target_ids]
 
 
-def _refresh_columns(
-    opts: GlobalOpts, client: Any, boards: list[int]
+_SCOPED_REFRESH_DISPATCH = {
+    "columns": get_columns,
+    "groups": get_groups,
+}
+
+
+def _refresh_scoped(
+    opts: GlobalOpts, client: Any, boards: list[int], entity: str
 ) -> list[dict[str, Any]]:
     def _one(store: CacheStore, bid: str) -> dict[str, Any]:
-        cached = get_columns(client, store=store, board_id=int(bid), refresh=True)
+        fetcher = _SCOPED_REFRESH_DISPATCH[entity]
+        cached = fetcher(client, store=store, board_id=int(bid), refresh=True)
         return {
-            "type": "columns",
+            "type": entity,
             "board": bid,
             "fetched_at": cached.fetched_at.isoformat().replace("+00:00", "Z"),
             "count": len(cached.entries),
         }
 
-    return _for_each_board_scope(opts, boards, _one)
+    return _for_each_board_scope(opts, boards, entity, _one)
 
 
 @app.command("clear", epilog=epilog_for("cache clear"))
@@ -279,22 +291,22 @@ def clear_cmd(
         [],
         "--board",
         help=(
-            "Board id(s) to clear (columns only; repeatable). "
-            "Omit to clear every per-board columns cache."
+            "Board id(s) to clear (columns/groups only; repeatable). "
+            "Omit to clear every per-board scoped cache for the selected types."
         ),
     ),
 ) -> None:
     """Delete the selected cache file(s). Idempotent.
 
-    For `columns`, removes one file per board id; omit `--board` to clear
-    every per-board columns cache.
+    For `columns`/`groups`, removes one file per board id; omit `--board` to
+    clear every per-board scoped cache for the selected types.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     types = _resolve_types(cache_type)
 
-    if boards and "columns" not in types:
+    if boards and not any(t in _SCOPED_TYPES for t in types):
         typer.secho(
-            "error: --board only applies when clearing `columns`.",
+            "error: --board only applies when clearing `columns` or `groups`.",
             fg=typer.colors.RED,
             err=True,
         )
@@ -302,8 +314,8 @@ def clear_cmd(
 
     results: list[dict[str, Any]] = []
     for entity in types:
-        if entity == "columns":
-            results.extend(_clear_columns(opts, boards))
+        if entity in _SCOPED_TYPES:
+            results.extend(_clear_scoped(opts, boards, entity))
             continue
         store = opts.build_cache_store(entity)
         path = str(store.path)
@@ -315,16 +327,16 @@ def clear_cmd(
     opts.emit(results)
 
 
-def _clear_columns(opts: GlobalOpts, boards: list[int]) -> list[dict[str, Any]]:
+def _clear_scoped(opts: GlobalOpts, boards: list[int], entity: str) -> list[dict[str, Any]]:
     def _one(store: CacheStore, bid: str) -> dict[str, Any]:
         path = str(store.path)
         if opts.dry_run:
-            return {"type": "columns", "board": bid, "path": path, "action": "clear"}
+            return {"type": entity, "board": bid, "path": path, "action": "clear"}
         return {
-            "type": "columns",
+            "type": entity,
             "board": bid,
             "path": path,
             "removed": store.invalidate(),
         }
 
-    return _for_each_board_scope(opts, boards, _one)
+    return _for_each_board_scope(opts, boards, entity, _one)

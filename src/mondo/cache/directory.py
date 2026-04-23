@@ -15,6 +15,7 @@ from mondo.api.errors import NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
     COLUMNS_ON_BOARD,
+    GROUPS_LIST,
     TEAMS_LIST,
     USERS_LIST_PAGE,
     WORKSPACES_LIST_PAGE,
@@ -283,3 +284,35 @@ def _fetch_board_columns(client: MondayClient, board_id: int) -> list[dict[str, 
     if not isinstance(columns, list):
         return []
     return columns
+
+
+def get_groups(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    board_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the full group list for `board_id`, cached per-board.
+
+    Raises NotFoundError when the board isn't visible (unknown id or no
+    access), matching the live query behavior.
+    """
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_board_groups(client, board_id)
+    return store.write(entries)
+
+
+def _fetch_board_groups(client: MondayClient, board_id: int) -> list[dict[str, Any]]:
+    result = client.execute(GROUPS_LIST, {"board": board_id})
+    data = result.get("data") or {}
+    boards = data.get("boards") or []
+    if not boards:
+        raise NotFoundError(f"board {board_id} not found")
+    groups = boards[0].get("groups") or []
+    if not isinstance(groups, list):
+        return []
+    return groups

@@ -12,17 +12,19 @@ from typing import Any
 
 import typer
 
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     GROUP_ARCHIVE,
     GROUP_CREATE,
     GROUP_DELETE,
     GROUP_DUPLICATE,
     GROUP_UPDATE,
-    GROUPS_LIST,
 )
+from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import execute, execute_read
+from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -101,16 +103,36 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Skip the local groups cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local groups cache before serving.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List all groups on a board (nested query — no standalone groups root)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
-    data = execute_read(opts, GROUPS_LIST, {"board": board_id})
-    boards = data.get("boards") or []
-    if not boards:
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            groups = fetch_board_groups(
+                opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
+            )
+    except NotFoundError:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
-    opts.emit(boards[0].get("groups") or [])
+        raise typer.Exit(code=6) from None
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+    opts.emit(groups)
 
 
 # ----- write commands -----
@@ -152,6 +174,7 @@ def create_cmd(
         "position": position,
     }
     data = execute(opts, GROUP_CREATE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("create_group") or {})
 
 
@@ -171,6 +194,7 @@ def rename_cmd(
         "value": title,
     }
     data = execute(opts, GROUP_UPDATE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
 
@@ -208,6 +232,7 @@ def update_cmd(
         "value": value,
     }
     data = execute(opts, GROUP_UPDATE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
 
@@ -251,6 +276,7 @@ def reorder_cmd(
         value = position
     variables = {"board": board_id, "group": group_id, "attribute": attribute, "value": value}
     data = execute(opts, GROUP_UPDATE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
 
@@ -273,6 +299,7 @@ def duplicate_cmd(
         "addToTop": True if add_to_top else None,
     }
     data = execute(opts, GROUP_DUPLICATE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("duplicate_group") or {})
 
 
@@ -287,6 +314,7 @@ def archive_cmd(
     _confirm(opts, f"Archive group {group_id!r} on board {board_id}?")
     variables = {"board": board_id, "group": group_id}
     data = execute(opts, GROUP_ARCHIVE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("archive_group") or {})
 
 
@@ -319,4 +347,5 @@ def delete_cmd(
     )
     variables = {"board": board_id, "group": group_id}
     data = execute(opts, GROUP_DELETE, variables)
+    invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("delete_group") or {})

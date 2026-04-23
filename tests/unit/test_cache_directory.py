@@ -14,6 +14,7 @@ from mondo.cache.directory import (
     get_columns,
     get_docs,
     get_folders,
+    get_groups,
     get_teams,
     get_users,
     get_workspaces,
@@ -414,6 +415,68 @@ def test_get_columns_missing_board_raises_not_found(tmp_path: Path) -> None:
     client = FakeClient([{"data": {"boards": []}}])
     with pytest.raises(NotFoundError):
         get_columns(client, store=store, board_id=999)
+    assert not store.path.exists()
+
+
+# -- groups (per-board scoped cache) -----------------------------------------
+
+
+def _scoped_groups_store(tmp_path: Path, board_id: str) -> CacheStore:
+    return CacheStore(
+        entity_type="groups",
+        cache_dir=tmp_path / "cache",
+        api_endpoint=ENDPOINT,
+        ttl_seconds=60,
+        scope=board_id,
+    )
+
+
+def test_get_groups_cold_fetches_and_writes(tmp_path: Path) -> None:
+    store = _scoped_groups_store(tmp_path, "1")
+    groups_payload = [
+        {"id": "topics", "title": "Topics", "color": "#579bfc", "position": "1", "archived": False},
+        {"id": "done", "title": "Done", "color": "#00c875", "position": "2", "archived": False},
+    ]
+    client = FakeClient(
+        [{"data": {"boards": [{"id": "1", "name": "B", "groups": groups_payload}]}}]
+    )
+
+    result = get_groups(client, store=store, board_id=1)
+
+    assert [g["id"] for g in result.entries] == ["topics", "done"]
+    assert store.path.exists()
+    assert len(client.calls) == 1
+
+
+def test_get_groups_warm_cache_skips_api(tmp_path: Path) -> None:
+    store = _scoped_groups_store(tmp_path, "1")
+    store.write([{"id": "cached", "title": "Cached"}])
+    client = FakeClient([])
+
+    result = get_groups(client, store=store, board_id=1)
+
+    assert [g["id"] for g in result.entries] == ["cached"]
+    assert client.calls == []
+
+
+def test_get_groups_refresh_ignores_cache(tmp_path: Path) -> None:
+    store = _scoped_groups_store(tmp_path, "1")
+    store.write([{"id": "stale", "title": "Stale"}])
+    client = FakeClient(
+        [{"data": {"boards": [{"id": "1", "groups": [{"id": "fresh", "title": "Fresh"}]}]}}]
+    )
+
+    result = get_groups(client, store=store, board_id=1, refresh=True)
+
+    assert [g["id"] for g in result.entries] == ["fresh"]
+    assert len(client.calls) == 1
+
+
+def test_get_groups_missing_board_raises_not_found(tmp_path: Path) -> None:
+    store = _scoped_groups_store(tmp_path, "999")
+    client = FakeClient([{"data": {"boards": []}}])
+    with pytest.raises(NotFoundError):
+        get_groups(client, store=store, board_id=999)
     assert not store.path.exists()
 
 
