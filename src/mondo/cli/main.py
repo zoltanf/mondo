@@ -213,6 +213,7 @@ _TOP_LEVEL_ENTRIES: tuple[_LazyEntry, ...] = (
         help_text="Show a bundled help topic, or dump the full CLI spec as JSON.",
         is_group=False,
     ),
+    *_group_entry("skill", "mondo.cli.skill", "Install the `mondo` skill for Claude Code."),
 )
 _LAZY_ENTRY_MAP: dict[str, _LazyEntry] = {entry.name: entry for entry in _TOP_LEVEL_ENTRIES}
 _LAZY_ENTRY_ORDER: tuple[str, ...] = tuple(entry.name for entry in _TOP_LEVEL_ENTRIES)

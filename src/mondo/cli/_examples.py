@@ -1133,6 +1133,21 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo --dry-run import board --board 1234567890 --from items.csv",
         ),
     ],
+    # --- skill -------------------------------------------------------------
+    "skill install": [
+        Example(
+            "Install the skill project-local at ./.claude/skills/mondo/SKILL.md",
+            "mondo skill install",
+        ),
+        Example(
+            "Install globally for the current user",
+            "mondo skill install --global",
+        ),
+        Example(
+            "Overwrite an existing SKILL.md without prompting",
+            "mondo --yes skill install",
+        ),
+    ],
     # --- complexity --------------------------------------------------------
     "complexity status": [
         Example(
