@@ -141,6 +141,11 @@ EXAMPLES: dict[str, list[Example]] = {
             "Create an empty board (no starter items/groups)",
             'mondo board create --name "Scratch" --kind public --empty',
         ),
+        Example(
+            "Seed item naming and generation with newer board inputs",
+            'mondo board create --name "Launch plan" --kind public '
+            '--item-nickname \'{"preset_type":"item"}\' --prompt "Build a launch tracker"',
+        ),
     ],
     "board update": [
         Example(
@@ -150,6 +155,23 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Update the description",
             'mondo board update --id 1234567890 --attribute description --value "Q2 plan"',
+        ),
+    ],
+    "board set-permission": [
+        Example(
+            "Make the board read-only by default",
+            "mondo board set-permission --id 1234567890 --role viewer",
+        ),
+    ],
+    "board move": [
+        Example(
+            "Move a board into another workspace and folder",
+            "mondo board move --id 1234567890 --workspace 42 --folder 7",
+        ),
+        Example(
+            "Reposition a board relative to another overview object",
+            'mondo board move --id 1234567890 --position '
+            '\'{"object_id":15,"object_type":"Overview","is_after":true}\'',
         ),
     ],
     "board archive": [

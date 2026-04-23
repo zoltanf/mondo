@@ -185,10 +185,13 @@ MANUAL_ROWS: dict[str, Row] = {
     ),
     "board update": Row(
         command="board update",
-        output_type="object",
-        fields=["update_board"],
-        notes="Custom wrapper around monday's scalar/string update_board result.",
-        source='{"update_board": data.get("update_board")}',
+        output_type="object | scalar",
+        fields=["success?", "<updated board metadata?>"],
+        notes=(
+            "Emits monday's update_board payload directly. Legacy stringified JSON is parsed "
+            "before emit; non-JSON scalars pass through unchanged."
+        ),
+        source='_decode_json_string_payload(data.get("update_board"))',
     ),
     "cache clear": Row(
         command="cache clear",

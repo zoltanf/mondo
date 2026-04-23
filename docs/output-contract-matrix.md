@@ -80,11 +80,19 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`, `description`, `state`, `workspace_id`, `created_at`, `updated_at`, `type`, `items_count?`, `kind`, `folder_id`, `_fuzzy_score?`, `workspace_name?`, `url?`
   source: `build_boards_list_query + normalize_board_entry + decorators`
   notes: Normalized: board_kind -> kind, board_folder_id -> folder_id. items_count appears only with --with-item-counts. _fuzzy_score is appended by --fuzzy-score. workspace_name is best-effort enrichment. url is appended by --with-url.
-- `board update`
+- `board move`
   type: `object`
-  fields: `update_board`
-  source: `{"update_board": data.get("update_board")}`
-  notes: Custom wrapper around monday's scalar/string update_board result.
+  fields: `success`
+  source: `BOARD_UPDATE_HIERARCHY.update_board_hierarchy`
+- `board set-permission`
+  type: `object`
+  fields: `edit_permissions`, `failed_actions`
+  source: `BOARD_SET_PERMISSION.set_board_permission`
+- `board update`
+  type: `object | scalar`
+  fields: `success?`, `<updated board metadata?>`
+  source: `_decode_json_string_payload(data.get("update_board"))`
+  notes: Emits monday's update_board payload directly. Legacy stringified JSON is parsed before emit; non-JSON scalars pass through unchanged.
 
 ## cache
 
@@ -193,28 +201,61 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `type`, `content`, `parent_block_id`
   source: `CREATE_DOC_BLOCK.create_doc_block[]`
   notes: One emitted row per created block.
+- `doc add-markdown`
+  type: `object`
+  fields: `success`, `block_ids`, `error`
+  source: `ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown`
 - `doc create`
   type: `object`
   fields: `id`, `object_id`, `name`, `url`
   source: `CREATE_DOC_IN_WORKSPACE.create_doc`
+- `doc delete`
+  type: `list[object]`
+  fields: none
+  source: `DELETE_DOC.delete_doc`
 - `doc delete-block`
   type: `object`
   fields: `id`
   source: `DELETE_DOC_BLOCK.delete_doc_block`
+- `doc duplicate`
+  type: `list[object]`
+  fields: none
+  source: `DUPLICATE_DOC.duplicate_doc`
+- `doc export-markdown`
+  type: `manual-review`
+  fields: none
+  source: `EXPORT_MARKDOWN_FROM_DOC`
+  notes: Could not auto-infer. Final emit expression: result
 - `doc get`
   type: `object | string`
   fields: `id`, `object_id`, `name`, `doc_kind`, `doc_folder_id`, `created_at`, `updated_at`, `url`, `relative_url`, `workspace_id`, `created_by{id,name}`, `blocks{id,type,content,parent_block_id}`
   source: `DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]`
   notes: Default format is JSON object above. --format markdown prints markdown text instead.
+- `doc import-html`
+  type: `object`
+  fields: `error`, `success`, `doc_id`
+  source: `IMPORT_DOC_FROM_HTML.import_doc_from_html`
 - `doc list`
   type: `list[object]`
   fields: `id`, `object_id`, `name`, `created_at`, `updated_at`, `workspace_id`, `created_by{id,name}`, `kind`, `folder_id`, `_fuzzy_score?`, `workspace_name?`, `url?`, `relative_url?`
   source: `build_docs_list_query + normalize_doc_entry + decorators`
   notes: Normalized: doc_kind -> kind, doc_folder_id -> folder_id. url/relative_url are removed unless --with-url is passed. _fuzzy_score is appended by --fuzzy-score. workspace_name is best-effort enrichment.
+- `doc rename`
+  type: `list[object]`
+  fields: none
+  source: `UPDATE_DOC_NAME.update_doc_name`
 - `doc update-block`
   type: `object`
   fields: `id`, `type`
   source: `UPDATE_DOC_BLOCK.update_doc_block`
+- `doc version-diff`
+  type: `object`
+  fields: `doc_id`, `date`, `prev_date`, `blocks{id,type,content,summary,parent_block_id,changes{added,deleted,changed}}`
+  source: `DOC_VERSION_DIFF.doc_version_diff`
+- `doc version-history`
+  type: `object`
+  fields: `doc_id`, `restoring_points{date,user_ids,type}`
+  source: `DOC_VERSION_HISTORY.doc_version_history`
 
 ## export
 
@@ -255,9 +296,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`
   source: `FOLDER_DELETE.delete_folder`
 - `folder get`
-  type: `object`
-  fields: `id`, `name`, `color`, `created_at`, `owner_id`, `parent{id,name}`, `workspace{id,name}`
-  source: `FOLDER_GET.folders[0]`
+  type: `manual-review`
+  fields: none
+  source: `FOLDER_GET`
+  notes: Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])
 - `folder list`
   type: `list[object]`
   fields: `id`, `name`, `color`, `workspace_id`, `workspace_name`, `parent_id`, `parent_name`, `created_at`, `owner_id`

@@ -1292,6 +1292,8 @@ mutation (
   $ownerTeamIds: [ID!]
   $subscriberIds: [ID!]
   $subscriberTeamIds: [ID!]
+  $itemNickname: ItemNicknameInput
+  $prompt: String
   $empty: Boolean
 ) {
   create_board(
@@ -1305,6 +1307,8 @@ mutation (
     board_owner_team_ids: $ownerTeamIds
     board_subscriber_ids: $subscriberIds
     board_subscriber_teams_ids: $subscriberTeamIds
+    item_nickname: $itemNickname
+    prompt: $prompt
     empty: $empty
   ) {
     id
@@ -1351,6 +1355,25 @@ mutation (
 BOARD_UPDATE = """
 mutation ($board: ID!, $attribute: BoardAttributes!, $value: String!) {
   update_board(board_id: $board, board_attribute: $attribute, new_value: $value)
+}
+""".strip()
+
+
+BOARD_SET_PERMISSION = """
+mutation ($board: ID!, $role: BoardBasicRoleName!) {
+  set_board_permission(board_id: $board, basic_role_name: $role) {
+    edit_permissions
+    failed_actions
+  }
+}
+""".strip()
+
+
+BOARD_UPDATE_HIERARCHY = """
+mutation ($board: ID!, $attributes: UpdateBoardHierarchyAttributesInput!) {
+  update_board_hierarchy(board_id: $board, attributes: $attributes) {
+    success
+  }
 }
 """.strip()
 

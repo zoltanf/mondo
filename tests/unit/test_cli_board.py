@@ -637,15 +637,68 @@ class TestBoardCreate:
         assert v["subscriberIds"] == [51]
         assert v["empty"] is True
 
+    def test_item_nickname_and_prompt(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_board": {"id": "1"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "create",
+                "--name",
+                "X",
+                "--item-nickname",
+                '{"preset_type":"item"}',
+                "--prompt",
+                "Build a launch tracker",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["itemNickname"] == {"preset_type": "item"}
+        assert v["prompt"] == "Build a launch tracker"
+
+    def test_item_nickname_invalid_json(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "create",
+                "--name",
+                "X",
+                "--item-nickname",
+                "{not json",
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
     def test_dry_run(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
-            ["--dry-run", "board", "create", "--name", "X", "--kind", "public"],
+            [
+                "--dry-run",
+                "board",
+                "create",
+                "--name",
+                "X",
+                "--kind",
+                "public",
+                "--item-nickname",
+                '{"preset_type":"item"}',
+                "--prompt",
+                "Build a launch tracker",
+            ],
         )
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert "create_board" in parsed["query"]
         assert parsed["variables"]["name"] == "X"
+        assert parsed["variables"]["itemNickname"] == {"preset_type": "item"}
+        assert parsed["variables"]["prompt"] == "Build a launch tracker"
         assert httpx_mock.get_requests() == []
 
 
@@ -653,7 +706,32 @@ class TestBoardCreate:
 
 
 class TestBoardUpdate:
-    def test_change_name(self, httpx_mock: HTTPXMock) -> None:
+    def test_change_name_emits_object_payload(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_board": {"success": True, "board_id": "42"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "update",
+                "--id",
+                "42",
+                "--attribute",
+                "name",
+                "--value",
+                "Renamed",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == {"success": True, "board_id": "42"}
+        v = _last_body(httpx_mock)["variables"]
+        assert v == {"board": 42, "attribute": "name", "value": "Renamed"}
+
+    def test_legacy_json_string_payload_is_parsed(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -673,8 +751,142 @@ class TestBoardUpdate:
             ],
         )
         assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == {"success": True}
         v = _last_body(httpx_mock)["variables"]
         assert v == {"board": 42, "attribute": "name", "value": "Renamed"}
+
+    def test_non_json_scalar_string_passes_through(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_board": "ok"}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "update",
+                "--id",
+                "42",
+                "--attribute",
+                "name",
+                "--value",
+                "Renamed",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == "ok"
+
+
+# --- set-permission ---
+
+
+class TestBoardSetPermission:
+    def test_sets_board_permission(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"set_board_permission": {"edit_permissions": "viewer", "failed_actions": []}}),
+        )
+        result = runner.invoke(
+            app,
+            ["board", "set-permission", "--id", "42", "--role", "viewer"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == {"edit_permissions": "viewer", "failed_actions": []}
+        v = _last_body(httpx_mock)["variables"]
+        assert v == {"board": 42, "role": "viewer"}
+
+
+# --- move ---
+
+
+class TestBoardMove:
+    def test_moves_board_with_all_supported_fields(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_board_hierarchy": {"success": True}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "move",
+                "--id",
+                "42",
+                "--workspace",
+                "7",
+                "--folder",
+                "8",
+                "--product-id",
+                "9",
+                "--position",
+                '{"object_id":15,"object_type":"Overview","is_after":true}',
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == {"success": True}
+        v = _last_body(httpx_mock)["variables"]
+        assert v == {
+            "board": 42,
+            "attributes": {
+                "workspace_id": 7,
+                "folder_id": 8,
+                "account_product_id": 9,
+                "position": {
+                    "object_id": 15,
+                    "object_type": "Overview",
+                    "is_after": True,
+                },
+            },
+        }
+
+    def test_requires_at_least_one_move_target(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["board", "move", "--id", "42"])
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_position_invalid_json(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["board", "move", "--id", "42", "--position", "{not json"],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_invalidates_board_cache(
+        self,
+        httpx_mock: HTTPXMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from mondo.cli import _list_decorate as list_decorate
+
+        monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
+        monkeypatch.setattr(list_decorate, "enrich_workspaces_best_effort", lambda entries, opts: None)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": "1", "name": "Alpha"}]}),
+        )
+        list_result = runner.invoke(app, ["board", "list"])
+        assert list_result.exit_code == 0, list_result.stdout
+        cache_file = tmp_path / "cache" / "default" / "boards.json"
+        assert cache_file.exists()
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_board_hierarchy": {"success": True}}),
+        )
+        move_result = runner.invoke(app, ["board", "move", "--id", "42", "--workspace", "7"])
+        assert move_result.exit_code == 0, move_result.stdout
+        assert not cache_file.exists()
 
 
 # --- archive ---

@@ -7,9 +7,10 @@ applied client-side after retrieval.
 
 from __future__ import annotations
 
+import json
 import re
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import typer
 
@@ -22,16 +23,16 @@ from mondo.api.queries import (
     BOARD_DUPLICATE,
     BOARD_GET,
     BOARD_ITEMS_COUNT,
+    BOARD_SET_PERMISSION,
     BOARD_UPDATE,
+    BOARD_UPDATE_HIERARCHY,
 )
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, execute_read
+from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
-
-if TYPE_CHECKING:
-    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -107,6 +108,12 @@ class DuplicateType(StrEnum):
     with_pulses_and_updates = "duplicate_board_with_pulses_and_updates"
 
 
+class BoardBasicRole(StrEnum):
+    viewer = "viewer"
+    contributor = "contributor"
+    editor = "editor"
+
+
 # ----- helpers -----
 
 
@@ -128,6 +135,16 @@ def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
         return int(ws)
     except (TypeError, ValueError):
         return None
+
+
+def _decode_json_string_payload(value: Any) -> Any:
+    """Parse monday's legacy stringified-JSON mutation payloads when possible."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
 
 
 # ----- read commands -----
@@ -529,6 +546,17 @@ def create_cmd(
     subscriber_team: list[int] | None = typer.Option(
         None, "--subscriber-team", help="Subscriber team ID (repeatable)."
     ),
+    item_nickname: str | None = typer.Option(
+        None,
+        "--item-nickname",
+        metavar="JSON",
+        help='Item nickname config as JSON, e.g. `{"preset_type":"item"}`.',
+    ),
+    prompt: str | None = typer.Option(
+        None,
+        "--prompt",
+        help="AI prompt to generate the board's structure and content.",
+    ),
     empty: bool = typer.Option(
         False, "--empty", help="Create without the default group/column structure."
     ),
@@ -538,6 +566,9 @@ def create_cmd(
     from mondo.cli._normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    item_nickname_obj: Any = None
+    if item_nickname is not None:
+        item_nickname_obj = parse_json_flag(item_nickname, flag_name="--item-nickname")
     variables: dict[str, Any] = {
         "name": name,
         "kind": kind.value,
@@ -549,6 +580,8 @@ def create_cmd(
         "ownerTeamIds": owner_team or None,
         "subscriberIds": subscriber or None,
         "subscriberTeamIds": subscriber_team or None,
+        "itemNickname": item_nickname_obj,
+        "prompt": prompt,
         "empty": True if empty else None,
     }
     data = execute(opts, BOARD_CREATE, variables)
@@ -580,8 +613,72 @@ def update_cmd(
         {"board": board_id, "attribute": attribute.value, "value": value},
     )
     invalidate_entity(opts, "boards")
-    # update_board returns a scalar (String) with a status JSON payload, not a Board.
-    opts.emit({"update_board": data.get("update_board")})
+    opts.emit(_decode_json_string_payload(data.get("update_board")))
+
+
+@app.command("set-permission", epilog=epilog_for("board set-permission"))
+def set_permission_cmd(
+    ctx: typer.Context,
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    role: BoardBasicRole = typer.Option(
+        ...,
+        "--role",
+        help="Default board role (viewer/contributor/editor).",
+        case_sensitive=False,
+    ),
+) -> None:
+    """Set the board's default permissions/role."""
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
+    data = execute(opts, BOARD_SET_PERMISSION, {"board": board_id, "role": role.value})
+    opts.emit(data.get("set_board_permission") or {})
+
+
+@app.command("move", epilog=epilog_for("board move"))
+def move_cmd(
+    ctx: typer.Context,
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
+    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    workspace: int | None = typer.Option(None, "--workspace", help="Target workspace ID."),
+    folder: int | None = typer.Option(None, "--folder", help="Target folder ID."),
+    product_id: int | None = typer.Option(
+        None, "--product-id", help="Account product ID (if multi-product)."
+    ),
+    position: str | None = typer.Option(
+        None,
+        "--position",
+        metavar="JSON",
+        help='Position as JSON: `{"object_id":15,"object_type":"Overview","is_after":true}`.',
+    ),
+) -> None:
+    """Move a board by updating its workspace, folder, product, or position."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
+    position_obj: Any = None
+    if position is not None:
+        position_obj = parse_json_flag(position, flag_name="--position")
+    attributes: dict[str, Any] = {}
+    if workspace is not None:
+        attributes["workspace_id"] = workspace
+    if folder is not None:
+        attributes["folder_id"] = folder
+    if product_id is not None:
+        attributes["account_product_id"] = product_id
+    if position_obj is not None:
+        attributes["position"] = position_obj
+    if not attributes:
+        typer.secho(
+            "error: pass at least one of --workspace, --folder, --product-id, or --position.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    data = execute(opts, BOARD_UPDATE_HIERARCHY, {"board": board_id, "attributes": attributes})
+    invalidate_entity(opts, "boards")
+    opts.emit(data.get("update_board_hierarchy") or {})
 
 
 @app.command("archive", epilog=epilog_for("board archive"))

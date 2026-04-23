@@ -188,13 +188,33 @@
     "source": "build_boards_list_query + normalize_board_entry + decorators"
   },
   {
-    "command": "board update",
+    "command": "board move",
     "output_type": "object",
     "fields": [
-      "update_board"
+      "success"
     ],
-    "notes": "Custom wrapper around monday's scalar/string update_board result.",
-    "source": "{\"update_board\": data.get(\"update_board\")}"
+    "notes": "",
+    "source": "BOARD_UPDATE_HIERARCHY.update_board_hierarchy"
+  },
+  {
+    "command": "board set-permission",
+    "output_type": "object",
+    "fields": [
+      "edit_permissions",
+      "failed_actions"
+    ],
+    "notes": "",
+    "source": "BOARD_SET_PERMISSION.set_board_permission"
+  },
+  {
+    "command": "board update",
+    "output_type": "object | scalar",
+    "fields": [
+      "success?",
+      "<updated board metadata?>"
+    ],
+    "notes": "Emits monday's update_board payload directly. Legacy stringified JSON is parsed before emit; non-JSON scalars pass through unchanged.",
+    "source": "_decode_json_string_payload(data.get(\"update_board\"))"
   },
   {
     "command": "cache clear",
@@ -434,6 +454,17 @@
     "source": "CREATE_DOC_BLOCK.create_doc_block[]"
   },
   {
+    "command": "doc add-markdown",
+    "output_type": "object",
+    "fields": [
+      "success",
+      "block_ids",
+      "error"
+    ],
+    "notes": "",
+    "source": "ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown"
+  },
+  {
     "command": "doc create",
     "output_type": "object",
     "fields": [
@@ -446,6 +477,13 @@
     "source": "CREATE_DOC_IN_WORKSPACE.create_doc"
   },
   {
+    "command": "doc delete",
+    "output_type": "list[object]",
+    "fields": [],
+    "notes": "",
+    "source": "DELETE_DOC.delete_doc"
+  },
+  {
     "command": "doc delete-block",
     "output_type": "object",
     "fields": [
@@ -453,6 +491,20 @@
     ],
     "notes": "",
     "source": "DELETE_DOC_BLOCK.delete_doc_block"
+  },
+  {
+    "command": "doc duplicate",
+    "output_type": "list[object]",
+    "fields": [],
+    "notes": "",
+    "source": "DUPLICATE_DOC.duplicate_doc"
+  },
+  {
+    "command": "doc export-markdown",
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: result",
+    "source": "EXPORT_MARKDOWN_FROM_DOC"
   },
   {
     "command": "doc get",
@@ -473,6 +525,17 @@
     ],
     "notes": "Default format is JSON object above. --format markdown prints markdown text instead.",
     "source": "DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]"
+  },
+  {
+    "command": "doc import-html",
+    "output_type": "object",
+    "fields": [
+      "error",
+      "success",
+      "doc_id"
+    ],
+    "notes": "",
+    "source": "IMPORT_DOC_FROM_HTML.import_doc_from_html"
   },
   {
     "command": "doc list",
@@ -496,6 +559,13 @@
     "source": "build_docs_list_query + normalize_doc_entry + decorators"
   },
   {
+    "command": "doc rename",
+    "output_type": "list[object]",
+    "fields": [],
+    "notes": "",
+    "source": "UPDATE_DOC_NAME.update_doc_name"
+  },
+  {
     "command": "doc update-block",
     "output_type": "object",
     "fields": [
@@ -504,6 +574,28 @@
     ],
     "notes": "",
     "source": "UPDATE_DOC_BLOCK.update_doc_block"
+  },
+  {
+    "command": "doc version-diff",
+    "output_type": "object",
+    "fields": [
+      "doc_id",
+      "date",
+      "prev_date",
+      "blocks{id,type,content,summary,parent_block_id,changes{added,deleted,changed}}"
+    ],
+    "notes": "",
+    "source": "DOC_VERSION_DIFF.doc_version_diff"
+  },
+  {
+    "command": "doc version-history",
+    "output_type": "object",
+    "fields": [
+      "doc_id",
+      "restoring_points{date,user_ids,type}"
+    ],
+    "notes": "",
+    "source": "DOC_VERSION_HISTORY.doc_version_history"
   },
   {
     "command": "export board",
@@ -578,18 +670,10 @@
   },
   {
     "command": "folder get",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "name",
-      "color",
-      "created_at",
-      "owner_id",
-      "parent{id,name}",
-      "workspace{id,name}"
-    ],
-    "notes": "",
-    "source": "FOLDER_GET.folders[0]"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])",
+    "source": "FOLDER_GET"
   },
   {
     "command": "folder list",
