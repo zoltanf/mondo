@@ -15,12 +15,12 @@ from typing import TYPE_CHECKING
 
 import click
 import typer
-from typer.core import TyperGroup
 from typer.main import get_command_from_info
 from typer.main import get_group as get_typer_group
 from typer.models import CommandInfo
 
 from mondo.cli._examples import epilog_for
+from mondo.cli._help_format import MondoGroup, patch_help_classes
 from mondo.cli.argv import reorder_argv
 from mondo.version import __version__
 
@@ -226,6 +226,7 @@ def _load_lazy_entry(entry: _LazyEntry) -> click.Command:
         click_command.name = entry.name
         click_command.help = entry.help_text or click_command.help
         click_command.hidden = entry.hidden
+        patch_help_classes(click_command)
         return click_command
 
     command_info = CommandInfo(
@@ -236,14 +237,16 @@ def _load_lazy_entry(entry: _LazyEntry) -> click.Command:
         epilog=entry.epilog,
         hidden=entry.hidden,
     )
-    return get_command_from_info(
+    click_command = get_command_from_info(
         command_info,
         pretty_exceptions_short=True,
         rich_markup_mode="rich",
     )
+    patch_help_classes(click_command)
+    return click_command
 
 
-class LazyMondoGroup(TyperGroup):
+class LazyMondoGroup(MondoGroup):
     def list_commands(self, ctx: click.Context) -> list[str]:
         return list(_LAZY_ENTRY_ORDER)
 

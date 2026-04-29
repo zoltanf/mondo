@@ -20,6 +20,7 @@ import click
 import typer
 
 from mondo.cli._examples import EXAMPLES
+from mondo.cli._help_format import is_global_param
 
 _TOPIC_PACKAGE = "mondo.help"
 
@@ -77,8 +78,18 @@ def _param_to_dict(param: click.Parameter) -> dict[str, Any]:
     return entry
 
 
-def _walk(cmd: click.Command, path: list[str]) -> dict[str, Any]:
-    """Recursively serialize a Click command tree."""
+def _walk(
+    cmd: click.Command,
+    path: list[str],
+    global_params: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Recursively serialize a Click command tree.
+
+    `global_params` is the serialized form of the root callback's options. The
+    root node carries them as `params`; every descendant carries them as
+    `global_params` so agents can see what works on every command without
+    re-walking the tree.
+    """
     full_path = " ".join(path)
     # Examples are keyed on the path relative to the root (no "mondo" prefix)
     # so the registry stays app-name-agnostic.
@@ -97,6 +108,8 @@ def _walk(cmd: click.Command, path: list[str]) -> dict[str, Any]:
             for ex in EXAMPLES.get(example_key, [])
         ],
     }
+    if len(path) > 1:
+        node["global_params"] = global_params
     if isinstance(cmd, click.Group):
         ctx = click.Context(cmd)
         children: list[dict[str, Any]] = []
@@ -104,7 +117,7 @@ def _walk(cmd: click.Command, path: list[str]) -> dict[str, Any]:
             child = cmd.get_command(ctx, child_name)
             if child is None or bool(getattr(child, "hidden", False)):
                 continue
-            children.append(_walk(child, [*path, child_name]))
+            children.append(_walk(child, [*path, child_name], global_params))
         node["commands"] = children
     return node
 
@@ -112,7 +125,8 @@ def _walk(cmd: click.Command, path: list[str]) -> dict[str, Any]:
 def _dump_spec(root: typer.Typer) -> dict[str, Any]:
     """Produce the full JSON spec rooted at the given Typer app."""
     click_app = typer.main.get_command(root)
-    tree = _walk(click_app, [click_app.name or "mondo"])
+    global_params = [_param_to_dict(p) for p in click_app.params if is_global_param(p)]
+    tree = _walk(click_app, [click_app.name or "mondo"], global_params)
     return {
         "cli": "mondo",
         "root": tree,

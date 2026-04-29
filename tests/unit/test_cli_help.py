@@ -166,6 +166,51 @@ class TestDumpSpec:
         assert "mondo doc get --object-id" in result.output
         assert "--with-url" in result.output
 
+    def test_global_params_attached_to_subcommands_only(self, spec: dict) -> None:
+        """Root globals are advertised on every descendant via `global_params`,
+        but not on the root itself — the root keeps them in its own `params`."""
+        root = spec["root"]
+        assert "global_params" not in root
+        own_param_names = {p["name"] for p in root["params"]}
+        # The 10 documented globals must be among root's own params.
+        for name in (
+            "profile",
+            "api_token",
+            "api_version",
+            "output",
+            "query",
+            "verbose",
+            "debug",
+            "yes",
+            "dry_run",
+            "version",
+        ):
+            assert name in own_param_names, name
+
+        skill = next(c for c in root["commands"] if c["name"] == "skill")
+        assert "global_params" in skill
+        skill_global_names = {p["name"] for p in skill["global_params"]}
+        assert {
+            "profile",
+            "api_token",
+            "api_version",
+            "output",
+            "query",
+            "verbose",
+            "debug",
+            "yes",
+            "dry_run",
+            "version",
+        } <= skill_global_names
+        # Completion options are root-only by design — never advertised as globals.
+        assert "install_completion" not in skill_global_names
+        assert "show_completion" not in skill_global_names
+
+        install = next(c for c in skill["commands"] if c["name"] == "install")
+        assert "global_params" in install
+        # Leaf still keeps its own --global as a regular param, not a global.
+        assert {p["name"] for p in install["params"]} == {"global_"}
+
     def test_every_leaf_command_has_examples(self, spec: dict) -> None:
         """The binary is the docs — every runnable leaf command must ship
         copy-pasteable examples. `help` itself is exempt (it's a meta-command)."""
