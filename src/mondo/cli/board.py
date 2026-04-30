@@ -254,6 +254,12 @@ def list_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List boards.
 
@@ -301,6 +307,7 @@ def list_cmd(
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            explain_cache=explain_cache,
             with_url=with_url,
         )
         return
@@ -393,6 +400,7 @@ def _list_via_cache(
     fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    explain_cache: bool,
     with_url: bool,
 ) -> None:
     """Serve `board list` from the local directory cache.
@@ -438,6 +446,10 @@ def _list_via_cache(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+
+    from mondo.cli._cache_flags import emit_cache_provenance
+
+    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     # Spec default for boards list is "active" when --state omitted. Preserve that
     # client-side since the cache holds all states.

@@ -59,9 +59,19 @@ def list_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List folders (page-based). Served from the local directory cache when available."""
-    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+    from mondo.cli._cache_flags import (
+        emit_cache_provenance,
+        reject_mutually_exclusive,
+        resolve_cache_prefs,
+    )
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -91,6 +101,8 @@ def list_cmd(
         except MondoError as e:
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=int(e.exit_code)) from e
+
+        emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
         items = cached.entries
         if workspace:
@@ -189,9 +201,19 @@ def tree_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """Show folders as a hierarchy tree, grouped by workspace."""
-    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+    from mondo.cli._cache_flags import (
+        emit_cache_provenance,
+        reject_mutually_exclusive,
+        resolve_cache_prefs,
+    )
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -216,6 +238,7 @@ def tree_cmd(
         except MondoError as e:
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=int(e.exit_code)) from e
+        emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
         folders = cached.entries
     else:
         # Live path

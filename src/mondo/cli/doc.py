@@ -298,6 +298,12 @@ def list_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List docs (page-based).
 
@@ -335,6 +341,7 @@ def list_cmd(
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            explain_cache=explain_cache,
             with_url=with_url,
         )
         return
@@ -437,9 +444,11 @@ def _list_via_cache(
     fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    explain_cache: bool,
     with_url: bool,
 ) -> None:
     from mondo.cache.directory import get_docs as cache_get_docs
+    from mondo.cli._cache_flags import emit_cache_provenance
     from mondo.cli._filters import apply_fuzzy
     from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
@@ -471,6 +480,8 @@ def _list_via_cache(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+
+    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     entries = cached.entries
     if kind is not None:

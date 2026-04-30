@@ -117,6 +117,11 @@ def list_cmd(
     refresh_cache: bool = typer.Option(
         False, "--refresh-cache", help="Force-refresh the local directory cache."
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+    ),
 ) -> None:
     """List users. Served from the local directory cache when available."""
     from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
@@ -138,6 +143,7 @@ def list_cmd(
             newest_first=newest_first,
             max_items=max_items,
             refresh=refresh_cache,
+            explain_cache=explain_cache,
         )
         return
 
@@ -204,8 +210,10 @@ def _list_users_via_cache(
     newest_first: bool,
     max_items: int | None,
     refresh: bool,
+    explain_cache: bool = False,
 ) -> None:
     from mondo.cache.directory import get_users as cache_get_users
+    from mondo.cli._cache_flags import emit_cache_provenance
     from mondo.cli._filters import apply_fuzzy
 
     if opts.dry_run:
@@ -240,6 +248,8 @@ def _list_users_via_cache(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
+
+    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     entries = cached.entries
     if not non_active:

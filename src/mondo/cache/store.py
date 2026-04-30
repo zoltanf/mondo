@@ -41,6 +41,10 @@ class CachedDirectory:
     ttl_seconds: int
     api_endpoint: str
     entries: list[dict[str, Any]]
+    # `True` when this directory was served from disk; `False` when it was
+    # just fetched live and written. Used by the CLI provenance line to
+    # distinguish hit from refresh.
+    from_cache: bool = False
 
     @property
     def age(self) -> timedelta:
@@ -158,6 +162,7 @@ class CacheStore:
             ttl_seconds=ttl_seconds,
             api_endpoint=self._api_endpoint,
             entries=entries_raw,
+            from_cache=True,
         )
         if not cached.is_fresh():
             logger.debug(

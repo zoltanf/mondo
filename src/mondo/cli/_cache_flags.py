@@ -8,6 +8,7 @@ copy-pasted in each caller. This module centralizes them.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ import typer
 
 if TYPE_CHECKING:
     from mondo.cache import ResolvedCacheConfig
+    from mondo.cache.store import CachedDirectory, CacheStore
     from mondo.cli.context import GlobalOpts
 
 
@@ -53,3 +55,55 @@ def resolve_cache_prefs(
     use_cache = cfg.enabled and not no_cache and not extra_disable
     threshold = fuzzy_threshold if fuzzy_threshold is not None else cfg.fuzzy_threshold
     return CachePrefs(cfg=cfg, use_cache=use_cache, fuzzy_threshold=threshold)
+
+
+def _format_age(seconds: float) -> str:
+    """Compact age string: `45s`, `2m`, `3h`, `2d`."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds / 60)}m"
+    if seconds < 86400:
+        return f"{int(seconds / 3600)}h"
+    return f"{int(seconds / 86400)}d"
+
+
+def emit_cache_provenance(
+    opts: GlobalOpts,
+    cached: CachedDirectory,
+    *,
+    store: CacheStore | None = None,
+    explain: bool = False,
+) -> None:
+    """Write one stderr line describing where the result came from.
+
+    Fires only when `cached` was served from disk (`from_cache=True`). Suppressed
+    when `MONDO_NO_CACHE_NOTICE=1` (unless `explain=True` — `--explain-cache`
+    is an explicit user request and overrides the env var) or when
+    `--output table` is in effect (interactive humans don't need it).
+
+    `explain=True` adds verbose detail (path, ttl, fetched_at).
+    """
+    if not cached.from_cache:
+        return
+    if not explain:
+        if os.environ.get("MONDO_NO_CACHE_NOTICE") == "1":
+            return
+        if opts.output == "table":
+            return
+
+    age_str = _format_age(cached.age.total_seconds())
+    if explain and store is not None:
+        typer.secho(
+            f"cache: hit (entity={cached.entity_type}, count={len(cached.entries)}, "
+            f"age={age_str}, ttl={cached.ttl_seconds}s, "
+            f"fetched_at={cached.fetched_at.isoformat()}, path={store.path})",
+            fg=typer.colors.BLUE,
+            err=True,
+        )
+    else:
+        typer.secho(
+            f"cache: hit (entity={cached.entity_type}, age={age_str}, count={len(cached.entries)})",
+            fg=typer.colors.BLUE,
+            err=True,
+        )
