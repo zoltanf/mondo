@@ -365,42 +365,46 @@ EXAMPLES: dict[str, list[Example]] = {
             "Just one item's updates, up to 50",
             "mondo update list --item 1234567890 --max-items 50",
         ),
+        Example(
+            "Find the most-recently-posted update on an item",
+            "mondo update list --item 1234567890 -q 'reverse(sort_by([*],&created_at))[0]'",
+        ),
     ],
     "update get": [
         Example("Fetch a single update", "mondo update get --id 555"),
     ],
     "update create": [
         Example(
-            "Post a new update (body is HTML)",
-            'mondo update create --item 1234567890 --body "<p>FYI</p>"',
+            "Post a new update (markdown is the default)",
+            'mondo update create --item 1234567890 --body "**Done**: audit passed"',
         ),
         Example(
-            "Post from a markdown file (converted to HTML)",
-            "mondo update create --item 1234567890 --from-file note.md --markdown",
+            "Post from a markdown file",
+            "mondo update create --item 1234567890 --from-file note.md",
         ),
         Example(
-            "Inline markdown",
-            'mondo update create --item 1234567890 --body "**Done**: audit passed" --markdown',
+            "Send raw HTML verbatim (e.g. to preserve <mention> tags)",
+            'mondo update create --item 1234567890 --body "<p>Hi <mention user=42>Sam</mention></p>" --html',
         ),
     ],
     "update reply": [
         Example(
-            "Reply to an existing update",
-            'mondo update reply --parent 555 --body "<p>re</p>"',
+            "Reply to an existing update (markdown is the default)",
+            'mondo update reply --parent 555 --body "thanks, **merged**"',
         ),
         Example(
-            "Reply with markdown",
-            'mondo update reply --parent 555 --body "thanks, **merged**" --markdown',
+            "Reply with raw HTML",
+            'mondo update reply --parent 555 --body "<p>re</p>" --html',
         ),
     ],
     "update edit": [
         Example(
-            "Edit an update's body",
-            'mondo update edit 555 --body "<p>new body</p>"',
+            "Edit an update's body (markdown is the default)",
+            'mondo update edit 555 --body "## Revised\n- fixed typo"',
         ),
         Example(
-            "Rewrite in markdown",
-            'mondo update edit 555 --body "## Revised\n- fixed typo" --markdown',
+            "Edit with raw HTML",
+            'mondo update edit 555 --body "<p>new body</p>" --html',
         ),
     ],
     "update delete": [

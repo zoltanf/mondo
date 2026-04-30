@@ -513,6 +513,7 @@ def get_cmd(
     doc_id: int | None = typer.Option(
         None,
         "--id",
+        "--doc",
         help="Internal doc ID (or monday.com URL).",
         click_type=MondayIdParam(),
     ),
@@ -946,7 +947,7 @@ def version_diff_cmd(
 def update_block_cmd(
     ctx: typer.Context,
     id_pos: str | None = typer.Argument(None, metavar="[BLOCK_ID]", help="Block ID (positional)."),
-    id_flag: str | None = typer.Option(None, "--id", help="Block ID (flag form)."),
+    id_flag: str | None = typer.Option(None, "--id", "--block", help="Block ID (flag form)."),
     content: str = typer.Option(
         ..., "--content", metavar="JSON", help="Replacement content as JSON."
     ),
@@ -966,7 +967,7 @@ def update_block_cmd(
 def delete_block_cmd(
     ctx: typer.Context,
     id_pos: str | None = typer.Argument(None, metavar="[BLOCK_ID]", help="Block ID (positional)."),
-    id_flag: str | None = typer.Option(None, "--id", help="Block ID (flag form)."),
+    id_flag: str | None = typer.Option(None, "--id", "--block", help="Block ID (flag form)."),
 ) -> None:
     """Delete a single block from a doc."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

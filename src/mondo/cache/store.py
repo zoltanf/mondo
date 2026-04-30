@@ -22,11 +22,12 @@ from loguru import logger
 
 from mondo.version import __version__
 
-# Bumped to 4: board directory queries now include both classic and
-# multi-level boards plus `hierarchy_type`. Older board caches may be
-# functionally incomplete, not just missing a cosmetic field, so force a
-# silent one-off refresh.
-SCHEMA_VERSION = 4
+# Bumped to 5: board directory queries now include the nested
+# `workspace { id name }` object alongside `workspace_id`, matching the
+# shape of `BOARD_GET` so JMESPath projections like `[*].workspace.name`
+# work uniformly across `board get` and `board list`. Older caches that
+# only have the scalar `workspace_id` are silently refreshed.
+SCHEMA_VERSION = 5
 
 EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "groups" | "docs" | "folders"
 

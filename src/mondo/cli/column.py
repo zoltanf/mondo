@@ -608,7 +608,7 @@ def create_cmd(
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    column_id: str = typer.Option(..., "--id", help="Column ID."),
+    column_id: str = typer.Option(..., "--id", "--column", help="Column ID."),
     title: str = typer.Option(..., "--title", help="New column title."),
 ) -> None:
     """Rename a column (shortcut for change-metadata --property title)."""
@@ -623,7 +623,7 @@ def rename_cmd(
 def change_metadata_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    column_id: str = typer.Option(..., "--id", help="Column ID."),
+    column_id: str = typer.Option(..., "--id", "--column", help="Column ID."),
     column_property: ColumnProperty = typer.Option(
         ...,
         "--property",
@@ -649,7 +649,7 @@ def change_metadata_cmd(
 def delete_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    column_id: str = typer.Option(..., "--id", help="Column ID to delete."),
+    column_id: str = typer.Option(..., "--id", "--column", help="Column ID to delete."),
 ) -> None:
     """Delete a column (permanent — destroys all values stored in it)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

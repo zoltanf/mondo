@@ -62,6 +62,38 @@ Every error emits to stderr and returns a specific exit code:
 
 Full detail: `mondo help exit-codes`.
 
+## Where things live (don't drop to `mondo graphql` for these)
+
+A few resources are easy to miss because they aren't items or boards:
+
+- **Folders**: `mondo folder list --workspace W`, `mondo folder tree
+  --workspace W`, `mondo folder get <id>`, plus `create / update /
+  delete`. Use these when placing a duplicated board into a target
+  folder, not raw GraphQL.
+- **Workspaces**: `mondo workspace list / get / create / update /
+  delete / add-user / remove-user / add-team / remove-team`.
+- **Updates** (comments) on items: `mondo update list --item ID`
+  returns each update's `created_at`, `body`, and `creator` —
+  enough to find a freshly posted update by id without fuzzy-matching
+  on body text. Pair with `-q 'reverse(sort_by([*],&created_at))[0]'`.
+
+## Entity-typed flag aliases
+
+Sibling commands that select an entity by id accept both `--id` and a
+shorter entity-typed alias, so you don't need to remember which is
+which:
+
+- `mondo group rename --board X --group <gid> ...`  (alias for `--id`)
+- `mondo column rename --board X --column <cid> ...`
+- `mondo item get --item <iid>`, `mondo board get --board <bid>`
+- `mondo folder get --folder <fid>`, `mondo workspace get --workspace <wid>`
+- `mondo team get --team <tid>`, `mondo update edit --update <uid>`
+- `mondo subitem get --subitem <iid>`, `mondo doc update-block --block <bid>`
+
+The canonical form is still `--id` (and a positional argument where
+supported); the aliases exist so analogy from one command to another
+doesn't cost a round-trip.
+
 ## The escape hatch
 
 Anything `mondo` doesn't wrap, use `mondo graphql` — same auth, same

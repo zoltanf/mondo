@@ -282,7 +282,7 @@ def _list_users_via_cache(
 def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="User ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="User ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--user", help="User ID (flag form)."),
 ) -> None:
     """Fetch a single user by ID, including teams and account."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

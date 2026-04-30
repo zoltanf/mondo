@@ -208,6 +208,7 @@ def get_cmd(
     id_flag: int | None = typer.Option(
         None,
         "--id",
+        "--item",
         help="Item ID or monday.com /pulses/<id> URL.",
         click_type=MondayIdParam(kind="item"),
     ),
@@ -437,7 +438,7 @@ def create_cmd(
 def rename_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent board ID."),
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
@@ -452,7 +453,7 @@ def rename_cmd(
 def duplicate_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent board ID."),
     with_updates: bool = typer.Option(
         False, "--with-updates", help="Also duplicate the item's updates (comments)."
@@ -473,7 +474,7 @@ def duplicate_cmd(
 def archive_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
 ) -> None:
     """Archive an item (reversible via monday UI within 30 days)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -487,7 +488,7 @@ def archive_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Item ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
     hard: bool = typer.Option(
         False, "--hard", help="Required for permanent deletion (paired with --yes)."
     ),
@@ -511,7 +512,7 @@ def delete_cmd(
 @app.command("move", epilog=epilog_for("item move"))
 def move_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID to move."),
+    item_id: int = typer.Option(..., "--id", "--item", help="Item ID to move."),
     group_id: str = typer.Option(..., "--group", help="Target group ID within the same board."),
 ) -> None:
     """Move an item to a different group within the same board."""
@@ -550,7 +551,7 @@ def _parse_column_mapping(tokens: list[str]) -> list[dict[str, Any]]:
 @app.command("move-to-board", epilog=epilog_for("item move-to-board"))
 def move_to_board_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--id", help="Item ID to move."),
+    item_id: int = typer.Option(..., "--id", "--item", help="Item ID to move."),
     board_id: int = typer.Option(..., "--to-board", help="Destination board ID."),
     group_id: str = typer.Option(..., "--to-group", help="Destination group ID."),
     column_mapping: list[str] | None = typer.Option(

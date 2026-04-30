@@ -133,6 +133,7 @@ def get_cmd(
     id_flag: int | None = typer.Option(
         None,
         "--id",
+        "--subitem",
         help="Subitem ID or monday.com /pulses/<id> URL.",
         click_type=MondayIdParam(kind="item"),
     ),
@@ -234,7 +235,7 @@ def create_cmd(
 def rename_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--subitem", help="Subitem ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent subitems board ID."),
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
@@ -250,7 +251,7 @@ def rename_cmd(
 def move_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--subitem", help="Subitem ID (flag form)."),
     group_id: str = typer.Option(
         ...,
         "--group",
@@ -272,7 +273,7 @@ def move_cmd(
 def archive_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--subitem", help="Subitem ID (flag form)."),
 ) -> None:
     """Archive a subitem (reversible)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -287,7 +288,7 @@ def archive_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Subitem ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Subitem ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--subitem", help="Subitem ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a subitem (permanent — prefer `archive` unless --hard is passed)."""

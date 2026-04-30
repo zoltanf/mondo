@@ -53,7 +53,7 @@ def _load_body(
     from_file: Path | None,
     from_stdin: bool,
     *,
-    markdown: bool = False,
+    html_only: bool = False,
 ) -> str:
     sources = sum(x is not None and x is not False for x in (body, from_file, from_stdin))
     if sources == 0:
@@ -77,11 +77,31 @@ def _load_body(
     else:
         assert body is not None
         raw = body
-    if markdown:
-        from mondo.util.markdown import to_html
+    if html_only:
+        return raw
+    # Default: render as CommonMark markdown. Raw HTML in the input is passed
+    # through unchanged by the CommonMark renderer, so existing scripts that
+    # supplied ready-made HTML (e.g. `<p>FYI</p>`) keep working.
+    from mondo.util.markdown import to_html
 
-        return to_html(raw)
-    return raw
+    return to_html(raw)
+
+
+def _resolve_body_format(*, markdown: bool, html: bool) -> bool:
+    """Return `html_only` for `_load_body`. Errors on conflicting flags.
+
+    Default (neither flag): markdown → HTML conversion (most agent-friendly).
+    --markdown: explicit opt-in (no-op now; kept for backward compatibility).
+    --html:     opt out of conversion; the body is sent verbatim.
+    """
+    if markdown and html:
+        typer.secho(
+            "error: --markdown and --html are mutually exclusive.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return html
 
 
 # ----- read commands -----
@@ -187,7 +207,7 @@ def list_cmd(
 def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
 ) -> None:
     """Fetch a single update by ID with replies, likes, and pinning info."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -209,20 +229,30 @@ def create_cmd(
     ctx: typer.Context,
     item_id: int = typer.Option(..., "--item", help="Item to post the update on."),
     body: str | None = typer.Option(
-        None, "--body", help="Update body (HTML — monday does not accept markdown)."
+        None,
+        "--body",
+        help="Update body (CommonMark markdown by default — pass --html to send HTML "
+        "verbatim).",
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
     markdown: bool = typer.Option(
         False,
         "--markdown",
-        help="Treat --body / --from-file / --from-stdin as CommonMark markdown "
-        "and convert to HTML before posting.",
+        help="No-op (markdown is the default). Kept for backward compatibility.",
+    ),
+    html: bool = typer.Option(
+        False,
+        "--html",
+        help="Send the body verbatim as HTML, skipping markdown conversion. "
+        "Use this when the input already includes monday-specific HTML "
+        "(e.g. `<mention>` tags) you want to preserve exactly.",
     ),
 ) -> None:
     """Post a new update (comment) on an item."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    payload = _load_body(body, from_file, from_stdin, markdown=markdown)
+    html_only = _resolve_body_format(markdown=markdown, html=html)
+    payload = _load_body(body, from_file, from_stdin, html_only=html_only)
     variables = {"item": item_id, "parent": None, "body": payload}
     data = execute(opts, UPDATE_CREATE, variables)
     opts.emit(data.get("create_update") or {})
@@ -235,20 +265,28 @@ def reply_cmd(
         ..., "--parent", help="Parent update ID (the reply attaches to it)."
     ),
     body: str | None = typer.Option(
-        None, "--body", help="Reply body (HTML — monday does not accept markdown)."
+        None,
+        "--body",
+        help="Reply body (CommonMark markdown by default — pass --html to send HTML "
+        "verbatim).",
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
     markdown: bool = typer.Option(
         False,
         "--markdown",
-        help="Treat --body / --from-file / --from-stdin as CommonMark markdown "
-        "and convert to HTML before posting.",
+        help="No-op (markdown is the default). Kept for backward compatibility.",
+    ),
+    html: bool = typer.Option(
+        False,
+        "--html",
+        help="Send the body verbatim as HTML, skipping markdown conversion.",
     ),
 ) -> None:
     """Post a reply to an existing update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    payload = _load_body(body, from_file, from_stdin, markdown=markdown)
+    html_only = _resolve_body_format(markdown=markdown, html=html)
+    payload = _load_body(body, from_file, from_stdin, html_only=html_only)
     variables = {"item": None, "parent": parent_id, "body": payload}
     data = execute(opts, UPDATE_CREATE, variables)
     opts.emit(data.get("create_update") or {})
@@ -258,8 +296,13 @@ def reply_cmd(
 def edit_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
-    body: str | None = typer.Option(None, "--body", help="New body (HTML)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
+    body: str | None = typer.Option(
+        None,
+        "--body",
+        help="New body (CommonMark markdown by default — pass --html to send HTML "
+        "verbatim).",
+    ),
     from_file: Path | None = typer.Option(
         None, "--from-file", help="Load the new body from a file."
     ),
@@ -267,14 +310,19 @@ def edit_cmd(
     markdown: bool = typer.Option(
         False,
         "--markdown",
-        help="Treat --body / --from-file / --from-stdin as CommonMark markdown "
-        "and convert to HTML before posting.",
+        help="No-op (markdown is the default). Kept for backward compatibility.",
+    ),
+    html: bool = typer.Option(
+        False,
+        "--html",
+        help="Send the body verbatim as HTML, skipping markdown conversion.",
     ),
 ) -> None:
     """Edit an existing update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
-    payload = _load_body(body, from_file, from_stdin, markdown=markdown)
+    html_only = _resolve_body_format(markdown=markdown, html=html)
+    payload = _load_body(body, from_file, from_stdin, html_only=html_only)
     variables = {"id": update_id, "body": payload}
     data = execute(opts, UPDATE_EDIT, variables)
     opts.emit(data.get("edit_update") or {})
@@ -284,7 +332,7 @@ def edit_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
 ) -> None:
     """Delete an update (permanent)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -299,7 +347,7 @@ def delete_cmd(
 def like_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
 ) -> None:
     """Like an update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -313,7 +361,7 @@ def like_cmd(
 def unlike_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
 ) -> None:
     """Remove a like from an update."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -340,7 +388,7 @@ def clear_cmd(
 def pin_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
     item_id: int | None = typer.Option(
         None, "--item", help="Item the update belongs to (optional)."
     ),
@@ -357,7 +405,7 @@ def pin_cmd(
 def unpin_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Update ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
     item_id: int | None = typer.Option(
         None, "--item", help="Item the update belongs to (optional)."
     ),

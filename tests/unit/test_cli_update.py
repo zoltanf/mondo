@@ -135,6 +135,61 @@ class TestCreate:
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
+    def test_markdown_is_default(self, httpx_mock: HTTPXMock) -> None:
+        # Without --html, --body is treated as CommonMark and converted.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_update": {"id": "1"}}),
+        )
+        result = runner.invoke(
+            app,
+            ["update", "create", "--item", "10", "--body", "**bold**"],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["body"] == "<p><strong>bold</strong></p>\n"
+
+    def test_html_flag_skips_markdown_conversion(self, httpx_mock: HTTPXMock) -> None:
+        # `--html` sends the body verbatim, including monday-specific tags.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_update": {"id": "1"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "update",
+                "create",
+                "--item",
+                "10",
+                "--body",
+                "**not bold** <mention user=42>x</mention>",
+                "--html",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["body"] == "**not bold** <mention user=42>x</mention>"
+
+    def test_markdown_and_html_are_mutually_exclusive(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "update",
+                "create",
+                "--item",
+                "10",
+                "--body",
+                "x",
+                "--markdown",
+                "--html",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "mutually exclusive" in result.stderr
+
     def test_from_file(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         body_path = tmp_path / "body.html"
         body_path.write_text("<p>from file</p>")

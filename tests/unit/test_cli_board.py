@@ -165,6 +165,17 @@ class TestBoardList:
         assert body["variables"]["workspaceIds"] == [42, 43]
         assert body["variables"]["orderBy"] == "used_at"
 
+    def test_query_includes_nested_workspace(self, httpx_mock: HTTPXMock) -> None:
+        """The boards-list selection set must include the nested
+        `workspace { id name }` so JMESPath projections like
+        `[*].workspace.name` work — both on the live path and (via the
+        same query) when populating the cache."""
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
+        result = runner.invoke(app, ["board", "list"])
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert "workspace { id name }" in body["query"]
+
     def test_omits_unset_filter_args(self, httpx_mock: HTTPXMock) -> None:
         """Monday drops arbitrary boards when `workspace_ids: null` is sent as
         a variable. We build the query dynamically so unset filters are
@@ -1000,6 +1011,45 @@ class TestBoardDuplicate:
         assert v["name"] == "Cloned"
         assert v["workspace"] == 7
         assert v["keepSubscribers"] is True
+
+    def test_wait_envelope_for_structure_only(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Structure-only duplicates target items_count=0 (because no items
+        are copied). The `_wait` envelope must report `matched: true` and
+        `expected: 0` so callers don't have to reason about the historical
+        `source_items_count` mismatch."""
+        # 1) duplicate_board mutation → returns the new board id
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"duplicate_board": {"board": {"id": "101", "name": "Copy"}}}),
+        )
+        # Skip the polling loop entirely.
+        from mondo.api import polling as _polling
+
+        monkeypatch.setattr(_polling, "wait_for_items_count_stable", lambda *a, **k: 0)
+        result = runner.invoke(
+            app,
+            [
+                "board",
+                "duplicate",
+                "--id",
+                "42",
+                "--type",
+                "duplicate_board_with_structure",
+                "--workspace",
+                "7",
+                "--wait",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["_wait"] == {
+            "final_items_count": 0,
+            "expected": 0,
+            "matched": True,
+        }
 
     def test_output_normalizes_nested_board(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(

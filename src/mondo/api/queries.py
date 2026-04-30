@@ -1219,6 +1219,10 @@ def build_boards_list_query(
         "board_kind",
         "board_folder_id",
         "workspace_id",
+        # Nested object for parity with `BOARD_GET`. JMESPath projections like
+        # `[*].workspace.name` or `[*].workspace` worked on `board get` but
+        # returned `null` from `board list` until this was added.
+        "workspace { id name }",
         "hierarchy_type",
         "created_at",
         "updated_at",

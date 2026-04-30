@@ -228,7 +228,7 @@ def get_cmd(
     id_pos: int | None = typer.Argument(
         None, metavar="[ID]", help="Workspace ID (positional)."
     ),
-    id_flag: int | None = typer.Option(None, "--id", help="Workspace ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
 ) -> None:
     """Fetch a single workspace by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -277,7 +277,7 @@ def update_cmd(
     id_pos: int | None = typer.Argument(
         None, metavar="[ID]", help="Workspace ID (positional)."
     ),
-    id_flag: int | None = typer.Option(None, "--id", help="Workspace ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
     name: str | None = typer.Option(None, "--name", help="New name."),
     description: str | None = typer.Option(None, "--description", help="New description."),
     kind: WorkspaceKind | None = typer.Option(
@@ -315,7 +315,7 @@ def delete_cmd(
     id_pos: int | None = typer.Argument(
         None, metavar="[ID]", help="Workspace ID (positional)."
     ),
-    id_flag: int | None = typer.Option(None, "--id", help="Workspace ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a workspace (permanent; Main Workspace cannot be deleted)."""
@@ -344,7 +344,7 @@ def delete_cmd(
 @app.command("add-user", epilog=epilog_for("workspace add-user"))
 def add_user_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
+    workspace_id: int = typer.Option(..., "--id", "--workspace", help="Workspace ID."),
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
     kind: SubscriberKind = typer.Option(
         SubscriberKind.subscriber,
@@ -363,7 +363,7 @@ def add_user_cmd(
 @app.command("remove-user", epilog=epilog_for("workspace remove-user"))
 def remove_user_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
+    workspace_id: int = typer.Option(..., "--id", "--workspace", help="Workspace ID."),
     user: list[int] = typer.Option(..., "--user", help="User ID to remove (repeatable)."),
 ) -> None:
     """Remove one or more users from a workspace."""
@@ -376,7 +376,7 @@ def remove_user_cmd(
 @app.command("add-team", epilog=epilog_for("workspace add-team"))
 def add_team_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
+    workspace_id: int = typer.Option(..., "--id", "--workspace", help="Workspace ID."),
     team: list[int] = typer.Option(..., "--team", help="Team ID (repeatable)."),
     kind: SubscriberKind = typer.Option(
         SubscriberKind.subscriber,
@@ -395,7 +395,7 @@ def add_team_cmd(
 @app.command("remove-team", epilog=epilog_for("workspace remove-team"))
 def remove_team_cmd(
     ctx: typer.Context,
-    workspace_id: int = typer.Option(..., "--id", help="Workspace ID."),
+    workspace_id: int = typer.Option(..., "--id", "--workspace", help="Workspace ID."),
     team: list[int] = typer.Option(..., "--team", help="Team ID to remove (repeatable)."),
 ) -> None:
     """Remove one or more teams from a workspace."""

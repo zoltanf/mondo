@@ -254,6 +254,22 @@ class TestGroupRename:
             "value": "New",
         }
 
+    def test_group_alias_for_id(self, httpx_mock: HTTPXMock) -> None:
+        # Agent-friendly alias: --group works as a synonym for --id, matching
+        # the convention used by `item create --group ...`.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_group": {"id": "topics", "title": "New"}}),
+        )
+        result = runner.invoke(
+            app,
+            ["group", "rename", "--board", "42", "--group", "topics", "--title", "New"],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["group"] == "topics"
+
 
 class TestGroupUpdate:
     def test_color_value_passes_through_unchanged(self, httpx_mock: HTTPXMock) -> None:

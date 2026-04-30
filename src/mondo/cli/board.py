@@ -489,6 +489,7 @@ def get_cmd(
     id_flag: int | None = typer.Option(
         None,
         "--id",
+        "--board",
         help="Board ID or monday.com URL.",
         click_type=MondayIdParam(),
     ),
@@ -593,7 +594,7 @@ def create_cmd(
 def update_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
     attribute: BoardAttribute = typer.Option(
         ...,
         "--attribute",
@@ -620,7 +621,7 @@ def update_cmd(
 def set_permission_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
     role: BoardBasicRole = typer.Option(
         ...,
         "--role",
@@ -639,7 +640,7 @@ def set_permission_cmd(
 def move_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
     workspace: int | None = typer.Option(None, "--workspace", help="Target workspace ID."),
     folder: int | None = typer.Option(None, "--folder", help="Target folder ID."),
     product_id: int | None = typer.Option(
@@ -685,7 +686,7 @@ def move_cmd(
 def archive_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
 ) -> None:
     """Archive a board (reversible via monday UI within 30 days)."""
     from mondo.cli._cache_invalidate import invalidate_entity
@@ -703,7 +704,7 @@ def archive_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
     hard: bool = typer.Option(
         False, "--hard", help="Required for permanent deletion (paired with --yes)."
     ),
@@ -732,7 +733,7 @@ def delete_cmd(
 def duplicate_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Board ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Board ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
     duplicate_type: DuplicateType = typer.Option(
         DuplicateType.with_structure,
         "--type",
@@ -813,7 +814,14 @@ def duplicate_cmd(
                 err=True,
             )
             raise typer.Exit(code=1) from None
-        source_items_count = _items_count_or_none(opts, board_id)
+        # Structure-only duplicates never copy items, so the target is 0 by
+        # definition — using the source's count would mismatch and force the
+        # stall-counter path to terminate the wait, which is correct but
+        # confusing for callers reading the response.
+        if duplicate_type is DuplicateType.with_structure:
+            expected_count: int | None = 0
+        else:
+            expected_count = _items_count_or_none(opts, board_id)
         client = client_or_exit(opts)
         try:
             from mondo.api.polling import wait_for_items_count_stable
@@ -822,16 +830,21 @@ def duplicate_cmd(
                 final_count = wait_for_items_count_stable(
                     client,
                     dup_id,
-                    target=source_items_count,
+                    target=expected_count,
                     timeout_s=float(timeout_s),
                     interval_s=poll_interval_s,
                 )
         except MondoError as e:
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=int(e.exit_code)) from e
+        matched = expected_count is not None and final_count == expected_count
         duplicate_payload = {
             **duplicate_payload,
-            "_wait": {"final_items_count": final_count, "source_items_count": source_items_count},
+            "_wait": {
+                "final_items_count": final_count,
+                "expected": expected_count,
+                "matched": matched,
+            },
         }
 
     board_payload = duplicate_payload.get("board")

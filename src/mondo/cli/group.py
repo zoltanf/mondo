@@ -182,7 +182,7 @@ def create_cmd(
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", help="Group ID."),
+    group_id: str = typer.Option(..., "--id", "--group", help="Group ID."),
     title: str = typer.Option(..., "--title", help="New group title."),
 ) -> None:
     """Rename a group (shortcut for update --attribute title)."""
@@ -202,7 +202,7 @@ def rename_cmd(
 def update_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", help="Group ID."),
+    group_id: str = typer.Option(..., "--id", "--group", help="Group ID."),
     attribute: GroupAttribute = typer.Option(
         ...,
         "--attribute",
@@ -240,7 +240,7 @@ def update_cmd(
 def reorder_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", help="Group ID to reorder."),
+    group_id: str = typer.Option(..., "--id", "--group", help="Group ID to reorder."),
     after: str | None = typer.Option(
         None, "--after", help="Place this group after the given group ID."
     ),
@@ -284,7 +284,7 @@ def reorder_cmd(
 def duplicate_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", help="Group ID to duplicate."),
+    group_id: str = typer.Option(..., "--id", "--group", help="Group ID to duplicate."),
     title: str | None = typer.Option(None, "--title", help="New group title."),
     add_to_top: bool = typer.Option(
         False, "--add-to-top", help="Place the copy at the top of the board."
@@ -307,7 +307,7 @@ def duplicate_cmd(
 def archive_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", help="Group ID to archive."),
+    group_id: str = typer.Option(..., "--id", "--group", help="Group ID to archive."),
 ) -> None:
     """Archive a group."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -322,7 +322,7 @@ def archive_cmd(
 def delete_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", help="Group ID to delete."),
+    group_id: str = typer.Option(..., "--id", "--group", help="Group ID to delete."),
     hard: bool = typer.Option(
         False, "--hard", help="Required for permanent deletion (cascades to items)."
     ),

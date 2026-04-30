@@ -319,7 +319,7 @@ def tree_cmd(
 def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--folder", help="Folder ID (flag form)."),
 ) -> None:
     """Fetch a single folder by ID."""
     from mondo.cli._normalize import normalize_folder_entry
@@ -375,7 +375,7 @@ def create_cmd(
 def update_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--folder", help="Folder ID (flag form)."),
     name: str | None = typer.Option(None, "--name", help="New name."),
     color: str | None = typer.Option(None, "--color", help="New color (enum)."),
     product_id: int | None = typer.Option(None, "--product-id", help="Account product ID."),
@@ -417,7 +417,7 @@ def update_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Folder ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--folder", help="Folder ID (flag form)."),
     hard: bool = typer.Option(
         False, "--hard", help="Required (folder delete archives contained boards)."
     ),

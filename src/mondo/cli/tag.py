@@ -43,7 +43,7 @@ def list_cmd(
 def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Tag ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Tag ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--tag", help="Tag ID (flag form)."),
     board_id: int | None = typer.Option(
         None,
         "--board",

@@ -108,7 +108,7 @@ def create_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Webhook ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Webhook ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--webhook", help="Webhook ID (flag form)."),
 ) -> None:
     """Delete a webhook."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)

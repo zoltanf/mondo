@@ -162,7 +162,7 @@ def _list_teams_via_cache(
 def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Team ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Team ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--team", help="Team ID (flag form)."),
 ) -> None:
     """Fetch a single team by ID."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -216,7 +216,7 @@ def create_cmd(
 def delete_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Team ID (positional)."),
-    id_flag: int | None = typer.Option(None, "--id", help="Team ID (flag form)."),
+    id_flag: int | None = typer.Option(None, "--id", "--team", help="Team ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a team (permanent)."""
@@ -242,7 +242,7 @@ def delete_cmd(
 @app.command("add-users", epilog=epilog_for("team add-users"))
 def add_users_cmd(
     ctx: typer.Context,
-    team_id: int = typer.Option(..., "--id", help="Team ID."),
+    team_id: int = typer.Option(..., "--id", "--team", help="Team ID."),
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
 ) -> None:
     """Add one or more users to a team."""
@@ -258,7 +258,7 @@ def add_users_cmd(
 @app.command("remove-users", epilog=epilog_for("team remove-users"))
 def remove_users_cmd(
     ctx: typer.Context,
-    team_id: int = typer.Option(..., "--id", help="Team ID."),
+    team_id: int = typer.Option(..., "--id", "--team", help="Team ID."),
     user: list[int] = typer.Option(..., "--user", help="User ID (repeatable)."),
 ) -> None:
     """Remove one or more users from a team."""
@@ -274,7 +274,7 @@ def remove_users_cmd(
 @app.command("assign-owners", epilog=epilog_for("team assign-owners"))
 def assign_owners_cmd(
     ctx: typer.Context,
-    team_id: int = typer.Option(..., "--id", help="Team ID."),
+    team_id: int = typer.Option(..., "--id", "--team", help="Team ID."),
     user: list[int] = typer.Option(..., "--user", help="User ID to promote to owner (repeatable)."),
 ) -> None:
     """Promote one or more users to team owner."""
@@ -290,7 +290,7 @@ def assign_owners_cmd(
 @app.command("remove-owners", epilog=epilog_for("team remove-owners"))
 def remove_owners_cmd(
     ctx: typer.Context,
-    team_id: int = typer.Option(..., "--id", help="Team ID."),
+    team_id: int = typer.Option(..., "--id", "--team", help="Team ID."),
     user: list[int] = typer.Option(
         ..., "--user", help="User ID to demote from owner (repeatable)."
     ),
