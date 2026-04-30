@@ -114,12 +114,13 @@ def _fetch_doc_blocks(client: MondayClient, object_id: int) -> dict[str, Any]:
     return merged
 
 
-def _create_blocks(
+def create_blocks(
     client: MondayClient,
     doc_id: int,
     blocks: list[dict[str, Any]],
     *,
     after_block_id: str | None = None,
+    parent_block_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Append `blocks` to `doc_id` in order, chaining via `after_block_id`.
 
@@ -129,6 +130,11 @@ def _create_blocks(
 
     Without an `after_block_id`, monday inserts at the *top* of the doc; pass
     the existing last block's id to get true append semantics.
+
+    If a block carries a `_children` list (set by `markdown_to_blocks` for
+    GFM callout containers — `notice` / `callout`), each child is created
+    with `parent_block_id` pointing at the parent's API-returned id.
+    Siblings inside a container form their own `after_block_id` chain.
     """
     created: list[dict[str, Any]] = []
     prev_id: str | None = after_block_id
@@ -141,7 +147,7 @@ def _create_blocks(
                 "type": block["type"],
                 "content": json.dumps(block.get("content") or {}),
                 "after": prev_id,
-                "parent": None,
+                "parent": parent_block_id,
             },
         )
         result = data.get("create_doc_block") or {}
@@ -149,6 +155,15 @@ def _create_blocks(
         new_id = result.get("id")
         if new_id:
             prev_id = str(new_id)
+            children = block.get("_children") or []
+            if children:
+                create_blocks(
+                    client,
+                    doc_id,
+                    children,
+                    after_block_id=None,
+                    parent_block_id=str(new_id),
+                )
     return created
 
 
@@ -265,7 +280,7 @@ def set_cmd(
                 doc_id = doc.get("id")
                 if not doc_id:
                     raise MondoError("create_doc returned no id")
-                _create_blocks(client, int(doc_id), blocks)
+                create_blocks(client, int(doc_id), blocks)
                 opts.emit(
                     {
                         "doc_id": doc_id,
@@ -290,7 +305,7 @@ def set_cmd(
                     }
                 )
                 raise typer.Exit(0)
-            _create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
+            create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
             opts.emit(
                 {
                     "doc_id": doc_id,
@@ -351,7 +366,7 @@ def append_cmd(
                     }
                 )
                 raise typer.Exit(0)
-            _create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
+            create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
     except NotFoundError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from e

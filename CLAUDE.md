@@ -16,11 +16,14 @@ Variables it sets:
 - `MONDO_TEST_BOARD_NAME="Mondo Test Board"` — human label
 - `MONDO_TEST_BOARD_ID="5094861043"` — board for live smoke tests
 - `MONDO_TEST_BOARD_URL` — convenience link
+- `MONDO_TEST_WORKSPACE_ID="592446"` — the "monday.com Playground"
+  workspace where the test board lives; use it when you need a
+  workspace id for ad-hoc test docs / scratch resources (clean them
+  up afterwards).
 
 The script also runs `uv run mondo auth status` at the end, so sourcing
 prints that JSON to the shell. Pipe to `>/dev/null 2>&1` if you don't
-want it in your output. The board lives in workspace `592446`
-("monday.com Playground").
+want it in your output.
 
 The integration suite at `tests/integration/test_live_writes.py` is gated
 on a *different* env var, `MONDAY_TEST_TOKEN`, so sourcing the env file
