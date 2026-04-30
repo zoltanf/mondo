@@ -6,6 +6,7 @@ or uses the helper `build_client(opts)` to get a ready-to-use MondayClient.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TextIO
@@ -53,11 +54,18 @@ class GlobalOpts:
         *,
         stream: TextIO | None = None,
         default_tty_override: bool | None = None,
+        selected_fields: frozenset[str] | None = None,
     ) -> None:
         """Render `data` to stdout (or `stream`) honoring --output and --query.
 
         Applies `--query` before formatting. Auto-picks the format based on
         whether stdout is a TTY if `--output` wasn't set.
+
+        When `selected_fields` is provided alongside `--query`, every JMESPath
+        leaf identifier missing from the set produces one stderr warning line
+        — this is how silent-null projections (a leaf the GraphQL query never
+        selected) become visible. Set `MONDO_NO_PROJECTION_WARNINGS=1` to
+        suppress.
         """
         out = stream or sys.stdout
         is_tty = (
@@ -70,7 +78,29 @@ class GlobalOpts:
 
         fmt = self.output or choose_default_format(is_tty=is_tty)
         projected = apply_query(data, self.query)
+        if (
+            self.query
+            and selected_fields is not None
+            and os.environ.get("MONDO_NO_PROJECTION_WARNINGS") != "1"
+        ):
+            self._warn_unselected_projection_fields(self.query, selected_fields)
         format_output(projected, fmt=fmt, stream=out, tty=is_tty)
+
+    @staticmethod
+    def _warn_unselected_projection_fields(
+        expression: str, selected_fields: frozenset[str]
+    ) -> None:
+        import typer
+
+        from mondo.output.query import extract_query_leaf_fields
+
+        leaves = extract_query_leaf_fields(expression)
+        for missing in sorted(leaves - selected_fields):
+            typer.secho(
+                f"warning: field '{missing}' is not in the GraphQL selection set",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
 
     def resolve_token(self) -> ResolvedToken:
         """Run the token resolution chain using this invocation's options."""

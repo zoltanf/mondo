@@ -247,7 +247,9 @@ def get_cmd(
     item = items[0]
     if not with_url:
         item.pop("url", None)
-    opts.emit(item)
+    from mondo.cli._field_sets import item_get_fields
+
+    opts.emit(item, selected_fields=item_get_fields())
 
 
 @app.command("list", epilog=epilog_for("item list"))
@@ -329,7 +331,9 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    opts.emit(items)
+    from mondo.cli._field_sets import item_list_fields
+
+    opts.emit(items, selected_fields=item_list_fields())
 
 
 # ----- write commands -----

@@ -42,6 +42,9 @@ Thumbs.db
 # Worktrees
 .worktrees/
 
+# Agent handoff notes (per-session, not for the repo)
+HANDOFF.md
+
 # Project-local secrets
 *.local.yaml
 credentials.yaml

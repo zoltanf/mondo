@@ -373,7 +373,9 @@ def list_cmd(
 
     # Re-normalize last so optional decorators don't break key-order invariants.
     boards = [normalize_board_entry(b) for b in boards]
-    opts.emit(boards)
+    from mondo.cli._field_sets import board_list_fields
+
+    opts.emit(boards, selected_fields=board_list_fields())
 
 
 def _list_via_cache(
@@ -474,7 +476,9 @@ def _list_via_cache(
 
     # Re-normalize last so optional decorators don't break key-order invariants.
     entries = [normalize_board_entry(b) for b in entries]
-    opts.emit(entries)
+    from mondo.cli._field_sets import board_list_fields
+
+    opts.emit(entries, selected_fields=board_list_fields())
 
 
 @app.command("get", epilog=epilog_for("board get"))
@@ -517,7 +521,9 @@ def get_cmd(
         with client:
             board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
     board = normalize_board_entry(board)
-    opts.emit(board)
+    from mondo.cli._field_sets import board_get_fields
+
+    opts.emit(board, selected_fields=board_get_fields())
 
 
 # ----- write commands -----

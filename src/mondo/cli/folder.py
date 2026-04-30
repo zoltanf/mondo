@@ -98,7 +98,9 @@ def list_cmd(
             items = [f for f in items if str(f.get("workspace_id") or "") in wanted]
         if max_items is not None:
             items = items[:max_items]
-        opts.emit(items)
+        from mondo.cli._field_sets import folder_list_fields
+
+        opts.emit(items, selected_fields=folder_list_fields())
         return
 
     # Live path
@@ -134,7 +136,9 @@ def list_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
 
-    opts.emit(items)
+    from mondo.cli._field_sets import folder_list_fields
+
+    opts.emit(items, selected_fields=folder_list_fields())
 
 
 _TABLE_FORMATS: frozenset[str | None] = frozenset({"table", None})
@@ -332,7 +336,9 @@ def get_cmd(
     if not folders:
         typer.secho(f"folder {folder_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(normalize_folder_entry(folders[0]))
+    from mondo.cli._field_sets import folder_get_fields
+
+    opts.emit(normalize_folder_entry(folders[0]), selected_fields=folder_get_fields())
 
 
 # ----- write commands -----

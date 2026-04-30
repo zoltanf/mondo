@@ -132,7 +132,9 @@ def list_cmd(
     except MondoError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
-    opts.emit(groups)
+    from mondo.cli._field_sets import group_list_fields
+
+    opts.emit(groups, selected_fields=group_list_fields())
 
 
 # ----- write commands -----
