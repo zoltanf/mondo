@@ -207,6 +207,14 @@ _TOP_LEVEL_ENTRIES: tuple[_LazyEntry, ...] = (
         is_group=False,
     ),
     _LazyEntry(
+        name="schema",
+        module="mondo.cli.schema",
+        attr="schema_command",
+        help_text="Print the GraphQL fields each read command selects.",
+        epilog=epilog_for("schema"),
+        is_group=False,
+    ),
+    _LazyEntry(
         name="help",
         module="mondo.cli.help",
         attr="help_command",

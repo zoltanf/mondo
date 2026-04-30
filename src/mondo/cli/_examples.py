@@ -32,6 +32,20 @@ EXAMPLES: dict[str, list[Example]] = {
     "account": [
         Example("Show account tier, plan, and active-member count", "mondo account"),
     ],
+    "schema": [
+        Example(
+            "List GraphQL fields each read command selects",
+            "mondo schema",
+        ),
+        Example(
+            "Just the board commands",
+            "mondo schema board",
+        ),
+        Example(
+            "Project to the `get` field list for an item",
+            "mondo schema item -q get",
+        ),
+    ],
     "graphql": [
         Example(
             "Inline query",
