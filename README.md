@@ -1,20 +1,17 @@
 # mondo
 
 Power-user CLI for the [monday.com](https://monday.com) GraphQL API — built in
-the `az` / `gh` / `gam` style, for both senior admins at a terminal and AI agents
+the `az` / `gh` / `gam` style, for both terminal users and AI agents
 in automation pipelines.
 
-Not a rebrand of monday's official `mapps`/`monday-cli` (which manages monday
-*apps*). `mondo` is a wrapper for the *platform API*: boards, items, columns,
+This is NOT an official monday.com cli app.
+
+`mondo` is a wrapper for the *platform API* of monday.com: boards, items, columns,
 workspaces, users, docs, webhooks, etc.
 
-> Status: **Phases 1, 2, 3, and 4 complete.** Full command surface: auth, items,
-> subitems, columns (+ structural CRUD), groups, boards, workspaces, users,
-> teams, workspace docs, webhooks, files, activity, folders, favorites, tags,
-> notifications, aggregations, validation rules, bulk import/export, raw
-> GraphQL, session complexity metering, and a local directory cache with
-> fuzzy name search. Ships with an agent-facing help system (`mondo help`,
-> `mondo help --dump-spec`) bundled inside the binary.
+Full command surface: auth, items, subitems, columns (+ structural CRUD), groups, boards, workspaces, users, teams, workspace docs, webhooks, files, activity, folders, favorites, tags, notifications, aggregations, validation rules, bulk import/export, raw GraphQL, session complexity metering, and a local directory cache with fuzzy name search. 
+
+Ships with an agent-facing help system (`mondo help`, `mondo help --dump-spec`) bundled inside the binary.
 
 ---
 
