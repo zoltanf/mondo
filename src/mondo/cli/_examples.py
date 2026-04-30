@@ -121,6 +121,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo board list --with-url --max-items 3",
         ),
         Example(
+            "Include each board's tags (bypasses cache; small but extra cost)",
+            "mondo board list --with-tags -q '[?length(tags) > `0`].name'",
+        ),
+        Example(
             "Inspect the shared core shape (matches `doc list`)",
             "mondo board list --max-items 1 -q '.[0] | keys'",
         ),
@@ -135,6 +139,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Include the round-trip URL in the payload",
             "mondo board get 1234567890 --with-url -q url -o none",
+        ),
+        Example(
+            "Also fetch the saved views (table/kanban/timeline/etc.)",
+            "mondo board get 1234567890 --with-views -q 'views[].{n:name,t:type}'",
         ),
         Example(
             "If `type` comes back `document`, switch to `mondo doc get`",

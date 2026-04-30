@@ -1174,6 +1174,7 @@ def build_boards_list_query(
     workspace_ids: list[int] | None = None,
     order_by: str | None = None,
     with_item_counts: bool = False,
+    with_tags: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Build a page-based boards list query containing only the filter args
     that are actually set.
@@ -1184,7 +1185,9 @@ def build_boards_list_query(
     null-valued filters, so we build the query and variables dict dynamically.
 
     `items_count` costs ~500k complexity per page of 100 — by default it is
-    omitted; pass `with_item_counts=True` to include it.
+    omitted; pass `with_item_counts=True` to include it. `with_tags=True`
+    pulls each board's tags into the response (small but not free; cached
+    listings don't include them).
     """
     var_decls: list[str] = ["$limit: Int!", "$page: Int!"]
     args: list[str] = [
@@ -1233,6 +1236,8 @@ def build_boards_list_query(
     ]
     if with_item_counts:
         fields.append("items_count")
+    if with_tags:
+        fields.append("tags { id name color }")
 
     query = (
         f"query ({', '.join(var_decls)}) {{\n"
@@ -1256,32 +1261,49 @@ query ($ids: [ID!]!) {
 """.strip()
 
 
-# Detailed single-board fetch.
-BOARD_GET = """
-query ($id: ID!) {
-  boards(ids: [$id]) {
-    id
-    name
-    description
-    state
-    board_kind
-    type
-    board_folder_id
-    workspace_id
-    hierarchy_type
-    items_count
-    updated_at
-    permissions
-    workspace { id name kind }
-    owners { id name }
-    subscribers { id name }
-    top_group { id title }
-    groups { id title color position archived }
-    columns { id title type description archived }
-    tags { id name color }
-  }
-}
-""".strip()
+# Detailed single-board fetch. Field list is reused by `BOARD_GET_WITH_VIEWS`
+# below so opt-in flags don't drift from the default.
+_BOARD_GET_DEFAULT_FIELDS = (
+    "id",
+    "name",
+    "description",
+    "state",
+    "board_kind",
+    "type",
+    "board_folder_id",
+    "workspace_id",
+    "hierarchy_type",
+    "items_count",
+    "updated_at",
+    "permissions",
+    "workspace { id name kind }",
+    "owners { id name }",
+    "subscribers { id name }",
+    "top_group { id title }",
+    "groups { id title color position archived }",
+    "columns { id title type description archived }",
+    "tags { id name color }",
+)
+
+
+def _build_board_get_query(*fields: str) -> str:
+    return (
+        "query ($id: ID!) {\n"
+        f"  boards(ids: [$id]) {{\n    {' '.join(fields)}\n  }}\n"
+        "}"
+    )
+
+
+BOARD_GET = _build_board_get_query(*_BOARD_GET_DEFAULT_FIELDS)
+
+
+# `mondo board get --with-views` — adds the (expensive) views array. monday's
+# `Board.views` returns a `BoardView` per saved view (table/kanban/timeline/
+# etc.), with each view's settings serialized as `settings_str` (JSON).
+BOARD_GET_WITH_VIEWS = _build_board_get_query(
+    *_BOARD_GET_DEFAULT_FIELDS,
+    "views { id name type settings_str }",
+)
 
 
 BOARD_CREATE = """

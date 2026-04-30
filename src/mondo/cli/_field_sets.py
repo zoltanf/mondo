@@ -16,6 +16,7 @@ from functools import lru_cache
 
 from mondo.api.queries import (
     BOARD_GET,
+    BOARD_GET_WITH_VIEWS,
     COLUMNS_ON_BOARD,
     DOC_GET_BY_ID,
     FOLDER_GET,
@@ -55,16 +56,26 @@ _NORMALIZED_FOLDER_EXTRA = frozenset(
 )
 
 
-@lru_cache(maxsize=1)
-def board_get_fields() -> frozenset[str]:
-    return extract_selected_fields(BOARD_GET) | _NORMALIZED_BOARD_EXTRA
+@lru_cache(maxsize=2)
+def board_get_fields(*, with_views: bool = False) -> frozenset[str]:
+    base = extract_selected_fields(BOARD_GET) | _NORMALIZED_BOARD_EXTRA
+    if with_views:
+        return base | extract_selected_fields(BOARD_GET_WITH_VIEWS)
+    return base
 
 
-@lru_cache(maxsize=1)
-def board_list_fields() -> frozenset[str]:
-    # Union the maximal builder output (with item counts) so the field set
-    # matches every flag combination of `board list`.
-    query, _ = build_boards_list_query(with_item_counts=True)
+@lru_cache(maxsize=4)
+def board_list_fields(
+    *, with_item_counts: bool = False, with_tags: bool = False
+) -> frozenset[str]:
+    # Pass the actual flags through so a user who didn't opt into the field
+    # still gets a warning when they project on it (which is the whole point
+    # of Phase 2.1). When `with_*` IS set the leaves enter the set and the
+    # warning correctly stays silent.
+    query, _ = build_boards_list_query(
+        with_item_counts=with_item_counts,
+        with_tags=with_tags,
+    )
     return extract_selected_fields(query) | _NORMALIZED_BOARD_LIST_EXTRA
 
 

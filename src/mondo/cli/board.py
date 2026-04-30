@@ -242,6 +242,11 @@ def list_cmd(
         "--with-url",
         help="Include a synthesized `url` field on every emitted board.",
     ),
+    with_tags: bool = typer.Option(
+        False,
+        "--with-tags",
+        help="Include each board's `tags { id name color }` (bypasses cache).",
+    ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -289,7 +294,9 @@ def list_cmd(
         opts,
         no_cache=no_cache,
         fuzzy_threshold=fuzzy_threshold,
-        extra_disable=with_item_counts,
+        # `--with-tags` and `--with-item-counts` extend the selection set
+        # past what the cache stores, so they always need a live fetch.
+        extra_disable=with_item_counts or with_tags,
     )
 
     if prefs.use_cache:
@@ -319,6 +326,7 @@ def list_cmd(
         workspace_ids=workspace or None,
         order_by=order_by.value if order_by else None,
         with_item_counts=with_item_counts,
+        with_tags=with_tags,
     )
 
     if opts.dry_run:
@@ -382,7 +390,12 @@ def list_cmd(
     boards = [normalize_board_entry(b) for b in boards]
     from mondo.cli._field_sets import board_list_fields
 
-    opts.emit(boards, selected_fields=board_list_fields())
+    opts.emit(
+        boards,
+        selected_fields=board_list_fields(
+            with_item_counts=with_item_counts, with_tags=with_tags
+        ),
+    )
 
 
 def _list_via_cache(
@@ -514,14 +527,21 @@ def get_cmd(
         "--with-url",
         help="Include a synthesized `url` field in the emitted payload.",
     ),
+    with_views: bool = typer.Option(
+        False,
+        "--with-views",
+        help="Also fetch the board's `views { id name type settings_str }` array.",
+    ),
 ) -> None:
     """Fetch a single board by ID with columns, groups, and subscribers."""
+    from mondo.api.queries import BOARD_GET_WITH_VIEWS
     from mondo.cli._normalize import normalize_board_entry
     from mondo.cli._url import board_url, get_tenant_slug, warn_cross_type
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
-    data = execute(opts, BOARD_GET, {"id": board_id})
+    query = BOARD_GET_WITH_VIEWS if with_views else BOARD_GET
+    data = execute(opts, query, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
@@ -535,7 +555,7 @@ def get_cmd(
     board = normalize_board_entry(board)
     from mondo.cli._field_sets import board_get_fields
 
-    opts.emit(board, selected_fields=board_get_fields())
+    opts.emit(board, selected_fields=board_get_fields(with_views=with_views))
 
 
 # ----- write commands -----
