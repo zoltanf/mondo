@@ -582,17 +582,6 @@ def create_cmd(
     subscriber_team: list[int] | None = typer.Option(
         None, "--subscriber-team", help="Subscriber team ID (repeatable)."
     ),
-    item_nickname: str | None = typer.Option(
-        None,
-        "--item-nickname",
-        metavar="JSON",
-        help='Item nickname config as JSON, e.g. `{"preset_type":"item"}`.',
-    ),
-    prompt: str | None = typer.Option(
-        None,
-        "--prompt",
-        help="AI prompt to generate the board's structure and content.",
-    ),
     empty: bool = typer.Option(
         False, "--empty", help="Create without the default group/column structure."
     ),
@@ -602,9 +591,6 @@ def create_cmd(
     from mondo.cli._normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    item_nickname_obj: Any = None
-    if item_nickname is not None:
-        item_nickname_obj = parse_json_flag(item_nickname, flag_name="--item-nickname")
     variables: dict[str, Any] = {
         "name": name,
         "kind": kind.value,
@@ -616,8 +602,6 @@ def create_cmd(
         "ownerTeamIds": owner_team or None,
         "subscriberIds": subscriber or None,
         "subscriberTeamIds": subscriber_team or None,
-        "itemNickname": item_nickname_obj,
-        "prompt": prompt,
         "empty": True if empty else None,
     }
     data = execute(opts, BOARD_CREATE, variables)

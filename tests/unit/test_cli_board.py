@@ -648,45 +648,6 @@ class TestBoardCreate:
         assert v["subscriberIds"] == [51]
         assert v["empty"] is True
 
-    def test_item_nickname_and_prompt(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"create_board": {"id": "1"}}),
-        )
-        result = runner.invoke(
-            app,
-            [
-                "board",
-                "create",
-                "--name",
-                "X",
-                "--item-nickname",
-                '{"preset_type":"item"}',
-                "--prompt",
-                "Build a launch tracker",
-            ],
-        )
-        assert result.exit_code == 0, result.stdout
-        v = _last_body(httpx_mock)["variables"]
-        assert v["itemNickname"] == {"preset_type": "item"}
-        assert v["prompt"] == "Build a launch tracker"
-
-    def test_item_nickname_invalid_json(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(
-            app,
-            [
-                "board",
-                "create",
-                "--name",
-                "X",
-                "--item-nickname",
-                "{not json",
-            ],
-        )
-        assert result.exit_code == 2
-        assert httpx_mock.get_requests() == []
-
     def test_dry_run(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
@@ -698,18 +659,12 @@ class TestBoardCreate:
                 "X",
                 "--kind",
                 "public",
-                "--item-nickname",
-                '{"preset_type":"item"}',
-                "--prompt",
-                "Build a launch tracker",
             ],
         )
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert "create_board" in parsed["query"]
         assert parsed["variables"]["name"] == "X"
-        assert parsed["variables"]["itemNickname"] == {"preset_type": "item"}
-        assert parsed["variables"]["prompt"] == "Build a launch tracker"
         assert httpx_mock.get_requests() == []
 
 

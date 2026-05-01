@@ -163,11 +163,6 @@ EXAMPLES: dict[str, list[Example]] = {
             "Create an empty board (no starter items/groups)",
             'mondo board create --name "Scratch" --kind public --empty',
         ),
-        Example(
-            "Seed item naming and generation with newer board inputs",
-            'mondo board create --name "Launch plan" --kind public '
-            '--item-nickname \'{"preset_type":"item"}\' --prompt "Build a launch tracker"',
-        ),
     ],
     "board update": [
         Example(

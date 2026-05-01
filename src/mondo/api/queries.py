@@ -1318,8 +1318,6 @@ mutation (
   $ownerTeamIds: [ID!]
   $subscriberIds: [ID!]
   $subscriberTeamIds: [ID!]
-  $itemNickname: ItemNicknameInput
-  $prompt: String
   $empty: Boolean
 ) {
   create_board(
@@ -1333,8 +1331,6 @@ mutation (
     board_owner_team_ids: $ownerTeamIds
     board_subscriber_ids: $subscriberIds
     board_subscriber_teams_ids: $subscriberTeamIds
-    item_nickname: $itemNickname
-    prompt: $prompt
     empty: $empty
   ) {
     id
