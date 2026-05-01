@@ -12,6 +12,7 @@ from typing import Any
 
 import typer
 
+from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     GROUP_ARCHIVE,
@@ -23,9 +24,9 @@ from mondo.api.queries import (
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
 from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
-from mondo.cli._resolve import resolve_required_id
+from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -180,22 +181,98 @@ def create_cmd(
     opts.emit(data.get("create_group") or {})
 
 
+def _resolve_group_target(
+    opts: GlobalOpts,
+    client: MondayClient,
+    board_id: int,
+    *,
+    group_id: str | None,
+    name_contains: str | None,
+    name_matches_re: str | None,
+    name_fuzzy: str | None,
+    first: bool,
+    fuzzy_threshold: int,
+) -> str:
+    """Pick a single group id for the mutation.
+
+    Fast path: when only `--id`/`--group` is set, skip the fetch and trust the
+    caller. With any `--name-*` filter, fetch the board's groups and resolve
+    via `resolve_by_filters` (which also enforces id/filter mutex).
+    """
+    if group_id is not None and not (name_contains or name_matches_re or name_fuzzy):
+        return group_id
+    groups = fetch_board_groups(opts, client, board_id)
+    chosen = resolve_by_filters(
+        groups,
+        explicit_id=group_id,
+        name_contains=name_contains,
+        name_matches_re=name_matches_re,
+        name_fuzzy=name_fuzzy,
+        first=first,
+        fuzzy_threshold=fuzzy_threshold,
+        key="title",
+        resource="group",
+    )
+    return str(chosen["id"])
+
+
 @app.command("rename", epilog=epilog_for("group rename"))
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", "--group", help="Group ID."),
+    group_id: str | None = typer.Option(
+        None, "--id", "--group", help="Group ID (or use --name-* selectors)."
+    ),
+    name_contains: str | None = typer.Option(
+        None, "--name-contains", help="Pick the group by case-insensitive title substring."
+    ),
+    name_matches_re: str | None = typer.Option(
+        None, "--name-matches", help="Pick the group by Python regex over its title."
+    ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Pick the group by fuzzy match over its title."
+    ),
+    fuzzy_threshold: int = typer.Option(
+        70, "--fuzzy-threshold", help="Minimum 0-100 fuzzy score (default 70)."
+    ),
+    first: bool = typer.Option(
+        False, "--first", help="If a filter matches >1 group, pick the first one."
+    ),
     title: str = typer.Option(..., "--title", help="New group title."),
 ) -> None:
-    """Rename a group (shortcut for update --attribute title)."""
+    """Rename a group (shortcut for update --attribute title).
+
+    Pick the target by id (`--id`/`--group`) or by client-side title match
+    (`--name-contains` / `--name-matches` / `--name-fuzzy`). Pass `--first`
+    to auto-pick the first match when the filter is ambiguous.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    variables = {
-        "board": board_id,
-        "group": group_id,
-        "attribute": GroupAttribute.title.value,
-        "value": title,
-    }
-    data = execute(opts, GROUP_UPDATE, variables)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_group = _resolve_group_target(
+                opts,
+                client,
+                board_id,
+                group_id=group_id,
+                name_contains=name_contains,
+                name_matches_re=name_matches_re,
+                name_fuzzy=name_fuzzy,
+                first=first,
+                fuzzy_threshold=fuzzy_threshold,
+            )
+            variables = {
+                "board": board_id,
+                "group": resolved_group,
+                "attribute": GroupAttribute.title.value,
+                "value": title,
+            }
+            if opts.dry_run:
+                dry_run_and_exit(opts, GROUP_UPDATE, variables)
+            data = exec_or_exit(client, GROUP_UPDATE, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
     invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
@@ -204,7 +281,24 @@ def rename_cmd(
 def update_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    group_id: str = typer.Option(..., "--id", "--group", help="Group ID."),
+    group_id: str | None = typer.Option(
+        None, "--id", "--group", help="Group ID (or use --name-* selectors)."
+    ),
+    name_contains: str | None = typer.Option(
+        None, "--name-contains", help="Pick the group by case-insensitive title substring."
+    ),
+    name_matches_re: str | None = typer.Option(
+        None, "--name-matches", help="Pick the group by Python regex over its title."
+    ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Pick the group by fuzzy match over its title."
+    ),
+    fuzzy_threshold: int = typer.Option(
+        70, "--fuzzy-threshold", help="Minimum 0-100 fuzzy score (default 70)."
+    ),
+    first: bool = typer.Option(
+        False, "--first", help="If a filter matches >1 group, pick the first one."
+    ),
     attribute: GroupAttribute = typer.Option(
         ...,
         "--attribute",
@@ -222,18 +316,42 @@ def update_cmd(
         ),
     ),
 ) -> None:
-    """Update a group attribute (color, position, relative position, or title)."""
+    """Update a group attribute (color, position, relative position, or title).
+
+    Pick the target by id (`--id`/`--group`) or by client-side title match
+    (`--name-contains` / `--name-matches` / `--name-fuzzy`). Pass `--first`
+    to auto-pick the first match when the filter is ambiguous.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     # NOTE: intentionally skip the hex-palette check for attribute=color on
     # update_group — monday wants color NAMES here, not hex codes, unlike
     # create/rename which take hex. Pass the user's value through as-is.
-    variables = {
-        "board": board_id,
-        "group": group_id,
-        "attribute": attribute.value,
-        "value": value,
-    }
-    data = execute(opts, GROUP_UPDATE, variables)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_group = _resolve_group_target(
+                opts,
+                client,
+                board_id,
+                group_id=group_id,
+                name_contains=name_contains,
+                name_matches_re=name_matches_re,
+                name_fuzzy=name_fuzzy,
+                first=first,
+                fuzzy_threshold=fuzzy_threshold,
+            )
+            variables = {
+                "board": board_id,
+                "group": resolved_group,
+                "attribute": attribute.value,
+                "value": value,
+            }
+            if opts.dry_run:
+                dry_run_and_exit(opts, GROUP_UPDATE, variables)
+            data = exec_or_exit(client, GROUP_UPDATE, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
     invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 

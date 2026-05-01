@@ -27,8 +27,8 @@ from mondo.api.queries import (
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, dry_run_and_exit, execute
-from mondo.cli._resolve import resolve_required_id
+from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
+from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
@@ -438,18 +438,93 @@ def create_cmd(
     opts.emit(data.get("create_item") or {})
 
 
+def _resolve_item_target(
+    client: MondayClient,
+    board_id: int,
+    *,
+    item_id: int | None,
+    name_contains: str | None,
+    name_matches_re: str | None,
+    name_fuzzy: str | None,
+    first: bool,
+    fuzzy_threshold: int,
+) -> int:
+    """Pick a single item id for the mutation. Items aren't cached (volatile),
+    so the filter path streams `items_page` and matches client-side."""
+    if item_id is not None and not (name_contains or name_matches_re or name_fuzzy):
+        return item_id
+    items = list(iter_items_page(client, board_id=board_id))
+    chosen = resolve_by_filters(
+        items,
+        explicit_id=item_id,
+        name_contains=name_contains,
+        name_matches_re=name_matches_re,
+        name_fuzzy=name_fuzzy,
+        first=first,
+        fuzzy_threshold=fuzzy_threshold,
+        key="name",
+        resource="item",
+    )
+    return int(chosen["id"])
+
+
 @app.command("rename", epilog=epilog_for("item rename"))
 def rename_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
     id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
     board_id: int = typer.Option(..., "--board", help="Parent board ID."),
+    name_contains: str | None = typer.Option(
+        None, "--name-contains", help="Pick the item by case-insensitive name substring."
+    ),
+    name_matches_re: str | None = typer.Option(
+        None, "--name-matches", help="Pick the item by Python regex over its name."
+    ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Pick the item by fuzzy match over its name."
+    ),
+    fuzzy_threshold: int = typer.Option(
+        70, "--fuzzy-threshold", help="Minimum 0-100 fuzzy score (default 70)."
+    ),
+    first: bool = typer.Option(
+        False, "--first", help="If a filter matches >1 item, pick the first one."
+    ),
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
-    """Rename an item."""
+    """Rename an item.
+
+    Pick the target by id (positional / `--id` / `--item`) or by client-side
+    name match (`--name-contains` / `--name-matches` / `--name-fuzzy`). The
+    filter path streams the board's items via `items_page` and is unsuitable
+    for huge boards — pass an id directly when the target is known.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
-    data = execute(opts, ITEM_RENAME, {"board": board_id, "id": item_id, "name": name})
+    explicit_id: int | None
+    if id_pos is not None and id_flag is not None and id_pos != id_flag:
+        raise typer.BadParameter(
+            "pass the item ID as a positional argument or via --id, not both."
+        )
+    explicit_id = id_pos if id_pos is not None else id_flag
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_item = _resolve_item_target(
+                client,
+                board_id,
+                item_id=explicit_id,
+                name_contains=name_contains,
+                name_matches_re=name_matches_re,
+                name_fuzzy=name_fuzzy,
+                first=first,
+                fuzzy_threshold=fuzzy_threshold,
+            )
+            variables = {"board": board_id, "id": resolved_item, "name": name}
+            if opts.dry_run:
+                dry_run_and_exit(opts, ITEM_RENAME, variables)
+            data = exec_or_exit(client, ITEM_RENAME, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
     opts.emit(data.get("change_simple_column_value") or {})
 
 

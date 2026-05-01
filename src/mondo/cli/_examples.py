@@ -289,6 +289,14 @@ EXAMPLES: dict[str, list[Example]] = {
             "Rename an item",
             'mondo item rename --id 987 --board 1234567890 --name "New title"',
         ),
+        Example(
+            "Rename by current name (case-insensitive substring)",
+            'mondo item rename --board 1234567890 --name-contains "Old title" --name "New title"',
+        ),
+        Example(
+            "Rename when several items match — pick the first",
+            'mondo item rename --board 1234567890 --name-contains "KR " --first --name "KR 1.1"',
+        ),
     ],
     "item duplicate": [
         Example(
@@ -792,11 +800,23 @@ EXAMPLES: dict[str, list[Example]] = {
             "Rename a group",
             'mondo group rename --board 1234567890 --id topics --title "Workstreams"',
         ),
+        Example(
+            "Rename by current title (handy after `board duplicate` mints unstable ids)",
+            'mondo group rename --board 1234567890 --name-contains "Objective 2" --title "Objective 2: We have launched..."',
+        ),
+        Example(
+            "Multiple matches — pick the first (top-of-board)",
+            'mondo group rename --board 1234567890 --name-contains "Draft" --first --title "Final"',
+        ),
     ],
     "group update": [
         Example(
             "Change a group's color",
             'mondo group update --board 1234567890 --id topics --attribute color --value "#ff007f"',
+        ),
+        Example(
+            "Update by current title",
+            'mondo group update --board 1234567890 --name-contains "Workstreams" --attribute color --value green',
         ),
     ],
     "group reorder": [
@@ -903,6 +923,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Rename a column by id",
             'mondo column rename --board 1234567890 --id status --title "Workflow"',
+        ),
+        Example(
+            "Rename a column by its current title",
+            'mondo column rename --board 1234567890 --name-contains "Status" --title "Workflow"',
         ),
     ],
     "column change-metadata": [

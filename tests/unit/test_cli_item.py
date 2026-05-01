@@ -437,6 +437,47 @@ class TestItemRename:
         assert 'column_id: "name"' in body["query"]
         assert "change_item_name" not in body["query"]
 
+    def test_name_contains_resolves_via_items_page(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        # First request: items_page lookup. Second: the rename mutation.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "items_page": {
+                                "cursor": None,
+                                "items": [
+                                    {"id": "11", "name": "Apple", "state": "active"},
+                                    {"id": "22", "name": "Banana", "state": "active"},
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"change_simple_column_value": {"id": "22", "name": "Cherry"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item", "rename",
+                "--board", "42",
+                "--name-contains", "banana",
+                "--name", "Cherry",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v == {"board": 42, "id": 22, "name": "Cherry"}
+
 
 class TestItemDuplicate:
     def test_with_updates(self, httpx_mock: HTTPXMock) -> None:

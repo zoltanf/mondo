@@ -31,9 +31,9 @@ from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, exec_or_exit, execute
+from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import resolve_required_id
+from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
@@ -604,17 +604,88 @@ def create_cmd(
     opts.emit(data.get("create_column") or {})
 
 
+def _resolve_column_target(
+    opts: GlobalOpts,
+    client: MondayClient,
+    board_id: int,
+    *,
+    column_id: str | None,
+    name_contains: str | None,
+    name_matches_re: str | None,
+    name_fuzzy: str | None,
+    first: bool,
+    fuzzy_threshold: int,
+) -> str:
+    """Pick a single column id for the mutation. Mirrors the group helper."""
+    if column_id is not None and not (name_contains or name_matches_re or name_fuzzy):
+        return column_id
+    columns = fetch_board_columns(opts, client, board_id)
+    chosen = resolve_by_filters(
+        columns,
+        explicit_id=column_id,
+        name_contains=name_contains,
+        name_matches_re=name_matches_re,
+        name_fuzzy=name_fuzzy,
+        first=first,
+        fuzzy_threshold=fuzzy_threshold,
+        key="title",
+        resource="column",
+    )
+    return str(chosen["id"])
+
+
 @app.command("rename", epilog=epilog_for("column rename"))
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    column_id: str = typer.Option(..., "--id", "--column", help="Column ID."),
+    column_id: str | None = typer.Option(
+        None, "--id", "--column", help="Column ID (or use --name-* selectors)."
+    ),
+    name_contains: str | None = typer.Option(
+        None, "--name-contains", help="Pick the column by case-insensitive title substring."
+    ),
+    name_matches_re: str | None = typer.Option(
+        None, "--name-matches", help="Pick the column by Python regex over its title."
+    ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Pick the column by fuzzy match over its title."
+    ),
+    fuzzy_threshold: int = typer.Option(
+        70, "--fuzzy-threshold", help="Minimum 0-100 fuzzy score (default 70)."
+    ),
+    first: bool = typer.Option(
+        False, "--first", help="If a filter matches >1 column, pick the first one."
+    ),
     title: str = typer.Option(..., "--title", help="New column title."),
 ) -> None:
-    """Rename a column (shortcut for change-metadata --property title)."""
+    """Rename a column (shortcut for change-metadata --property title).
+
+    Pick the target by id (`--id`/`--column`) or by client-side title match
+    (`--name-contains` / `--name-matches` / `--name-fuzzy`). Pass `--first`
+    to auto-pick the first match when the filter is ambiguous.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    variables = {"board": board_id, "col": column_id, "title": title}
-    data = execute(opts, COLUMN_RENAME, variables)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_column = _resolve_column_target(
+                opts,
+                client,
+                board_id,
+                column_id=column_id,
+                name_contains=name_contains,
+                name_matches_re=name_matches_re,
+                name_fuzzy=name_fuzzy,
+                first=first,
+                fuzzy_threshold=fuzzy_threshold,
+            )
+            variables = {"board": board_id, "col": resolved_column, "title": title}
+            if opts.dry_run:
+                dry_run_and_exit(opts, COLUMN_RENAME, variables)
+            data = exec_or_exit(client, COLUMN_RENAME, variables)
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_title") or {})
 
