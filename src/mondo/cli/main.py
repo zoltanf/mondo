@@ -6,12 +6,11 @@ are mounted as sub-apps.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from difflib import get_close_matches
-from importlib import import_module
-import sys
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from importlib import import_module
 
 import click
 import typer
@@ -23,9 +22,6 @@ from mondo.cli._examples import epilog_for
 from mondo.cli._help_format import MondoGroup, patch_help_classes
 from mondo.cli.argv import reorder_argv
 from mondo.version import __version__
-
-if TYPE_CHECKING:
-    from mondo.cli.context import GlobalOpts
 
 
 class OutputFormat(StrEnum):

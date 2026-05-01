@@ -13,7 +13,7 @@ Per monday-api.md §14:
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import typer
 
@@ -35,9 +35,6 @@ from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
-
-if TYPE_CHECKING:
-    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
