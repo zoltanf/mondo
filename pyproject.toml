@@ -47,6 +47,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pyinstaller>=6.11",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.scripts]
