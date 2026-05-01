@@ -15,7 +15,7 @@ import typer
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_OR_GET_TAG, TAG_BY_BOARD, TAGS_LIST
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, exec_or_exit, execute
+from mondo.cli._exec import client_or_exit, exec_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -76,8 +76,7 @@ def get_cmd(
                 board_tags = (boards[0].get("tags") or []) if boards else []
                 tags = [t for t in board_tags if str(t.get("id")) == str(tag_id)]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     if not tags:
         scope = "account" if board_id is None else f"account + board {board_id}"
         typer.secho(f"tag {tag_id} not found in {scope}.", fg=typer.colors.RED, err=True)

@@ -33,7 +33,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit
+from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.columns import UnknownColumnTypeError, parse_value
@@ -306,8 +306,7 @@ def board_cmd(
                     results.append({"status": "failed", "name": name, "error": str(e)})
                     failed += 1
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     except FileNotFoundError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e

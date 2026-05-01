@@ -31,7 +31,13 @@ from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cach
 from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
+from mondo.cli._exec import (
+    client_or_exit,
+    dry_run_and_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.column_doc import app as doc_app
@@ -140,8 +146,7 @@ def list_cmd(
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from None
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     # Strip settings_str from default output (noisy); it's still in raw JSON.
     simplified = [
         {
@@ -180,8 +185,7 @@ def labels_cmd(
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from None
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     column = next((c for c in columns if c.get("id") == column_id), None)
     if column is None:
         typer.secho(
@@ -228,8 +232,7 @@ def get_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     current = values.get(column_id)
     if current is None:
@@ -353,8 +356,7 @@ def set_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if create_labels_if_missing:
         # `create_labels_if_missing=True` may have minted a new status/dropdown
@@ -420,8 +422,7 @@ def set_many_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if create_labels_if_missing:
         # May have minted a label in a status/dropdown column's settings_str.
@@ -482,8 +483,7 @@ def clear_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     opts.emit(data.get("change_column_value") or {})
 
@@ -653,8 +653,7 @@ def rename_cmd(
                 dry_run_and_exit(opts, COLUMN_RENAME, variables)
             data = exec_or_exit(client, COLUMN_RENAME, variables)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_title") or {})
 

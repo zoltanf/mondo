@@ -23,7 +23,7 @@ from mondo.api.queries import (
     FOLDER_UPDATE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -99,8 +99,7 @@ def list_cmd(
             with client:
                 cached = cache_get_folders(client, store=store, refresh=refresh_cache)
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
 
         emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
@@ -145,8 +144,7 @@ def list_cmd(
                 )
             ]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     from mondo.cli._field_sets import folder_list_fields
 
@@ -236,8 +234,7 @@ def tree_cmd(
             with client:
                 cached = cache_get_folders(client, store=store, refresh=refresh_cache)
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
         emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
         folders = cached.entries
     else:
@@ -269,8 +266,7 @@ def tree_cmd(
                     )
                 ]
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
 
     # Client-side workspace filter applied unconditionally: the live path passes
     # workspaceIds to GraphQL (server-side), the cache path does not. Applying

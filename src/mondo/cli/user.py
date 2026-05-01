@@ -32,7 +32,7 @@ from mondo.api.queries import (
     USERS_UPDATE_AS_VIEWERS,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -181,8 +181,7 @@ def list_cmd(
                 )
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     if name_fuzzy is not None:
         from mondo.cli._filters import apply_fuzzy
 
@@ -239,15 +238,13 @@ def _list_users_via_cache(
     try:
         store = opts.build_cache_store("users")
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             cached = cache_get_users(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 

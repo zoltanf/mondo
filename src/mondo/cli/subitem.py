@@ -35,7 +35,7 @@ from mondo.api.queries import (
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
@@ -210,8 +210,7 @@ def create_cmd(
                         create_labels=create_labels_if_missing,
                     )
             except MondoError as e:
-                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=int(e.exit_code)) from e
+                handle_mondo_error_or_exit(e)
             except ValueError as e:
                 # Codec validation (e.g. unknown status label) — surface as a
                 # clean CLI error rather than a Python traceback.

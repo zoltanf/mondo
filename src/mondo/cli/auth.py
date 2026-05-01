@@ -11,6 +11,7 @@ from mondo.api.auth import ENV_VAR, KEYRING_SERVICE
 from mondo.api.errors import AuthError, MondoError
 from mondo.api.queries import ME_QUERY
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import handle_mondo_error_or_exit
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -26,15 +27,13 @@ def whoami(ctx: typer.Context) -> None:
     try:
         client = opts.build_client()
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             result = client.execute(ME_QUERY)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     me = (result.get("data") or {}).get("me") or {}
     opts.emit(me)

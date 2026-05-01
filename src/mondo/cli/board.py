@@ -28,7 +28,7 @@ from mondo.api.queries import (
     BOARD_UPDATE_HIERARCHY,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, execute_read
+from mondo.cli._exec import client_or_exit, execute, execute_read, handle_mondo_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
@@ -364,8 +364,7 @@ def list_cmd(
                 if _type_matches(b, type_filter) and _name_matches(b, needle_lower, pattern)
             ]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if name_fuzzy is not None:
         boards = apply_fuzzy(
@@ -450,15 +449,13 @@ def _list_via_cache(
     try:
         store = opts.build_cache_store("boards")
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             cached = cache_get_boards(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     from mondo.cli._cache_flags import emit_cache_provenance
 
@@ -873,8 +870,7 @@ def duplicate_cmd(
                     interval_s=poll_interval_s,
                 )
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
         matched = expected_count is not None and final_count == expected_count
         duplicate_payload = {
             **duplicate_payload,

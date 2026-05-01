@@ -25,7 +25,7 @@ from mondo.api.queries import (
     WORKSPACES_LIST_PAGE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, execute_read
+from mondo.cli._exec import client_or_exit, execute, execute_read, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -148,8 +148,7 @@ def list_cmd(
                 )
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     if name_fuzzy is not None:
         from mondo.cli._filters import apply_fuzzy
 
@@ -200,15 +199,13 @@ def _list_workspaces_via_cache(
     try:
         store = opts.build_cache_store("workspaces")
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             cached = cache_get_workspaces(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 

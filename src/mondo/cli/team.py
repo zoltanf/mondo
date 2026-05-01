@@ -27,7 +27,7 @@ from mondo.api.queries import (
     TEAMS_LIST,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -143,15 +143,13 @@ def _list_teams_via_cache(
     try:
         store = opts.build_cache_store("teams")
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             cached = cache_get_teams(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 

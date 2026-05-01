@@ -31,7 +31,13 @@ from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cach
 from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
+from mondo.cli._exec import (
+    client_or_exit,
+    dry_run_and_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
@@ -77,8 +83,7 @@ def _execute_create_item(
         typer.secho(f"error: {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=int(e.exit_code)) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
 
 def _parse_filter(expr: str) -> dict[str, Any]:
@@ -295,8 +300,7 @@ def list_cmd(
         client = opts.build_client()
         qp = _build_query_params(filter_expr, order_by)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     except UsageError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
@@ -313,8 +317,7 @@ def list_cmd(
                 )
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     from mondo.cli._field_sets import item_list_fields
 
@@ -516,8 +519,7 @@ def create_cmd(
             try:
                 client_for_preflight = opts.build_client()
             except MondoError as e:
-                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=int(e.exit_code)) from e
+                handle_mondo_error_or_exit(e)
             try:
                 with client_for_preflight:
                     col_values = _build_column_values(
@@ -532,8 +534,7 @@ def create_cmd(
                 typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=5) from e
             except MondoError as e:
-                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=int(e.exit_code)) from e
+                handle_mondo_error_or_exit(e)
 
     variables: dict[str, Any] = {
         "board": board_id,
@@ -648,8 +649,7 @@ def _run_batch(
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=5) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if create_labels_default or any(row.get("create_labels") for row in rows):
         invalidate_columns_cache(opts, board_id)
@@ -750,8 +750,7 @@ def rename_cmd(
                 dry_run_and_exit(opts, ITEM_RENAME, variables)
             data = exec_or_exit(client, ITEM_RENAME, variables)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     opts.emit(data.get("change_simple_column_value") or {})
 
 

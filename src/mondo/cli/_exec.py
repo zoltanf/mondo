@@ -14,11 +14,50 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, NoReturn
 
+import click
 import typer
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
     from mondo.cli.context import GlobalOpts
+
+
+def _emit_error(exc: BaseException) -> None:
+    """Print the human-readable red `error:` line plus, in machine
+    output mode, the JSON envelope on stderr (Phase 5.1).
+
+    Reads `GlobalOpts` via the active Click context — works from any
+    command body. When the context isn't bound yet (rare: a failure
+    raised before the root callback runs), falls back to TTY sniffing.
+    """
+    from mondo.cli._errors import emit_envelope, error_envelope, is_machine_output
+    from mondo.cli.context import GlobalOpts
+
+    typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+
+    opts: GlobalOpts | None
+    try:
+        ctx = click.get_current_context(silent=True)
+        opts = ctx.ensure_object(GlobalOpts) if ctx is not None else None
+    except RuntimeError:
+        opts = None
+    if is_machine_output(opts):
+        emit_envelope(error_envelope(exc))
+
+
+def handle_mondo_error_or_exit(exc: BaseException) -> NoReturn:
+    """Standard CLI handler for any `MondoError` raised mid-command.
+
+    Replaces the duplicated `typer.secho(f"error: {e}", ...); raise
+    typer.Exit(code=int(e.exit_code))` block scattered across 60+ call
+    sites. Routes through `_emit_error` so the Phase 5.1 envelope fires
+    in machine-output mode.
+    """
+    from mondo.api.errors import MondoError
+
+    _emit_error(exc)
+    code = int(exc.exit_code) if isinstance(exc, MondoError) else 1
+    raise typer.Exit(code=code) from exc
 
 
 def client_or_exit(opts: GlobalOpts) -> MondayClient:
@@ -27,7 +66,7 @@ def client_or_exit(opts: GlobalOpts) -> MondayClient:
     try:
         return opts.build_client()
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        _emit_error(e)
         raise typer.Exit(code=int(e.exit_code)) from e
 
 
@@ -39,7 +78,7 @@ def exec_or_exit(
     try:
         result = client.execute(query, variables=variables)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        _emit_error(e)
         raise typer.Exit(code=int(e.exit_code)) from e
     return result.get("data") or {}
 
@@ -62,7 +101,7 @@ def execute_read(
         with client:
             return exec_or_exit(client, query, variables)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        _emit_error(e)
         raise typer.Exit(code=int(e.exit_code)) from e
 
 

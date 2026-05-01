@@ -24,7 +24,13 @@ from mondo.api.queries import (
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
+from mondo.cli._exec import (
+    client_or_exit,
+    dry_run_and_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -131,8 +137,7 @@ def list_cmd(
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from None
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     from mondo.cli._field_sets import group_list_fields
 
     opts.emit(groups, selected_fields=group_list_fields())
@@ -271,8 +276,7 @@ def rename_cmd(
                 dry_run_and_exit(opts, GROUP_UPDATE, variables)
             data = exec_or_exit(client, GROUP_UPDATE, variables)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
@@ -350,8 +354,7 @@ def update_cmd(
                 dry_run_and_exit(opts, GROUP_UPDATE, variables)
             data = exec_or_exit(client, GROUP_UPDATE, variables)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     invalidate_groups_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 

@@ -48,6 +48,7 @@ from mondo.cli._exec import (
     dry_run_and_exit,
     exec_or_exit,
     execute,
+    handle_mondo_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
@@ -406,8 +407,7 @@ def list_cmd(
                 and _name_matches(d, needle_lower, pattern)
             ]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if name_fuzzy is not None:
         items = apply_fuzzy(
@@ -478,8 +478,7 @@ def _list_via_cache(
         with client:
             cached = cache_get_docs(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
@@ -591,8 +590,7 @@ def get_cmd(
                 _emit_doc_not_found(client, doc_id=doc_id, object_id=object_id)
                 raise typer.Exit(code=6)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if fmt is DocFormat.markdown:
         blocks = doc.get("blocks") or []
@@ -718,8 +716,7 @@ def add_block_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     opts.emit(data.get("create_doc_block") or {})
 
 
@@ -787,8 +784,7 @@ def add_content_cmd(
                 if new_id:
                     prev_id = str(new_id)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     opts.emit(created)
 
 

@@ -381,10 +381,36 @@ def main() -> None:
     """Console-script entry point.
 
     Reorders argv so root-level global flags work anywhere on the command line
-    (az/gh/gam UX), then hands off to Typer.
+    (az/gh/gam UX), then hands off to Typer. Wraps the Typer call so Click
+    `UsageError` failures (unknown flag, missing arg, bad parameter) get the
+    Phase 5.1 JSON envelope on stderr in machine-output mode, alongside
+    Click's own human-readable line.
     """
     args = reorder_argv(sys.argv[1:])
-    app(args=args)
+    try:
+        app(args=args, standalone_mode=False)
+    except click.exceptions.UsageError as e:
+        from mondo.cli._errors import (
+            emit_envelope,
+            error_envelope,
+            is_machine_output_argv,
+            suggest_for_no_such_option,
+        )
+
+        if is_machine_output_argv(args):
+            emit_envelope(
+                error_envelope(e, suggestion=suggest_for_no_such_option(e))
+            )
+        e.show()
+        sys.exit(e.exit_code or 2)
+    except click.exceptions.Abort:
+        click.echo("Aborted!", err=True)
+        sys.exit(1)
+    except click.exceptions.Exit as e:
+        sys.exit(e.exit_code)
+    except click.exceptions.ClickException as e:
+        e.show()
+        sys.exit(e.exit_code)
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._column_cache import fetch_board_columns
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit
+from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -224,8 +224,7 @@ def board_cmd(
 
             items = list(iter_items_page(client, **iterator_kwargs))
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     col_titles = [c["title"] for c in columns]
     item_headers = [*META_FIELDS, *col_titles]
