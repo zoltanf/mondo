@@ -397,11 +397,14 @@ def main() -> None:
             suggest_for_no_such_option,
         )
 
+        # Match the MondoError path's ordering: human-readable first,
+        # then JSON envelope. Agents tail-grepping for the JSON line
+        # see the same shape regardless of which error source fired.
+        e.show()
         if is_machine_output_argv(args):
             emit_envelope(
                 error_envelope(e, suggestion=suggest_for_no_such_option(e))
             )
-        e.show()
         sys.exit(e.exit_code or 2)
     except click.exceptions.Abort:
         click.echo("Aborted!", err=True)

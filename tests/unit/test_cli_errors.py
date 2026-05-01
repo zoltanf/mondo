@@ -136,6 +136,23 @@ class TestSuggestForNoSuchOption:
                 assert h.startswith("--")
 
 
+class TestOutputFormatCoverage:
+    """Guard against drift: every `OutputFormat` value must be either
+    machine-classified or human-classified. Adding a new format means
+    deciding which side it falls on, not silently defaulting to TTY."""
+
+    def test_every_format_classified(self) -> None:
+        from mondo.cli._errors import _HUMAN_OUTPUTS, _MACHINE_OUTPUTS
+        from mondo.cli.main import OutputFormat
+
+        all_values = {f.value for f in OutputFormat}
+        classified = _MACHINE_OUTPUTS | _HUMAN_OUTPUTS
+        assert all_values <= classified, (
+            f"OutputFormat values not classified: {all_values - classified}"
+        )
+        assert _MACHINE_OUTPUTS.isdisjoint(_HUMAN_OUTPUTS)
+
+
 class TestIsMachineOutput:
     @pytest.mark.parametrize("value", ["json", "JSON", "jsonc", "yaml"])
     def test_explicit_machine_format_is_machine(self, value: str) -> None:

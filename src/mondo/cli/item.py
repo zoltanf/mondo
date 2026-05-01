@@ -79,9 +79,7 @@ def _execute_create_item(
             result = client.execute(query, variables=variables)
             return result.get("data") or {}
     except ColumnValueError as e:
-        msg = f"{e}\n{column_value_hint}" if column_value_hint else str(e)
-        typer.secho(f"error: {msg}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e, human_suffix=column_value_hint or None)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 

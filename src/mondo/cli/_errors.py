@@ -30,15 +30,15 @@ if TYPE_CHECKING:
     from mondo.cli.context import GlobalOpts
 
 
+# A unit test in tests/unit/test_cli_errors.py asserts the union covers
+# every `OutputFormat` value, so adding a format means classifying it.
 _MACHINE_OUTPUTS: frozenset[str] = frozenset({"json", "jsonc", "yaml"})
 _HUMAN_OUTPUTS: frozenset[str] = frozenset({"table", "tsv", "csv", "none"})
 
 
-# Static cross-command aliases Click's difflib can't always reach (e.g.
-# the user typed an old/sibling-command flag that isn't registered on
-# the current command). Click's `possibilities` covers same-command
-# typos via difflib already; this is the targeted fallback for things
-# the agent-usability report flagged.
+# Cross-command aliases Click's difflib can't reach: the user typed a
+# flag valid on a sibling command but not on the current one. Click's
+# `possibilities` covers same-command typos already.
 FLAG_ALIAS_HINTS: dict[str, list[str]] = {
     "--group-id": ["--group", "--id"],
     "--item-id": ["--item", "--id"],
@@ -136,12 +136,7 @@ def _code_for(exc: BaseException) -> str | None:
 
 def _message_for(exc: BaseException) -> str:
     if isinstance(exc, click.exceptions.UsageError):
-        # Click stores the human message on .format_message() (sometimes
-        # richer than str(exc)) — use it when present.
-        try:
-            return exc.format_message()
-        except Exception:
-            return str(exc)
+        return exc.format_message()
     return str(exc)
 
 

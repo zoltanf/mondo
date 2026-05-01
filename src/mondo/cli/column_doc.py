@@ -197,9 +197,6 @@ def get_cmd(
                 return
 
             doc = _fetch_doc_blocks(client, object_ids[0])
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -299,9 +296,6 @@ def set_cmd(
                     "created": False,
                 }
             )
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -350,9 +344,6 @@ def append_cmd(
                 )
                 raise typer.Exit(0)
             _create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -398,9 +389,6 @@ def clear_cmd(
                     "create_labels": None,
                 },
             )
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
