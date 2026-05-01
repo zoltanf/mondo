@@ -220,46 +220,234 @@ def _normalize_type(btype: str) -> str:
     return _READ_ALIASES.get(normalized, normalized)
 
 
+# Container blocks (notice_box/layout/table) hold their visible content in
+# *child* blocks linked back via `parent_block_id`. The renderer walks that
+# tree and emits GFM callout markers (`> [!NOTE]` etc.) so the structure
+# round-trips and degrades to a plain blockquote in non-GFM renderers. See
+# issue #1.
+#
+# Monday's `DocBlockContentType` enum spells the callout type `notice_box`;
+# `notice` and `callout` are kept as read-side aliases in case older payloads
+# or the issue reporter's terminology surfaces them.
+# `layout` is a structural-only container — children render inline with no
+# callout chrome, since plain markdown has no equivalent of multi-column.
+_STRUCTURAL_MARKER = ""
+
+_CONTAINER_MARKERS: dict[str, str] = {
+    "notice_box": "[!NOTE]",
+    "notice": "[!NOTE]",
+    "callout": "[!NOTE]",
+    "table": "[!TABLE]",
+    "layout": _STRUCTURAL_MARKER,
+}
+
+_LEAF_TYPES = frozenset(
+    {
+        "divider",
+        "large_title",
+        "medium_title",
+        "small_title",
+        "bulleted_list",
+        "numbered_list",
+        "quote",
+        "code",
+        "normal_text",
+    }
+)
+
+
+def _container_marker(btype: str, has_children: bool) -> str | None:
+    """Resolve the container handling for a block.
+
+    Returns:
+        - a non-empty string ("[!NOTE]"): callout container — emit this marker
+          and indent children with `"> "`.
+        - `""` (empty string, `_STRUCTURAL_MARKER`): structural container
+          (e.g. `layout`) — render children inline with no marker.
+        - `None`: not a container at all; render as a leaf.
+
+    Unknown types with children fall back to `[!{TYPE_UPPER}]` so we never
+    silently drop content when monday adds a new container type.
+    """
+    if btype in _CONTAINER_MARKERS:
+        return _CONTAINER_MARKERS[btype]
+    if has_children and btype not in _LEAF_TYPES:
+        return f"[!{btype.upper()}]" if btype else "[!CONTAINER]"
+    return None
+
+
 def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
-    """Render a list of monday doc blocks as a markdown string."""
+    """Render a list of monday doc blocks as a markdown string.
+
+    Walks the parent→children tree implied by `parent_block_id` so container
+    blocks (notice/callout/layout/table) render with their inner content
+    nested underneath, instead of children being detached and rendered out
+    of context (issue #1).
+    """
     if not blocks:
         return ""
-    lines: list[str] = []
-    numbered_counter = 0
 
-    for block in blocks:
+    by_id: dict[str, dict[str, Any]] = {}
+    for b in blocks:
+        bid = b.get("id")
+        if bid is not None:
+            by_id[str(bid)] = b
+
+    children_of: dict[str, list[dict[str, Any]]] = {}
+    roots: list[dict[str, Any]] = []
+    for b in blocks:
+        bid = b.get("id")
+        parent = b.get("parent_block_id")
+        # Treat as root when: no parent set, parent missing from this list
+        # (orphan — render at top so we don't silently drop), or self-cycle.
+        if (
+            parent is None
+            or str(parent) == str(bid)
+            or str(parent) not in by_id
+        ):
+            roots.append(b)
+        else:
+            children_of.setdefault(str(parent), []).append(b)
+
+    lines: list[str] = []
+    _render_block_list(roots, children_of, "", lines)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_table(
+    block: dict[str, Any],
+    children_of: dict[str, list[dict[str, Any]]],
+    prefix: str,
+    lines: list[str],
+) -> bool:
+    """Render a `table` block as a markdown pipe table.
+
+    monday's `table` block carries the layout in `content.cells` — a row-major
+    matrix of `[{"blockId": ...}]` references. Each referenced block is a
+    `cell` whose visible text lives in a `normal_text` child. The flat
+    `parent_block_id` graph alone doesn't preserve column order, so we read
+    the matrix to reconstruct the grid.
+
+    Returns True when a real markdown table was emitted; False when the
+    schema is missing/malformed and the caller should fall back to the
+    generic `[!TABLE]` blockquote so cell text isn't silently dropped.
+    """
+    raw = block.get("content")
+    if isinstance(raw, str):
+        try:
+            content = json.loads(raw)
+        except ValueError:
+            return False
+    elif isinstance(raw, dict):
+        content = raw
+    else:
+        return False
+
+    cells_matrix = content.get("cells")
+    if not isinstance(cells_matrix, list) or not cells_matrix:
+        return False
+
+    grid: list[list[str]] = []
+    for row in cells_matrix:
+        if not isinstance(row, list):
+            return False
+        row_texts: list[str] = []
+        for cell_ref in row:
+            cell_id = ""
+            if isinstance(cell_ref, dict):
+                ref = cell_ref.get("blockId")
+                if ref is not None:
+                    cell_id = str(ref)
+            pieces: list[str] = []
+            for child in children_of.get(cell_id, []):
+                t = _extract_text(child.get("content"))
+                if t:
+                    pieces.append(t)
+            cell_text = " ".join(pieces)
+            # Escape pipes and collapse newlines so the row syntax stays valid.
+            cell_text = cell_text.replace("|", r"\|").replace("\n", " ")
+            row_texts.append(cell_text)
+        grid.append(row_texts)
+
+    if not grid or not grid[0]:
+        return False
+
+    col_count = max(len(row) for row in grid)
+    grid = [row + [""] * (col_count - len(row)) for row in grid]
+
+    # Header row + separator + body rows. The first matrix row is treated as
+    # the header; markdown pipe tables require a separator after it.
+    lines.append(f"{prefix}| " + " | ".join(grid[0]) + " |")
+    lines.append(f"{prefix}| " + " | ".join(["---"] * col_count) + " |")
+    for row in grid[1:]:
+        lines.append(f"{prefix}| " + " | ".join(row) + " |")
+    lines.append("")
+    return True
+
+
+def _render_block_list(
+    siblings: list[dict[str, Any]],
+    children_of: dict[str, list[dict[str, Any]]],
+    prefix: str,
+    lines: list[str],
+) -> None:
+    """Render a sibling group at indentation `prefix`.
+
+    Numbered-list counter is local to this call — a `1. … 2. …` list inside
+    a notice restarts at 1 independently of any list outside it.
+    """
+    numbered_counter = 0
+    for block in siblings:
         btype = _normalize_type(block.get("type") or "")
         text = _extract_text(block.get("content"))
+        bid = str(block.get("id") or "")
+        kids = children_of.get(bid, [])
+
         if btype != "numbered_list":
             numbered_counter = 0
 
+        if btype == "table" and _render_table(block, children_of, prefix, lines):
+            continue
+
+        marker = _container_marker(btype, has_children=bool(kids))
+        if marker is not None:
+            child_prefix = prefix + "> " if marker else prefix
+            if marker:
+                lines.append(f"{prefix}> {marker}")
+            _render_block_list(kids, children_of, child_prefix, lines)
+            lines.append("")
+            continue
+
+        # Leaf rendering.
         if btype == "divider":
-            lines.append("---")
+            lines.append(f"{prefix}---")
         elif btype == "large_title":
-            lines.append(f"# {text}")
+            lines.append(f"{prefix}# {text}")
         elif btype == "medium_title":
-            lines.append(f"## {text}")
+            lines.append(f"{prefix}## {text}")
         elif btype == "small_title":
-            lines.append(f"### {text}")
+            lines.append(f"{prefix}### {text}")
         elif btype == "bulleted_list":
-            lines.append(f"- {text}")
+            lines.append(f"{prefix}- {text}")
         elif btype == "numbered_list":
             numbered_counter += 1
-            lines.append(f"{numbered_counter}. {text}")
+            lines.append(f"{prefix}{numbered_counter}. {text}")
         elif btype == "quote":
-            lines.append(f"> {text}")
+            lines.append(f"{prefix}> {text}")
         elif btype == "code":
             content = block.get("content") or {}
             lang = content.get("language", "") if isinstance(content, dict) else ""
-            lines.append(f"```{lang}")
+            lines.append(f"{prefix}```{lang}")
             if text:
-                lines.append(text)
-            lines.append("```")
-        else:
-            # normal_text + any unknown type we haven't taught: fall back to text
-            if text:
-                lines.append(text)
+                lines.append(f"{prefix}{text}")
+            lines.append(f"{prefix}```")
+        elif text:
+            # normal_text + any other leaf type we haven't taught.
+            lines.append(f"{prefix}{text}")
 
-        lines.append("")  # blank line between blocks for readability
+        # Defensive: a leaf block with unexpected children would otherwise
+        # drop them. Render at same prefix so content survives.
+        if kids:
+            _render_block_list(kids, children_of, prefix, lines)
 
-    return "\n".join(lines).rstrip() + "\n"
+        lines.append("")
