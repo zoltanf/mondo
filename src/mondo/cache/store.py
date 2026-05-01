@@ -121,12 +121,11 @@ class CacheStore:
         effect — cache corruption is self-healing.
         """
         p = self.path
-        if not p.exists():
-            return None
         raw = self._read_envelope()
         if raw is None:
-            logger.debug(f"cache[{self._entity_type}]: corrupt file; dropping")
-            self._try_unlink(p)
+            if p.exists():
+                logger.debug(f"cache[{self._entity_type}]: corrupt file; dropping")
+                self._try_unlink(p)
             return None
 
         try:

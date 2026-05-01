@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import nullcontext
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,6 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import ColumnValueError, MondoError, NotFoundError, UsageError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
-    CREATE_OR_GET_TAG,
     ITEM_ARCHIVE,
     ITEM_CREATE,
     ITEM_DELETE,
@@ -28,6 +28,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
@@ -100,32 +101,6 @@ def _parse_filter(expr: str) -> dict[str, Any]:
     return {"column_id": col.strip(), "compare_value": values, "operator": operator}
 
 
-def _parse_settings(raw: str | None) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, raw: str) -> str:
-    """Resolve any non-integer tag names via create_or_get_tag; return comma-ids."""
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    ids: list[int] = []
-    for part in parts:
-        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
-            ids.append(int(part))
-            continue
-        result = client.execute(CREATE_OR_GET_TAG, {"name": part, "board": board_id})
-        tag = ((result.get("data") or {}).get("create_or_get_tag")) or {}
-        if not tag.get("id"):
-            raise MondoError(f"create_or_get_tag returned no id for {part!r}")
-        ids.append(int(tag["id"]))
-    return ",".join(str(i) for i in ids)
-
-
 def _fetch_column_defs(
     opts: GlobalOpts, client: MondayClient, board_id: int
 ) -> dict[str, dict[str, Any]]:
@@ -151,18 +126,25 @@ def _build_column_values(
     *,
     raw_mode: bool,
     create_labels: bool = False,
+    tag_cache: dict[str, int] | None = None,
+    column_defs: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Apply codecs to `--column K=V` pairs, using live board column types.
 
     raw_mode=True disables codec dispatch (user's value used as-is after JSON
     parse-or-passthrough). Raw mode also skips the preflight query.
+
+    `tag_cache` and `column_defs`, when provided, dedupe work across rows
+    in a batch: a 50-row batch tagging "urgent" issues one
+    `create_or_get_tag` instead of fifty, and `_fetch_column_defs` runs
+    once per batch instead of once per row.
     """
     parsed_pairs = [parse_column_kv(p) for p in pairs]
 
     if raw_mode:
         return dict(parsed_pairs)
 
-    defs = _fetch_column_defs(opts, client, board_id)
+    defs = column_defs if column_defs is not None else _fetch_column_defs(opts, client, board_id)
     out: dict[str, Any] = {}
     for col_id, raw_value in parsed_pairs:
         definition = defs.get(col_id)
@@ -171,9 +153,9 @@ def _build_column_values(
             out[col_id] = raw_value
             continue
         col_type = definition["type"]
-        settings = _parse_settings(definition.get("settings_str"))
+        settings = parse_settings(definition.get("settings_str"))
         if col_type == "tags":
-            raw_value = _resolve_tag_names_to_ids(client, board_id, raw_value)
+            raw_value = resolve_tag_names_to_ids(client, board_id, raw_value, cache=tag_cache)
         try:
             out[col_id] = parse_value(col_type, raw_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
@@ -350,6 +332,8 @@ def _build_create_variables_for_row(
     *,
     raw_columns: bool,
     create_labels_default: bool,
+    tag_cache: dict[str, int] | None = None,
+    column_defs: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Render one batch row into the `ITEM_CREATE` variable dict.
 
@@ -377,6 +361,8 @@ def _build_create_variables_for_row(
                 list(raw_columns_field),
                 raw_mode=False,
                 create_labels=create_labels,
+                tag_cache=tag_cache,
+                column_defs=column_defs,
             )
     prm = row.get("position_relative_method")
     if prm is not None:
@@ -595,14 +581,15 @@ def _run_batch(
         client = client_or_exit(opts)
 
     try:
-        # Build per-row variable dicts (codec dispatch happens here when
-        # raw_columns=False). Done up-front so dry-run shows the resolved
-        # mutation document without committing anything live.
-        if client is not None:
-            ctx_mgr = client
-        else:
-            from contextlib import nullcontext
-            ctx_mgr = nullcontext()  # type: ignore[assignment]
+        # Per-batch caches dedupe work across rows: column defs are fetched
+        # once instead of once per row, and `urgent` tagged in 50 rows
+        # issues one create_or_get_tag instead of fifty.
+        column_defs: dict[str, dict[str, Any]] | None = None
+        tag_cache: dict[str, int] = {}
+        if needs_preflight and client is not None:
+            column_defs = _fetch_column_defs(opts, client, board_id)
+
+        ctx_mgr: Any = client if client is not None else nullcontext()
         per_row_vars: list[dict[str, Any]] = []
         try:
             with ctx_mgr:
@@ -615,6 +602,8 @@ def _run_batch(
                             row,
                             raw_columns=raw_columns,
                             create_labels_default=create_labels_default,
+                            tag_cache=tag_cache,
+                            column_defs=column_defs,
                         )
                     )
                 if opts.dry_run:

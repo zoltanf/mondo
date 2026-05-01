@@ -25,10 +25,10 @@ from mondo.api.queries import (
     COLUMN_CREATE,
     COLUMN_DELETE,
     COLUMN_RENAME,
-    CREATE_OR_GET_TAG,
 )
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, dry_run_and_exit, exec_or_exit, execute
@@ -55,16 +55,6 @@ app.add_typer(doc_app, name="doc", help="Read/write the content of a `doc`-typed
 # ----- helpers -----
 
 
-def _parse_settings(raw: str | None) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
 def _fetch_column_context(
     client: MondayClient, item_id: int, column_ids: list[str]
 ) -> tuple[int, dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -86,27 +76,6 @@ def _fetch_column_context(
     defs = {c["id"]: c for c in (board.get("columns") or [])}
     values = {v["id"]: v for v in (item.get("column_values") or [])}
     return board_id, defs, values
-
-
-def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, value: str) -> str:
-    """If `value` contains tag names (non-integers), create/resolve them via
-    `create_or_get_tag` and return a comma-joined ID list. Leaves pure-int
-    inputs unchanged so TagsCodec.parse() can just consume the output."""
-    parts = [p.strip() for p in value.split(",") if p.strip()]
-    if not parts:
-        return ""
-    resolved_ids: list[int] = []
-    for part in parts:
-        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
-            resolved_ids.append(int(part))
-            continue
-        data = exec_or_exit(client, CREATE_OR_GET_TAG, {"name": part, "board": board_id})
-        tag = data.get("create_or_get_tag") or {}
-        tag_id = tag.get("id")
-        if tag_id is None:
-            raise MondoError(f"create_or_get_tag returned no id for name {part!r}")
-        resolved_ids.append(int(tag_id))
-    return ",".join(str(i) for i in resolved_ids)
 
 
 def _load_value(value: str | None, from_file: Path | None, from_stdin: bool) -> str:
@@ -222,7 +191,7 @@ def labels_cmd(
         )
         raise typer.Exit(code=6)
     col_type = column.get("type")
-    settings = _parse_settings(column.get("settings_str"))
+    settings = parse_settings(column.get("settings_str"))
     if col_type == "status":
         opts.emit(iter_status_labels(settings))
         return
@@ -325,7 +294,7 @@ def set_cmd(
                 raise typer.Exit(code=6)
 
             col_type = definition["type"]
-            settings = _parse_settings(definition.get("settings_str"))
+            settings = parse_settings(definition.get("settings_str"))
 
             if column_raw:
                 try:
@@ -340,7 +309,7 @@ def set_cmd(
             else:
                 if col_type == "tags":
                     # Resolve tag names to IDs before the codec sees them.
-                    raw_input = _resolve_tag_names_to_ids(client, board_id, raw_input)
+                    raw_input = resolve_tag_names_to_ids(client, board_id, raw_input)
                 try:
                     parsed = parse_value(
                         col_type, raw_input, settings, create_labels=create_labels_if_missing

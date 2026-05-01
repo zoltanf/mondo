@@ -6,6 +6,7 @@ csv / json renderer sees it (matches az CLI's `--query` semantics).
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 import jmespath  # type: ignore[import-untyped]
@@ -27,6 +28,7 @@ def apply_query(data: Any, expression: str | None) -> Any:
         raise ValueError(f"invalid JMESPath expression: {e}") from e
 
 
+@lru_cache(maxsize=128)
 def extract_query_leaf_fields(expression: str | None) -> frozenset[str]:
     """Return every leaf identifier appearing as a `field` node in the parsed AST.
 
