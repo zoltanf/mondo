@@ -283,6 +283,19 @@ EXAMPLES: dict[str, list[Example]] = {
             "Dry-run to preview the GraphQL without sending it",
             'mondo --dry-run item create --board 1234567890 --name "Fix CI"',
         ),
+        Example(
+            "Bulk create from a JSON file (one HTTP call per chunk of 10)",
+            "mondo item create --board 1234567890 --batch items.json",
+        ),
+        Example(
+            "Bulk create from stdin",
+            "echo '[{\"name\":\"A\"},{\"name\":\"B\"}]' | "
+            "mondo item create --board 1234567890 --batch -",
+        ),
+        Example(
+            "Smaller chunks (debug or work around complexity limits)",
+            "mondo item create --board 1234567890 --batch items.json --chunk-size 3",
+        ),
     ],
     "item rename": [
         Example(

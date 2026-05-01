@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -24,6 +26,7 @@ from mondo.api.queries import (
     ITEM_MOVE_GROUP,
     ITEM_RENAME,
 )
+from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
@@ -339,11 +342,84 @@ def list_cmd(
 # ----- write commands -----
 
 
+def _build_create_variables_for_row(
+    opts: GlobalOpts,
+    client: MondayClient | None,
+    board_id: int,
+    row: dict[str, Any],
+    *,
+    raw_columns: bool,
+    create_labels_default: bool,
+) -> dict[str, Any]:
+    """Render one batch row into the `ITEM_CREATE` variable dict.
+
+    Reuses `_build_column_values` for codec dispatch — `client` is required
+    when codec preflight is needed (`raw_columns=False` and the row carries
+    `columns`). Raises `ValueError` (exit 5) for malformed column values
+    and `MondoError` for upstream codec failures.
+    """
+    raw_columns_field = row.get("columns") or []
+    if not isinstance(raw_columns_field, list):
+        raise ValueError(
+            f"row {row.get('name', '?')!r}: 'columns' must be a list of K=V strings."
+        )
+    create_labels = bool(row.get("create_labels", create_labels_default))
+    col_values: dict[str, Any] = {}
+    if raw_columns_field:
+        if raw_columns:
+            col_values = dict(parse_column_kv(p) for p in raw_columns_field)
+        else:
+            assert client is not None, "preflight requires a client"
+            col_values = _build_column_values(
+                opts,
+                client,
+                board_id,
+                list(raw_columns_field),
+                raw_mode=False,
+                create_labels=create_labels,
+            )
+    prm = row.get("position_relative_method")
+    if prm is not None:
+        prm = PositionRelative(prm).value
+    return {
+        "board": board_id,
+        "name": str(row["name"]),
+        "group": row.get("group_id"),
+        # monday's column_values wants a JSON-*string*, not a JSON object (§11.4).
+        "values": json.dumps(col_values) if col_values else None,
+        "create_labels": create_labels if create_labels else None,
+        "prm": prm,
+        "relto": row.get("relative_to"),
+    }
+
+
+def _read_batch_input(source: Path) -> list[dict[str, Any]]:
+    """Read the `--batch` source and validate it's a JSON array of objects
+    each carrying a `name`. Use `Path("-")` for stdin."""
+    text = sys.stdin.read() if str(source) == "-" else source.read_text(encoding="utf-8")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise UsageError(f"--batch input is not valid JSON: {e}") from e
+    if not isinstance(parsed, list):
+        raise UsageError("--batch input must be a JSON array of objects.")
+    if not parsed:
+        raise UsageError("--batch input is an empty array — nothing to do.")
+    for i, row in enumerate(parsed):
+        if not isinstance(row, dict):
+            raise UsageError(f"--batch row {i}: expected object, got {type(row).__name__}.")
+        if not row.get("name"):
+            raise UsageError(f"--batch row {i}: missing required 'name' field.")
+    return parsed
+
+
 @app.command("create", epilog=epilog_for("item create"))
 def create_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID to create in."),
-    name: str = typer.Option(..., "--name", help="Item title."),
+    name: str | None = typer.Option(
+        None, "--name", help="Item title (single-item mode; omit when using --batch)."
+    ),
     group_id: str | None = typer.Option(
         None, "--group", help="Target group ID (default: board's top group)."
     ),
@@ -376,9 +452,72 @@ def create_cmd(
     relative_to: int | None = typer.Option(
         None, "--relative-to", help="Reference item ID for position-relative placement."
     ),
+    batch: Path | None = typer.Option(
+        None,
+        "--batch",
+        help=(
+            "Bulk-create from a JSON array (use '-' for stdin). Single-item "
+            "flags (--name, --group, --column, --position-*) are not allowed "
+            "with --batch — express them per-row instead."
+        ),
+    ),
+    chunk_size: int = typer.Option(
+        10,
+        "--chunk-size",
+        help="Items per HTTP call when --batch is used (default 10).",
+    ),
 ) -> None:
-    """Create a new item on a board."""
+    """Create a new item on a board.
+
+    Two modes:
+    - Single (default): pass --name (and optional --group, --column, ...).
+    - Bulk: pass --batch <path|-> with a JSON array of objects each carrying
+      `name` plus optional `group_id`, `columns`, `create_labels`,
+      `position_relative_method`, `relative_to`. The chunk is fanned into
+      one GraphQL document per chunk via aliasing — so 7 items = 1 HTTP
+      call (with default --chunk-size 10).
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if batch is not None:
+        single_item_flags = (
+            name is not None or group_id is not None or columns
+            or position_relative_method is not None or relative_to is not None
+        )
+        if single_item_flags:
+            typer.secho(
+                "error: --batch is mutually exclusive with --name / --group / "
+                "--column / --position-* / --relative-to. Move per-row "
+                "settings into the JSON array.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        try:
+            rows = _read_batch_input(batch)
+        except UsageError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
+        if chunk_size < 1:
+            typer.secho("error: --chunk-size must be >= 1.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+        _run_batch(
+            opts,
+            board_id,
+            rows,
+            raw_columns=raw_columns,
+            create_labels_default=create_labels_if_missing,
+            chunk_size=chunk_size,
+        )
+        return
+
+    if not name:
+        typer.secho(
+            "error: --name is required (or pass --batch <path|-> for bulk).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     # Resolve column values — codec dispatch needs a live client for the
     # board-columns preflight and (for tags) create_or_get_tag.
@@ -436,6 +575,105 @@ def create_cmd(
         # cached column defs so the next read sees the new labels.
         invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("create_item") or {})
+
+
+def _run_batch(
+    opts: GlobalOpts,
+    board_id: int,
+    rows: list[dict[str, Any]],
+    *,
+    raw_columns: bool,
+    create_labels_default: bool,
+    chunk_size: int,
+) -> None:
+    """Execute a batched item create. Fans each chunk into a single
+    multi-mutation GraphQL document via aliasing; aggregates per-row
+    success/failure into one envelope."""
+    needs_preflight = not raw_columns and any(row.get("columns") for row in rows)
+    client: MondayClient | None = None
+    if needs_preflight or not opts.dry_run:
+        client = client_or_exit(opts)
+
+    try:
+        # Build per-row variable dicts (codec dispatch happens here when
+        # raw_columns=False). Done up-front so dry-run shows the resolved
+        # mutation document without committing anything live.
+        if client is not None:
+            ctx_mgr = client
+        else:
+            from contextlib import nullcontext
+            ctx_mgr = nullcontext()  # type: ignore[assignment]
+        per_row_vars: list[dict[str, Any]] = []
+        try:
+            with ctx_mgr:
+                for row in rows:
+                    per_row_vars.append(
+                        _build_create_variables_for_row(
+                            opts,
+                            client,
+                            board_id,
+                            row,
+                            raw_columns=raw_columns,
+                            create_labels_default=create_labels_default,
+                        )
+                    )
+                if opts.dry_run:
+                    chunks_repr: list[dict[str, Any]] = []
+                    for chunk_idx, vars_chunk in enumerate(chunk_inputs(per_row_vars, chunk_size)):
+                        query, var_names = build_aliased_mutation(ITEM_CREATE, len(vars_chunk))
+                        flat: dict[str, Any] = {}
+                        base = chunk_idx * chunk_size
+                        for i, vars_row in enumerate(vars_chunk):
+                            for name_ in var_names:
+                                flat[f"{name_}_{i}"] = vars_row[name_]
+                        chunks_repr.append(
+                            {
+                                "query": query,
+                                "variables": flat,
+                                "row_indices": list(range(base, base + len(vars_chunk))),
+                            }
+                        )
+                    opts.emit({"chunks": chunks_repr})
+                    raise typer.Exit(0)
+
+                results: list[dict[str, Any]] = []
+                assert client is not None
+                row_chunks = chunk_inputs(rows, chunk_size)
+                vars_chunks = chunk_inputs(per_row_vars, chunk_size)
+                for chunk_idx, (row_chunk, vars_chunk) in enumerate(
+                    zip(row_chunks, vars_chunks, strict=True)
+                ):
+                    query, var_names = build_aliased_mutation(ITEM_CREATE, len(vars_chunk))
+                    flat = {}
+                    for i, vars_row in enumerate(vars_chunk):
+                        for name_ in var_names:
+                            flat[f"{name_}_{i}"] = vars_row[name_]
+                    response = client.execute(
+                        query, variables=flat, surface_partial_errors=True
+                    )
+                    base = chunk_idx * chunk_size
+                    results.extend(
+                        parse_aliased_response(response, row_chunk, base_index=base)
+                    )
+        except ValueError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=5) from e
+    except MondoError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=int(e.exit_code)) from e
+
+    if create_labels_default or any(row.get("create_labels") for row in rows):
+        invalidate_columns_cache(opts, board_id)
+
+    failed = sum(1 for r in results if not r["ok"])
+    summary = {
+        "requested": len(rows),
+        "created": len(results) - failed,
+        "failed": failed,
+    }
+    opts.emit({"summary": summary, "results": results})
+    if failed:
+        raise typer.Exit(code=1)
 
 
 def _resolve_item_target(

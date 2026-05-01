@@ -121,10 +121,12 @@ class TestDumpSpec:
         create = next(c for c in item["commands"] if c["name"] == "create")
 
         param_names = {p["name"] for p in create["params"]}
-        assert {"board_id", "name", "columns", "raw_columns"} <= param_names
+        assert {"board_id", "name", "columns", "raw_columns", "batch"} <= param_names
 
+        # `--name` is no longer hard-required at parser level — it's required
+        # only in single-item mode (mutex with --batch); the body validates.
         required = {p["name"] for p in create["params"] if p["required"]}
-        assert required == {"board_id", "name"}
+        assert required == {"board_id"}
 
     def test_examples_round_trip_from_registry(self, spec: dict) -> None:
         item = next(c for c in spec["root"]["commands"] if c["name"] == "item")
