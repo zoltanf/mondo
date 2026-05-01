@@ -243,11 +243,13 @@ class TestBundledTopics:
 
     _REQUIRED_TOPICS = frozenset(
         {
+            "agent-tips",
             "agent-workflow",
             "auth",
             "boards-vs-docs",
             "codecs",
             "complexity",
+            "duplicate-and-customize",
             "exit-codes",
             "filters",
             "graphql",
