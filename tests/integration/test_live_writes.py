@@ -2,15 +2,15 @@
 
 This test is intentionally env-gated and marked `integration` because it
 creates and deletes real resources in a playground workspace.
+
+Helpers and fixtures live in `_helpers.py` and `conftest.py` respectively.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,118 +19,25 @@ from typer.testing import CliRunner
 
 from mondo.cli.main import app
 
-MONDAY_TEST_TOKEN_ENV = "MONDAY_TEST_TOKEN"
-MONDAY_TEST_WORKSPACE_ID_ENV = "MONDAY_TEST_WORKSPACE_ID"
-MONDO_TEST_BOARD_ID_ENV = "MONDO_TEST_BOARD_ID"
-MONDO_TEST_DOC_ID_ENV = "MONDO_TEST_DOC_ID"
-DEFAULT_PLAYGROUND_WORKSPACE_ID = 592446
-API_VERSION = "2026-01"
+from ._helpers import (
+    CleanupPlan,
+    MONDAY_TEST_WORKSPACE_ID_ENV,
+    MONDO_TEST_WORKSPACE_ID_ENV,
+    DEFAULT_PLAYGROUND_WORKSPACE_ID,
+    format_failure,
+    invoke,
+    invoke_json,
+    json_output,
+    wait_for,
+)
 
 runner = CliRunner()
 
 
-def _require_live_token() -> str:
-    token = os.environ.get(MONDAY_TEST_TOKEN_ENV)
-    if not token:
-        pytest.skip(f"set {MONDAY_TEST_TOKEN_ENV} to run live Monday integration tests")
-    return token
-
-
-def _format_failure(args: list[str], result: Any) -> str:
-    return (
-        f"mondo {' '.join(args)}\n"
-        f"exit_code={result.exit_code}\n"
-        f"stdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
-    )
-
-
-def _invoke(args: list[str], *, expect_exit: int | None = 0) -> Any:
-    result = runner.invoke(app, ["--yes", "--output", "json", *args])
-    if expect_exit is not None:
-        assert result.exit_code == expect_exit, _format_failure(args, result)
-    return result
-
-
-def _json_output(result: Any) -> Any:
-    text = result.stdout.strip()
-    assert text, "command produced no JSON output"
-    return json.loads(text)
-
-
-def _invoke_json(args: list[str], *, expect_exit: int | None = 0) -> Any:
-    return _json_output(_invoke(args, expect_exit=expect_exit))
-
-
-def _wait_for(
-    description: str,
-    probe: Any,
-    *,
-    timeout_seconds: float = 45.0,
-    interval_seconds: float = 1.0,
-) -> Any:
-    deadline = time.monotonic() + timeout_seconds
-    last_error: AssertionError | None = None
-    while time.monotonic() < deadline:
-        try:
-            return probe()
-        except AssertionError as exc:
-            last_error = exc
-            time.sleep(interval_seconds)
-    detail = f": {last_error}" if last_error else ""
-    raise AssertionError(f"timed out waiting for {description}{detail}")
-
-
-@dataclass
-class CleanupAction:
-    label: str
-    args: list[str]
-
-
-@dataclass
-class CleanupPlan:
-    actions: list[CleanupAction] = field(default_factory=list)
-
-    def add(self, label: str, *args: str) -> None:
-        self.actions.append(CleanupAction(label=label, args=list(args)))
-
-
-@pytest.fixture
-def live_workspace_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> int:
-    token = _require_live_token()
-    monkeypatch.delenv("MONDO_PROFILE", raising=False)
-    monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
-    monkeypatch.setenv("MONDAY_API_TOKEN", token)
-    monkeypatch.setenv("MONDAY_API_VERSION", API_VERSION)
-    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setenv("MONDO_CACHE_ENABLED", "false")
-    return int(os.environ.get(MONDAY_TEST_WORKSPACE_ID_ENV, DEFAULT_PLAYGROUND_WORKSPACE_ID))
-
-
-@pytest.fixture
-def cleanup_plan(live_workspace_id: int) -> CleanupPlan:
-    plan = CleanupPlan()
-    yield plan
-
-    failures: list[str] = []
-    for action in reversed(plan.actions):
-        deadline = time.monotonic() + 45.0
-        while True:
-            result = _invoke(action.args, expect_exit=None)
-            if result.exit_code in {0, 6}:
-                break
-            if time.monotonic() >= deadline:
-                failures.append(f"{action.label} cleanup failed\n{_format_failure(action.args, result)}")
-                break
-            time.sleep(1.0)
-    if failures:
-        pytest.fail("\n\n".join(failures))
-
-
 def _probe_board(board_id: int, *, workspace_id: int, folder_id: int, board_name: str) -> dict[str, Any]:
-    result = _invoke(["board", "get", "--id", str(board_id)], expect_exit=None)
-    assert result.exit_code == 0, _format_failure(["board", "get", "--id", str(board_id)], result)
-    board = _json_output(result)
+    result = invoke(["board", "get", "--id", str(board_id)], expect_exit=None)
+    assert result.exit_code == 0, format_failure(["board", "get", "--id", str(board_id)], result)
+    board = json_output(result)
     assert board["name"] == board_name
     assert str(board["workspace_id"]) == str(workspace_id)
     assert str(board["folder_id"]) == str(folder_id)
@@ -138,9 +45,9 @@ def _probe_board(board_id: int, *, workspace_id: int, folder_id: int, board_name
 
 
 def _probe_group(board_id: int, group_id: str, group_name: str) -> list[dict[str, Any]]:
-    result = _invoke(["group", "list", "--board", str(board_id)], expect_exit=None)
-    assert result.exit_code == 0, _format_failure(["group", "list", "--board", str(board_id)], result)
-    groups = _json_output(result)
+    result = invoke(["group", "list", "--board", str(board_id)], expect_exit=None)
+    assert result.exit_code == 0, format_failure(["group", "list", "--board", str(board_id)], result)
+    groups = json_output(result)
     match = next((group for group in groups if group["id"] == group_id), None)
     assert match is not None, f"group {group_id} not visible on board {board_id}"
     assert match["title"] == group_name
@@ -148,9 +55,9 @@ def _probe_group(board_id: int, group_id: str, group_name: str) -> list[dict[str
 
 
 def _probe_columns(board_id: int, expected: dict[str, str]) -> list[dict[str, Any]]:
-    result = _invoke(["column", "list", "--board", str(board_id)], expect_exit=None)
-    assert result.exit_code == 0, _format_failure(["column", "list", "--board", str(board_id)], result)
-    columns = _json_output(result)
+    result = invoke(["column", "list", "--board", str(board_id)], expect_exit=None)
+    assert result.exit_code == 0, format_failure(["column", "list", "--board", str(board_id)], result)
+    columns = json_output(result)
     by_id = {column["id"]: column for column in columns}
     for column_id, column_type in expected.items():
         assert column_id in by_id, f"column {column_id!r} not visible on board {board_id}"
@@ -166,9 +73,9 @@ def _probe_item(
     item_name: str,
     expected_texts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    result = _invoke(["item", "get", "--id", str(item_id)], expect_exit=None)
-    assert result.exit_code == 0, _format_failure(["item", "get", "--id", str(item_id)], result)
-    item = _json_output(result)
+    result = invoke(["item", "get", "--id", str(item_id)], expect_exit=None)
+    assert result.exit_code == 0, format_failure(["item", "get", "--id", str(item_id)], result)
+    item = json_output(result)
     assert item["name"] == item_name
     assert str(item["board"]["id"]) == str(board_id)
     assert item["group"]["id"] == group_id
@@ -191,7 +98,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
     text_value = f"text value {suffix}"
     note_value = f"note value {suffix}"
 
-    folder = _invoke_json(
+    folder = invoke_json(
         [
             "folder",
             "create",
@@ -204,7 +111,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
     folder_id = int(folder["id"])
     cleanup_plan.add("folder", "folder", "delete", "--id", str(folder_id), "--hard")
 
-    board = _invoke_json(
+    board = invoke_json(
         [
             "board",
             "create",
@@ -222,7 +129,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
     board_id = int(board["id"])
     cleanup_plan.add("board", "board", "delete", "--id", str(board_id), "--hard")
 
-    _wait_for(
+    wait_for(
         "board creation",
         lambda: _probe_board(
             board_id,
@@ -232,7 +139,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
         ),
     )
 
-    group = _invoke_json(
+    group = invoke_json(
         [
             "group",
             "create",
@@ -243,9 +150,9 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
         ]
     )
     group_id = group["id"]
-    _wait_for("group creation", lambda: _probe_group(board_id, group_id, group_name))
+    wait_for("group creation", lambda: _probe_group(board_id, group_id, group_name))
 
-    text_column = _invoke_json(
+    text_column = invoke_json(
         [
             "column",
             "create",
@@ -262,7 +169,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
     assert text_column["id"] == "e2e_text"
     assert text_column["type"] == "text"
 
-    note_column = _invoke_json(
+    note_column = invoke_json(
         [
             "column",
             "create",
@@ -279,12 +186,12 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
     assert note_column["id"] == "e2e_note"
     assert note_column["type"] == "long_text"
 
-    _wait_for(
+    wait_for(
         "column creation",
         lambda: _probe_columns(board_id, {"e2e_text": "text", "e2e_note": "long_text"}),
     )
 
-    item = _invoke_json(
+    item = invoke_json(
         [
             "item",
             "create",
@@ -299,12 +206,12 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
     item_id = int(item["id"])
     cleanup_plan.add("item", "item", "delete", "--id", str(item_id), "--hard")
 
-    _wait_for(
+    wait_for(
         "item creation",
         lambda: _probe_item(item_id, board_id=board_id, group_id=group_id, item_name=item_name),
     )
 
-    _invoke_json(
+    invoke_json(
         [
             "column",
             "set",
@@ -316,7 +223,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
             text_value,
         ]
     )
-    _invoke_json(
+    invoke_json(
         [
             "column",
             "set",
@@ -329,7 +236,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
         ]
     )
 
-    _wait_for(
+    wait_for(
         "column value writes",
         lambda: _probe_item(
             item_id,
@@ -340,12 +247,12 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
         ),
     )
 
-    rendered_text = _invoke_json(
+    rendered_text = invoke_json(
         ["column", "get", "--item", str(item_id), "--column", "e2e_text"]
     )
     assert rendered_text == text_value
 
-    rendered_note = _invoke_json(
+    rendered_note = invoke_json(
         ["column", "get", "--item", str(item_id), "--column", "e2e_note"]
     )
     assert rendered_note == note_value
@@ -358,26 +265,6 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
 # the prepared doc (MONDO_TEST_DOC_ID) instead of paying for folder/board
 # create on every run. Each test cleans up the artefacts it creates.
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def live_test_board_id(live_workspace_id: int) -> int:
-    """Existing playground board id, gated by MONDO_TEST_BOARD_ID."""
-    raw = os.environ.get(MONDO_TEST_BOARD_ID_ENV)
-    if not raw:
-        pytest.skip(f"set {MONDO_TEST_BOARD_ID_ENV} to run feature-coverage live tests")
-    del live_workspace_id  # consumed only for token gate + monkeypatch setup
-    return int(raw)
-
-
-@pytest.fixture
-def live_test_doc_id(live_workspace_id: int) -> int:
-    """Pre-prepared doc id (the one with notice boxes), gated by MONDO_TEST_DOC_ID."""
-    raw = os.environ.get(MONDO_TEST_DOC_ID_ENV)
-    if not raw:
-        pytest.skip(f"set {MONDO_TEST_DOC_ID_ENV} to run doc read tests")
-    del live_workspace_id
-    return int(raw)
 
 
 @pytest.mark.integration
@@ -395,7 +282,7 @@ def test_live_name_selectors_and_first(
     fuzzy_renamed_title = f"{suffix}-FuzzyRenamed"
     common_needle = f"{suffix}-Alpha"
 
-    alpha = _invoke_json(
+    alpha = invoke_json(
         ["group", "create", "--board", str(live_test_board_id), "--name", alpha_title]
     )
     alpha_id = alpha["id"]
@@ -404,7 +291,7 @@ def test_live_name_selectors_and_first(
         str(live_test_board_id), "--id", alpha_id, "--hard",
     )
 
-    alphabet = _invoke_json(
+    alphabet = invoke_json(
         ["group", "create", "--board", str(live_test_board_id), "--name", alphabet_title]
     )
     alphabet_id = alphabet["id"]
@@ -414,15 +301,15 @@ def test_live_name_selectors_and_first(
     )
 
     def _both_groups_visible() -> list[dict[str, Any]]:
-        groups = _invoke_json(["group", "list", "--board", str(live_test_board_id)])
+        groups = invoke_json(["group", "list", "--board", str(live_test_board_id)])
         ids = {g["id"] for g in groups}
         assert alpha_id in ids and alphabet_id in ids, "groups not yet propagated"
         return groups
 
-    _wait_for("both groups visible", _both_groups_visible)
+    wait_for("both groups visible", _both_groups_visible)
 
     # Ambiguous filter without --first should exit 2 (UsageError).
-    ambiguous = _invoke(
+    ambiguous = invoke(
         [
             "group", "rename",
             "--board", str(live_test_board_id),
@@ -431,10 +318,10 @@ def test_live_name_selectors_and_first(
         ],
         expect_exit=None,
     )
-    assert ambiguous.exit_code == 2, _format_failure(["group rename ambiguous"], ambiguous)
+    assert ambiguous.exit_code == 2, format_failure(["group rename ambiguous"], ambiguous)
 
     # Same filter + --first picks one of them deterministically (lowest position).
-    _invoke_json(
+    invoke_json(
         [
             "group", "rename",
             "--board", str(live_test_board_id),
@@ -445,7 +332,7 @@ def test_live_name_selectors_and_first(
     )
 
     def _exactly_one_renamed() -> dict[str, str]:
-        groups = _invoke_json(["group", "list", "--board", str(live_test_board_id)])
+        groups = invoke_json(["group", "list", "--board", str(live_test_board_id)])
         by_title = {g["title"]: g["id"] for g in groups if g["id"] in {alpha_id, alphabet_id}}
         assert renamed_title in by_title, f"no group renamed to {renamed_title!r}: {by_title}"
         remaining_titles = [t for t in by_title if t != renamed_title]
@@ -453,14 +340,14 @@ def test_live_name_selectors_and_first(
         assert remaining_titles[0] in {alpha_title, alphabet_title}
         return by_title
 
-    by_title = _wait_for("exactly one group renamed", _exactly_one_renamed)
+    by_title = wait_for("exactly one group renamed", _exactly_one_renamed)
     untouched_title = next(t for t in by_title if t != renamed_title)
 
     # `group update --name-fuzzy` against the *untouched* group. Pass a clear
     # typo so fuzzy match clears the default threshold (70). The other group
     # is now named `renamed_title`, which is unrelated, so the match is unique.
     needle = "Allphabet" if untouched_title == alphabet_title else "Allpha"
-    _invoke_json(
+    invoke_json(
         [
             "group", "update",
             "--board", str(live_test_board_id),
@@ -471,13 +358,13 @@ def test_live_name_selectors_and_first(
     )
 
     def _fuzzy_renamed() -> None:
-        groups = _invoke_json(["group", "list", "--board", str(live_test_board_id)])
+        groups = invoke_json(["group", "list", "--board", str(live_test_board_id)])
         titles = {g["title"] for g in groups}
         assert fuzzy_renamed_title in titles, (
             f"group not fuzzy-renamed to {fuzzy_renamed_title!r}: {titles}"
         )
 
-    _wait_for("group fuzzy-renamed", _fuzzy_renamed)
+    wait_for("group fuzzy-renamed", _fuzzy_renamed)
 
 
 @pytest.mark.integration
@@ -487,7 +374,7 @@ def test_live_item_create_batch_success(
     """Phase 3.2 — `mondo item create --batch` happy path, single-chunk."""
     suffix = uuid.uuid4().hex[:8]
 
-    groups = _invoke_json(["group", "list", "--board", str(live_test_board_id)])
+    groups = invoke_json(["group", "list", "--board", str(live_test_board_id)])
     assert groups, "test board has no groups"
     target_group_id = groups[0]["id"]
 
@@ -498,7 +385,7 @@ def test_live_item_create_batch_success(
     batch_path = tmp_path / "batch_ok.json"
     batch_path.write_text(json.dumps(rows), encoding="utf-8")
 
-    envelope = _invoke_json(
+    envelope = invoke_json(
         [
             "item", "create",
             "--board", str(live_test_board_id),
@@ -521,7 +408,7 @@ def test_live_item_create_batch_success(
         )
 
     sample_id = int(envelope["results"][0]["id"])
-    _wait_for(
+    wait_for(
         "first batch item visible",
         lambda: _probe_item(
             sample_id,
@@ -543,7 +430,7 @@ def test_live_item_create_batch_partial_failure(
     """
     suffix = uuid.uuid4().hex[:8]
 
-    groups = _invoke_json(["group", "list", "--board", str(live_test_board_id)])
+    groups = invoke_json(["group", "list", "--board", str(live_test_board_id)])
     assert groups
     valid_group_id = groups[0]["id"]
     bogus_group_id = f"definitely_not_a_real_group_{suffix}"
@@ -555,7 +442,7 @@ def test_live_item_create_batch_partial_failure(
     batch_path = tmp_path / "batch_partial.json"
     batch_path.write_text(json.dumps(rows), encoding="utf-8")
 
-    result = _invoke(
+    result = invoke(
         [
             "item", "create",
             "--board", str(live_test_board_id),
@@ -563,8 +450,8 @@ def test_live_item_create_batch_partial_failure(
         ],
         expect_exit=None,
     )
-    assert result.exit_code == 1, _format_failure(["item create --batch partial"], result)
-    envelope = _json_output(result)
+    assert result.exit_code == 1, format_failure(["item create --batch partial"], result)
+    envelope = json_output(result)
 
     assert envelope["summary"]["requested"] == 2
     assert envelope["summary"]["created"] == 1
@@ -603,7 +490,7 @@ def test_live_json_error_envelope_for_server_errors(live_test_board_id: int) -> 
         app,
         ["--yes", "--output", "json", "item", "delete", "--id", "1", "--hard"],
     )
-    assert result.exit_code != 0, _format_failure(["item delete --id 1 --hard"], result)
+    assert result.exit_code != 0, format_failure(["item delete --id 1 --hard"], result)
 
     stderr_text = result.stderr.strip()
     assert stderr_text, "expected JSON envelope on stderr"
@@ -645,7 +532,7 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
     block), `doc export-markdown` renders to non-empty markdown, and
     `doc list --no-cache` finds the doc by name.
     """
-    doc = _invoke_json(
+    doc = invoke_json(
         [
             "doc", "get",
             "--object-id", str(live_test_doc_id),
@@ -666,7 +553,7 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
         f"{sorted({b.get('type') for b in blocks})}"
     )
 
-    md_result = _invoke(
+    md_result = invoke(
         [
             "doc", "export-markdown",
             "--doc", str(int(doc["id"])),
@@ -674,10 +561,14 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
     )
     assert md_result.stdout.strip(), "export-markdown produced no output"
 
-    workspace_id = int(os.environ.get(MONDAY_TEST_WORKSPACE_ID_ENV, DEFAULT_PLAYGROUND_WORKSPACE_ID))
+    workspace_id = int(
+        os.environ.get(MONDAY_TEST_WORKSPACE_ID_ENV)
+        or os.environ.get(MONDO_TEST_WORKSPACE_ID_ENV)
+        or DEFAULT_PLAYGROUND_WORKSPACE_ID
+    )
     needle = doc["name"].split()[0] if doc["name"] else ""
     assert needle, "doc name is too short to derive a search needle"
-    listing = _invoke_json(
+    listing = invoke_json(
         [
             "doc", "list",
             "--no-cache",
@@ -700,7 +591,7 @@ def test_live_doc_create_add_blocks_delete(
     suffix = uuid.uuid4().hex[:8]
     doc_name = f"E2E Doc {suffix}"
 
-    created = _invoke_json(
+    created = invoke_json(
         [
             "doc", "create",
             "--workspace", str(live_workspace_id),
@@ -715,7 +606,7 @@ def test_live_doc_create_add_blocks_delete(
     )
 
     block_content = json.dumps({"deltaFormat": [{"insert": "hello from e2e"}]})
-    _invoke_json(
+    invoke_json(
         [
             "doc", "add-block",
             "--doc", str(doc_id),
@@ -724,7 +615,7 @@ def test_live_doc_create_add_blocks_delete(
         ]
     )
 
-    _invoke(
+    invoke(
         [
             "doc", "add-content",
             "--doc", str(doc_id),
@@ -733,7 +624,7 @@ def test_live_doc_create_add_blocks_delete(
     )
 
     def _blocks_landed() -> list[dict[str, Any]]:
-        fetched = _invoke_json(
+        fetched = invoke_json(
             ["doc", "get", "--id", str(doc_id), "--format", "json"]
         )
         blocks = fetched.get("blocks") or []
@@ -746,4 +637,4 @@ def test_live_doc_create_add_blocks_delete(
         assert "bulleted_list" in normalised, f"bulleted_list missing: {normalised}"
         return blocks
 
-    _wait_for("doc blocks landed", _blocks_landed)
+    wait_for("doc blocks landed", _blocks_landed)

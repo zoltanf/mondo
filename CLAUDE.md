@@ -47,3 +47,40 @@ to other account members.** Each test cleans up via the `cleanup_plan`
 fixture (LIFO), but a crashed run can still leave artefacts — spot-check
 the board URL after the suite finishes and remove leftover `E2E *`
 groups, items, or docs by hand.
+
+### Test layout
+
+Live integration tests live under `tests/integration/`, split by feature:
+
+- `_helpers.py` — `invoke`, `invoke_json`, `wait_for`, `CleanupPlan`,
+  cleanup runner. Shared by every test file.
+- `conftest.py` — function-scoped fixtures (`live_workspace_id`,
+  `cleanup_plan`, `live_test_board_id`, `live_test_doc_id`) and the
+  session-scoped `pm_board_session` fixture (+ `session_cleanup_plan`).
+- `test_live_writes.py` — original lifecycle + per-feature tests
+  (folder/board/group/columns/items, batch, error envelope, doc create).
+- `test_live_pm_board.py` — PM-board CLI listing, JSON export,
+  CSV export→import round-trip, markdown export smoke.
+- `test_live_boards.py` — `board duplicate` (3 variants) + `board move`.
+- `test_live_folders.py` — folder tree, parent linking, rename, delete
+  archives contained boards.
+- `test_live_doc_column.py` — `column doc set/get/append/clear`.
+- `test_live_doc_md_roundtrip.py` — standalone-doc markdown round-trip
+  (strict subset + rich golden) plus `doc duplicate`/`doc rename`
+  (currently `xfail`-pinned for the `Int!` vs `ID!` schema mismatch).
+- `test_live_subitems.py` — subitem create/list/columns/delete.
+- `test_live_updates.py` — update create/reply/edit/pin/like/delete.
+- `test_live_files.py` — file upload to a file column + download
+  round-trip.
+- `fixtures/doc_roundtrip/` — markdown inputs (`strict_input.md`,
+  `rich_input.md`, `append_input.md`) and the golden output
+  (`rich_expected_export.md`). Regenerate the golden with
+  `MONDO_UPDATE_GOLDEN=1 uv run pytest tests/integration/test_live_doc_md_roundtrip.py::test_live_doc_markdown_rich_roundtrip_golden`.
+
+### Session fixture caveat
+
+`pm_board_session` builds a fresh PM board (folder + 8 columns + 3 groups
++ 5 items) once per pytest session and registers teardown on
+`session_cleanup_plan`. If the session crashes mid-setup, the residual
+`E2E PM Session *` folder must be deleted by hand from the playground
+workspace.
