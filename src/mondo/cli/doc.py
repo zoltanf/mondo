@@ -33,6 +33,7 @@ from mondo.api.queries import (
     DELETE_DOC,
     DELETE_DOC_BLOCK,
     DOC_GET_BY_ID_BLOCKS_PAGE,
+    DOC_HEAD_BY_OBJECT_ID,
     DOC_VERSION_DIFF,
     DOC_VERSION_HISTORY,
     DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
@@ -851,8 +852,8 @@ def rename_cmd(
 def duplicate_cmd(
     ctx: typer.Context,
     doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
-    duplicate_type: DuplicateDocType | None = typer.Option(
-        None,
+    duplicate_type: DuplicateDocType = typer.Option(
+        DuplicateDocType.duplicate_doc_with_content,
         "--duplicate-type",
         help="Copy only content, or content+updates.",
         case_sensitive=False,
@@ -863,9 +864,40 @@ def duplicate_cmd(
     data = execute(
         opts,
         DUPLICATE_DOC,
-        {"doc": doc_id, "dup": duplicate_type.value if duplicate_type else None},
+        {"doc": doc_id, "dup": duplicate_type.value},
     )
-    opts.emit(data.get("duplicate_doc"))
+    result = data.get("duplicate_doc") or {}
+    if not result.get("success"):
+        err = result.get("error") or "duplicate_doc failed"
+        typer.secho(f"error: {err}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=5)
+    new_object_id = result.get("id")
+    if new_object_id is None:
+        typer.secho(
+            "error: duplicate_doc returned no id",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=5)
+    lookup = execute(opts, DOC_HEAD_BY_OBJECT_ID, {"objs": [int(new_object_id)]})
+    matches = lookup.get("docs") or []
+    if not matches:
+        typer.secho(
+            f"error: duplicated doc with object_id={new_object_id} not "
+            "visible in workspace lookup",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=5)
+    new_doc = matches[0]
+    opts.emit(
+        {
+            "id": new_doc.get("id"),
+            "object_id": new_doc.get("object_id"),
+            "name": new_doc.get("name"),
+            "url": new_doc.get("url"),
+        }
+    )
 
 
 @app.command("delete", epilog=epilog_for("doc delete"))

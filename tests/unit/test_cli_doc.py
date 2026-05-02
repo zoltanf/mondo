@@ -1137,7 +1137,31 @@ class TestDocNewOps:
         assert body["variables"] == {"doc": 10, "name": "Renamed"}
 
     def test_duplicate(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"duplicate_doc": {"id": "88"}}))
+        # monday's `duplicate_doc` returns a JSON scalar envelope whose `id`
+        # is the new doc's object_id; the CLI follows up with a head-lookup
+        # by object_id to resolve the internal id and emits the canonical
+        # `{id, object_id, name, url}` shape (mirroring `doc create`).
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"duplicate_doc": {"success": True, "id": "900"}}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "88",
+                            "object_id": "900",
+                            "name": "Copy of Doc",
+                            "url": "https://x.monday.com/docs/900",
+                        }
+                    ]
+                }
+            ),
+        )
         result = runner.invoke(
             app,
             [
@@ -1150,8 +1174,60 @@ class TestDocNewOps:
             ],
         )
         assert result.exit_code == 0, result.stdout
-        body = _last_body(httpx_mock)
-        assert body["variables"] == {"doc": 10, "dup": "duplicate_doc_with_content_and_updates"}
+        # First body is the duplicate mutation; second is the head lookup.
+        bodies = [json.loads(req.content) for req in httpx_mock.get_requests()]
+        assert bodies[0]["variables"] == {
+            "doc": 10,
+            "dup": "duplicate_doc_with_content_and_updates",
+        }
+        assert bodies[1]["variables"] == {"objs": [900]}
+        emitted = json.loads(result.stdout)
+        assert emitted["id"] == "88"
+        assert emitted["object_id"] == "900"
+        assert emitted["name"] == "Copy of Doc"
+
+    def test_duplicate_default_type(self, httpx_mock: HTTPXMock) -> None:
+        # Bare `mondo doc duplicate` defaults --duplicate-type to
+        # duplicate_doc_with_content (monday rejects null).
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"duplicate_doc": {"success": True, "id": "900"}}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "88", "object_id": "900", "name": "n", "url": "u"}]}
+            ),
+        )
+        result = runner.invoke(app, ["doc", "duplicate", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        first_body = json.loads(httpx_mock.get_requests()[0].content)
+        assert first_body["variables"] == {
+            "doc": 10,
+            "dup": "duplicate_doc_with_content",
+        }
+
+    def test_duplicate_failure_exits_5(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"duplicate_doc": {"success": False, "error": "Unknown error"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "duplicate",
+                "--doc",
+                "10",
+                "--duplicate-type",
+                "duplicate_doc_with_content",
+            ],
+        )
+        assert result.exit_code == 5
+        assert "Unknown error" in result.stderr
 
     def test_delete(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"delete_doc": {"id": "10"}}))

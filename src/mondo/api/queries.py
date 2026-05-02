@@ -631,15 +631,30 @@ mutation ($workspace: ID!, $name: String!, $kind: BoardKind) {
 
 
 UPDATE_DOC_NAME = """
-mutation ($doc: Int!, $name: String!) {
+mutation ($doc: ID!, $name: String!) {
   update_doc_name(docId: $doc, name: $name)
 }
 """.strip()
 
 
 DUPLICATE_DOC = """
-mutation ($doc: Int!, $dup: DuplicateType) {
+mutation ($doc: ID!, $dup: DuplicateType) {
   duplicate_doc(docId: $doc, duplicateType: $dup)
+}
+""".strip()
+
+
+# Slim head lookup for resolving a doc by object_id without paging blocks.
+# Used by `doc duplicate` to translate monday's returned object_id into the
+# internal id (which downstream commands like `doc get`/`doc delete` expect).
+DOC_HEAD_BY_OBJECT_ID = """
+query ($objs: [ID!]!) {
+  docs(object_ids: $objs) {
+    id
+    object_id
+    name
+    url
+  }
 }
 """.strip()
 
