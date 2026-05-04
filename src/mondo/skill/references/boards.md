@@ -22,11 +22,17 @@ mondo board get --id 5094861043 --with-url     # include /boards/<id> URL in out
 
 *Gotcha:* if the id is a workdoc rather than a board, this command warns and points you at `mondo doc get --object-id <id>`. See `references/docs.md` and `mondo help boards-vs-docs`.
 
-## List boards in a workspace
+## List boards — all workspaces or scoped
+
+`--workspace` is **optional**. Omitting it returns boards across **all workspaces** the authenticated user can see. Pass it (repeatably) to restrict.
 
 ```bash
-mondo board list --workspace 592446 -o json                        # active boards
+mondo board list -o json                                           # all active boards, every workspace
+mondo board list --name-contains "bonsy" -o json                  # cross-workspace name search
+mondo board list --name-fuzzy "bonsi" --fuzzy-score -o json       # cross-workspace fuzzy search
+mondo board list --workspace 592446 -o json                        # active boards in one workspace
 mondo board list --workspace 592446 --state all --no-cache -o json # include archived; bypass cache
+mondo board list --workspace 592446 --workspace 699169 -o json     # multiple workspaces
 ```
 
 ```json
@@ -36,7 +42,7 @@ mondo board list --workspace 592446 --state all --no-cache -o json # include arc
 ]
 ```
 
-*Gotcha:* default omits archived boards. `--no-cache` bypasses the local cache when you need fresh state right after a write; otherwise leave the cache on (8h TTL for boards). Use `--filter` for server-side narrowing on large workspaces.
+*Gotcha:* default omits archived boards. `--no-cache` bypasses the local cache when you need fresh state right after a write; otherwise leave the cache on (8h TTL for boards). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Create a board
 

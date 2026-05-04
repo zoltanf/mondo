@@ -1,6 +1,7 @@
 ---
 name: mondo
 description: Use when the user wants to do anything against monday.com via the `mondo` CLI — reading or writing workspaces, folders, boards, groups, items, subitems, columns, updates, docs, files, users, teams, webhooks, or when they paste a monday.com URL.
+version: "1.0.0"
 ---
 
 # mondo
@@ -17,6 +18,27 @@ Invoke via the `mondo` binary on PATH. Authenticate once with `mondo auth login`
 - **user**, **team**, **tag**, **webhook**, **favorite**, **activity**, **validation** — each has its own `mondo <group>`.
 
 URL hint: `/boards/<id>` may be a board **or** a workdoc — `mondo board get` warns when the id is a document and points at `mondo doc get --object-id <id>`.
+
+## Before you run any commands
+
+Read the relevant reference file(s) first — before attempting any command. This is not optional: the references contain the exact flag names, argument order, and gotchas that can't be reliably inferred from `--help` alone (as experience shows, guessing leads to wasted calls and wrong syntax).
+
+Map your task to files:
+
+| Task involves… | Read first |
+|---|---|
+| boards (list, get, create, archive) | `references/boards.md` |
+| items or subitems | `references/items-and-subitems.md` |
+| groups | `references/groups.md` |
+| column values (read or write) | `references/columns.md` |
+| workspace docs or doc columns | `references/docs.md` |
+| file uploads / attachments | `references/files.md` |
+| workspaces or folders | `references/workspaces-and-folders.md` |
+| bulk export / import | `references/bulk.md` |
+| users, teams, webhooks, activity | `references/admin.md` |
+| item comments / updates | `references/updates.md` |
+
+If a task spans multiple areas (e.g. listing items and reading column values), read both files. Only after reading should you construct and run commands.
 
 ## Discover, don't guess
 

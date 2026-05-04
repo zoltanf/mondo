@@ -7,11 +7,17 @@ Two distinct surfaces share this file:
 
 A `/boards/<id>` URL may resolve to a workdoc, not a board — see `mondo help boards-vs-docs`.
 
-## List workspace docs
+## List docs — all workspaces or scoped
+
+`--workspace` is **optional**. Omitting it returns docs across **all workspaces** the authenticated user can see. Pass it (repeatably) to restrict.
 
 ```bash
-mondo doc list --workspace 592446 --no-cache -o json
+mondo doc list -o json                                          # all docs, every workspace
+mondo doc list --name-contains "bonsy" -o json                 # cross-workspace name search
+mondo doc list --name-fuzzy "bonsi" --fuzzy-score -o json      # cross-workspace fuzzy search
+mondo doc list --workspace 592446 --no-cache -o json           # docs in one workspace
 mondo doc list --workspace 592446 --name-contains "Spec" -o json
+mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple workspaces
 ```
 
 ```json
@@ -21,7 +27,7 @@ mondo doc list --workspace 592446 --name-contains "Spec" -o json
 ]
 ```
 
-*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the UUID-style doc id used in URLs (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the doc cache TTL is 24h.
+*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the UUID-style doc id used in URLs (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the doc cache TTL is 24h. Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Get a doc — JSON or Markdown
 
