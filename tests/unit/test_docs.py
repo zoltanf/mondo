@@ -169,6 +169,320 @@ class TestBlocksToMarkdown:
         assert blocks_to_markdown([]) == ""
 
 
+class TestBlocksToMarkdownContainers:
+    """Container blocks (notice/callout/layout/table) and parent_block_id.
+
+    Regression for issue #1 — children with `parent_block_id` were silently
+    detached from their container and rendered out-of-context (or, for some
+    types, dropped entirely). Renderer now walks the parent→children tree.
+    """
+
+    @staticmethod
+    def _block(
+        bid: str, btype: str, text: str = "", parent: str | None = None
+    ) -> dict:
+        return {
+            "id": bid,
+            "type": btype,
+            "content": {"deltaFormat": [{"insert": text}]} if text else {},
+            "parent_block_id": parent,
+        }
+
+    def test_notice_renders_as_gfm_callout(self) -> None:
+        out = blocks_to_markdown(
+            [
+                self._block("n1", "notice"),
+                self._block("c1", "normal_text", "first inside", parent="n1"),
+                self._block("c2", "normal_text", "second inside", parent="n1"),
+            ]
+        )
+        assert "> [!NOTE]" in out
+        assert "> first inside" in out
+        assert "> second inside" in out
+
+    def test_callout_renders_as_gfm_callout(self) -> None:
+        out = blocks_to_markdown(
+            [
+                self._block("c", "callout"),
+                self._block("k", "normal_text", "inside callout", parent="c"),
+            ]
+        )
+        assert "> [!NOTE]" in out
+        assert "> inside callout" in out
+
+    def test_orphan_child_falls_back_to_top_level(self) -> None:
+        """A child whose parent_block_id points to a non-existent id must
+        still render (no silent drop)."""
+        out = blocks_to_markdown(
+            [
+                self._block("a", "normal_text", "alpha"),
+                self._block("orphan", "normal_text", "ghost", parent="missing"),
+            ]
+        )
+        assert "alpha" in out
+        assert "ghost" in out
+        # Orphan should NOT be wrapped in a container marker — it has no parent.
+        assert "> ghost" not in out
+
+    def test_layout_container_renders_children_inline(self) -> None:
+        """Layout is purely structural — its children render with no
+        callout marker, just at top level."""
+        out = blocks_to_markdown(
+            [
+                self._block("l", "layout"),
+                self._block("c1", "normal_text", "left text", parent="l"),
+                self._block("c2", "normal_text", "right text", parent="l"),
+            ]
+        )
+        assert "left text" in out
+        assert "right text" in out
+        assert "[!LAYOUT]" not in out
+        assert "[!NOTE]" not in out
+
+    def test_table_container_preserves_cell_text(self) -> None:
+        """Until proper table reconstruction lands, table cells must at
+        least survive inside a `> [!TABLE]` blockquote — no silent drop."""
+        out = blocks_to_markdown(
+            [
+                self._block("t", "table"),
+                self._block("r1", "normal_text", "cell one", parent="t"),
+                self._block("r2", "normal_text", "cell two", parent="t"),
+            ]
+        )
+        assert "> [!TABLE]" in out
+        assert "> cell one" in out
+        assert "> cell two" in out
+
+    def test_nested_notice_inside_notice(self) -> None:
+        """Blockquote prefix must stack for nested containers."""
+        out = blocks_to_markdown(
+            [
+                self._block("outer", "notice"),
+                self._block("inner", "notice", parent="outer"),
+                self._block(
+                    "leaf", "normal_text", "deep inside", parent="inner"
+                ),
+            ]
+        )
+        # Inner notice's marker is rendered with the outer's prefix → `> > [!NOTE]`
+        assert "> > [!NOTE]" in out
+        assert "> > deep inside" in out
+
+    def test_unknown_container_with_children_uses_generic_marker(self) -> None:
+        """Future monday container types must degrade gracefully — emit a
+        generic `[!TYPE]` marker rather than dropping children."""
+        out = blocks_to_markdown(
+            [
+                self._block("x", "future_thing"),
+                self._block("c", "normal_text", "rescued", parent="x"),
+            ]
+        )
+        assert "rescued" in out
+        # Generic marker uppercases the type.
+        assert "[!FUTURE_THING]" in out
+
+    def test_numbered_list_counter_isolated_per_container(self) -> None:
+        """A numbered list inside a notice must not bleed counters with a
+        numbered list outside it."""
+        out = blocks_to_markdown(
+            [
+                self._block("o1", "numbered_list", "outer-a"),
+                self._block("o2", "numbered_list", "outer-b"),
+                self._block("n", "notice"),
+                self._block("i1", "numbered_list", "inner-a", parent="n"),
+                self._block("i2", "numbered_list", "inner-b", parent="n"),
+            ]
+        )
+        assert "1. outer-a" in out
+        assert "2. outer-b" in out
+        # Inner list restarts at 1, blockquoted.
+        assert "> 1. inner-a" in out
+        assert "> 2. inner-b" in out
+
+    def test_blocks_without_parent_block_id_render_unchanged(self) -> None:
+        """Sanity: a flat list with no parent_block_id behaves exactly as
+        before (covers the common path so tree-aware refactor doesn't
+        regress non-container docs)."""
+        flat = [
+            {"type": "large_title", "content": {"deltaFormat": [{"insert": "T"}]}},
+            {"type": "normal_text", "content": {"deltaFormat": [{"insert": "para"}]}},
+            {"type": "bulleted_list", "content": {"deltaFormat": [{"insert": "x"}]}},
+        ]
+        out = blocks_to_markdown(flat)
+        assert "# T" in out
+        assert "para" in out
+        assert "- x" in out
+
+    def test_self_referencing_parent_treated_as_root(self) -> None:
+        """Defensive: a block whose parent_block_id == its own id must not
+        recurse infinitely. It renders as a normal root."""
+        out = blocks_to_markdown(
+            [self._block("s", "normal_text", "self-loop", parent="s")]
+        )
+        assert "self-loop" in out
+
+    def test_empty_notice_still_emits_marker(self) -> None:
+        """A notice with no children still preserves the 'this was a
+        notice' context (otherwise it would silently disappear)."""
+        out = blocks_to_markdown([self._block("n", "notice")])
+        assert "[!NOTE]" in out
+
+
+class TestBlocksToMarkdownTables:
+    """monday's `table` block stores layout in `content.cells` as a
+    row-major matrix of `{blockId}` references; each referenced cell
+    has its visible text in a `normal_text` child. The renderer walks
+    that matrix and emits a real markdown pipe table."""
+
+    @staticmethod
+    def _table_payload(cell_ids: list[list[str]]) -> dict:
+        """Construct a table block's content.cells matrix as monday returns it
+        (note: monday returns content as a JSON STRING; both shapes must work)."""
+        return {
+            "cells": [[{"blockId": cid} for cid in row] for row in cell_ids],
+            "row_count": len(cell_ids),
+            "column_count": len(cell_ids[0]) if cell_ids else 0,
+        }
+
+    @staticmethod
+    def _cell(cell_id: str, table_id: str) -> dict:
+        return {
+            "id": cell_id,
+            "type": "cell",
+            "content": {},
+            "parent_block_id": table_id,
+        }
+
+    @staticmethod
+    def _cell_text(text_id: str, cell_id: str, text: str) -> dict:
+        return {
+            "id": text_id,
+            "type": "normal_text",
+            "content": {"deltaFormat": [{"insert": text}]},
+            "parent_block_id": cell_id,
+        }
+
+    def _build_table(
+        self, table_id: str, grid_text: list[list[str]]
+    ) -> list[dict]:
+        rows = len(grid_text)
+        cols = len(grid_text[0]) if rows else 0
+        cell_ids = [
+            [f"{table_id}-c{r}-{c}" for c in range(cols)] for r in range(rows)
+        ]
+        blocks: list[dict] = [
+            {
+                "id": table_id,
+                "type": "table",
+                "content": self._table_payload(cell_ids),
+                "parent_block_id": None,
+            }
+        ]
+        for r, row in enumerate(grid_text):
+            for c, txt in enumerate(row):
+                cid = cell_ids[r][c]
+                blocks.append(self._cell(cid, table_id))
+                if txt:
+                    blocks.append(self._cell_text(f"{cid}-t", cid, txt))
+        return blocks
+
+    def test_simple_2x2_table_renders_as_pipe_table(self) -> None:
+        blocks = self._build_table(
+            "t", [["Name", "Score"], ["Alice", "95"]]
+        )
+        out = blocks_to_markdown(blocks)
+        # Header row.
+        assert "| Name | Score |" in out
+        # Separator row.
+        assert "| --- | --- |" in out
+        # Body row.
+        assert "| Alice | 95 |" in out
+
+    def test_4x3_table_preserves_row_and_column_order(self) -> None:
+        blocks = self._build_table(
+            "t",
+            [
+                ["A", "B", "C"],
+                ["1", "2", "3"],
+                ["x", "y", "z"],
+                ["foo", "bar", "baz"],
+            ],
+        )
+        out = blocks_to_markdown(blocks)
+        assert "| A | B | C |" in out
+        assert "| --- | --- | --- |" in out
+        assert "| 1 | 2 | 3 |" in out
+        assert "| x | y | z |" in out
+        assert "| foo | bar | baz |" in out
+
+    def test_empty_cell_renders_as_blank(self) -> None:
+        blocks = self._build_table("t", [["a", "b"], ["c", ""]])
+        out = blocks_to_markdown(blocks)
+        # Empty cell becomes a blank between pipes (with the surrounding spaces).
+        assert "| c |  |" in out
+
+    def test_pipe_in_cell_text_is_escaped(self) -> None:
+        """A literal `|` in cell text would break the row syntax — escape it."""
+        blocks = self._build_table("t", [["a|b", "c"], ["d", "e"]])
+        out = blocks_to_markdown(blocks)
+        # Pipe is escaped as `\|` so markdown renderers don't split the row.
+        assert r"a\|b" in out
+
+    def test_table_with_content_as_json_string(self) -> None:
+        """Real monday API returns block.content as a JSON-encoded string,
+        not a parsed object. The renderer must re-parse."""
+        # Build the structure, then re-encode the table block's content as a string.
+        blocks = self._build_table("t", [["A", "B"], ["1", "2"]])
+        import json as _json
+        for b in blocks:
+            if b["type"] == "table":
+                b["content"] = _json.dumps(b["content"])
+                break
+        out = blocks_to_markdown(blocks)
+        assert "| A | B |" in out
+        assert "| 1 | 2 |" in out
+
+    def test_malformed_table_falls_back_to_blockquote(self) -> None:
+        """A `table` block with no/bad `cells` matrix falls back to the
+        generic `[!TABLE]` blockquote so cell text isn't silently dropped."""
+        blocks = [
+            {
+                "id": "t",
+                "type": "table",
+                "content": {},  # no cells matrix
+                "parent_block_id": None,
+            },
+            {
+                "id": "c1",
+                "type": "normal_text",
+                "content": {"deltaFormat": [{"insert": "rescue me"}]},
+                "parent_block_id": "t",
+            },
+        ]
+        out = blocks_to_markdown(blocks)
+        assert "[!TABLE]" in out
+        assert "rescue me" in out
+
+    def test_table_inside_notice_renders_with_blockquote_prefix(self) -> None:
+        """A table nested under a notice should render as a markdown table,
+        but every line must be blockquote-prefixed by the parent notice."""
+        notice = {
+            "id": "n",
+            "type": "notice_box",
+            "content": {},
+            "parent_block_id": None,
+        }
+        # Table sits under the notice — patch parent_block_id.
+        table_blocks = self._build_table("t", [["A", "B"], ["1", "2"]])
+        table_blocks[0]["parent_block_id"] = "n"
+        out = blocks_to_markdown([notice, *table_blocks])
+        # Notice marker present.
+        assert "> [!NOTE]" in out
+        # Table rows are prefixed with `> ` because they're inside the notice.
+        assert "> | A | B |" in out
+        assert "> | 1 | 2 |" in out
+
+
 class TestRealMondayShapes:
     """Monday's actual responses contain quirks not documented upfront.
 

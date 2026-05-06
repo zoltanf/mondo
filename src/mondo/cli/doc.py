@@ -756,6 +756,8 @@ def add_content_cmd(
             f"{CREATE_DOC_BLOCK} (looped per block)",
             {"doc": doc_id, "blocks": blocks},
         )
+    from mondo.cli.column_doc import create_blocks
+
     client = client_or_exit(opts)
     created: list[dict[str, Any]] = []
     try:
@@ -767,23 +769,7 @@ def add_content_cmd(
                 typer.secho(f"doc id={doc_id} not found.", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=6)
             prev_id = _last_block_id(existing_doc)
-            for block in blocks:
-                data = exec_or_exit(
-                    client,
-                    CREATE_DOC_BLOCK,
-                    {
-                        "doc": doc_id,
-                        "type": block["type"],
-                        "content": json.dumps(block.get("content") or {}),
-                        "after": prev_id,
-                        "parent": None,
-                    },
-                )
-                result = data.get("create_doc_block") or {}
-                created.append(result)
-                new_id = result.get("id")
-                if new_id:
-                    prev_id = str(new_id)
+            created = create_blocks(client, doc_id, blocks, after_block_id=prev_id)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     opts.emit(created)

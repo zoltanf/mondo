@@ -1013,6 +1013,64 @@ class TestBlocks:
         assert result.exit_code == 5
         assert httpx_mock.get_requests() == []
 
+    def test_create_blocks_helper_wires_parent_block_id_for_children(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """`create_blocks` must recurse into `_children` and set
+        `parent_block_id` on each child to the parent's API-returned id.
+
+        Currently no public CLI path produces `_children` (monday rejects
+        `create_doc_block(type: notice_box, content: ...)` for every
+        content shape we tried). The recursion is kept as correct
+        scaffolding so future callers — e.g. once the `notice_box`
+        content schema is known, or any caller that synthesises tree
+        blocks — get parent linkage for free. This test exercises the
+        helper directly via a tree-shaped input.
+        """
+        from mondo.api.client import MondayClient
+        from mondo.cli.column_doc import create_blocks
+
+        # Parent (notice_box) → id "p1"; one child → id "c1".
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "p1", "type": "notice_box"}}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_doc_block": {"id": "c1", "type": "normal_text"}}),
+        )
+        client = MondayClient(token="t-tttttttttttt-long-enough", api_version="2026-01")
+        with client:
+            create_blocks(
+                client,
+                doc_id=10,
+                blocks=[
+                    {
+                        "type": "notice_box",
+                        "content": {},
+                        "_children": [
+                            {
+                                "type": "normal_text",
+                                "content": {"deltaFormat": [{"insert": "inside"}]},
+                            },
+                        ],
+                    }
+                ],
+            )
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        assert len(bodies) == 2
+        parent_vars = bodies[0]["variables"]
+        child_vars = bodies[1]["variables"]
+        assert parent_vars["type"] == "notice_box"
+        assert parent_vars["parent"] is None
+        assert child_vars["type"] == "normal_text"
+        # Critical: child's parent points at parent's API-returned id.
+        assert child_vars["parent"] == "p1"
+        # First child of a container has no `after_block_id` predecessor.
+        assert child_vars["after"] is None
+
     def test_update_block(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
