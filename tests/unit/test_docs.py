@@ -68,6 +68,26 @@ class TestMarkdownToBlocks:
         blocks = markdown_to_blocks("1. one\n2. two")
         assert [b["type"] for b in blocks] == ["numbered_list", "numbered_list"]
 
+    def test_task_list_unchecked(self) -> None:
+        blocks = markdown_to_blocks("- [ ] todo")
+        assert blocks[0]["type"] == "check_list"
+        # unchecked items omit the `checked` key (matches monday's wire shape)
+        assert "checked" not in blocks[0]["content"]
+
+    def test_task_list_checked(self) -> None:
+        blocks = markdown_to_blocks("- [x] done")
+        assert blocks[0]["type"] == "check_list"
+        assert blocks[0]["content"]["checked"] is True
+
+    def test_task_list_capital_x_also_checked(self) -> None:
+        blocks = markdown_to_blocks("- [X] done")
+        assert blocks[0]["content"]["checked"] is True
+
+    def test_task_list_does_not_consume_plain_bullet(self) -> None:
+        """`- foo` (no `[ ]`) must remain a bulleted_list, not a check_list."""
+        blocks = markdown_to_blocks("- plain")
+        assert blocks[0]["type"] == "bulleted_list"
+
     def test_blockquote(self) -> None:
         blocks = markdown_to_blocks("> wise words")
         assert blocks[0]["type"] == "quote"
@@ -152,6 +172,37 @@ class TestBlocksToMarkdown:
         )
         assert "1. a" in out
         assert "2. b" in out
+
+    def test_check_list_unchecked(self) -> None:
+        out = blocks_to_markdown([self._block("check_list", "todo")])
+        assert "- [ ] todo" in out
+
+    def test_check_list_checked(self) -> None:
+        # `checked: true` inside content (mirroring monday's live shape).
+        block = {
+            "type": "check_list",
+            "content": {"deltaFormat": [{"insert": "done"}], "checked": True},
+        }
+        out = blocks_to_markdown([block])
+        assert "- [x] done" in out
+
+    def test_check_list_with_space_in_type_name(self) -> None:
+        """Live API returns `"check list"` with a space; _normalize_type
+        must funnel it to the `check_list` branch, not the plain-text fallback."""
+        block = {
+            "type": "check list",
+            "content": '{"deltaFormat":[{"insert":"unchecked"}]}',
+        }
+        out = blocks_to_markdown([block])
+        assert "- [ ] unchecked" in out
+
+    def test_check_list_roundtrip(self) -> None:
+        """Markdown task list → blocks → markdown must preserve the marks."""
+        md_in = "- [ ] todo\n- [x] done\n"
+        blocks = markdown_to_blocks(md_in)
+        out = blocks_to_markdown(blocks)
+        assert "- [ ] todo" in out
+        assert "- [x] done" in out
 
     def test_quote(self) -> None:
         out = blocks_to_markdown([self._block("quote", "wise")])

@@ -5,7 +5,8 @@ Scope (plan §6.4 / monday-api.md §11.5.22):
   returns the `objectId`(s) pointing to workspace doc(s).
 - `markdown_to_blocks` converts a markdown source into a list of monday's
   `CreateBlockInput` dicts. Supported blocks: heading (h1/h2/h3),
-  normal_text, bullet_list, numbered_list, quote, code, divider.
+  normal_text, bullet_list, numbered_list, check_list (GFM task list
+  syntax `- [ ] / - [x]`), quote, code, divider.
 - `blocks_to_markdown` reverses the above for display.
 
 Unsupported markdown (images, tables, nested lists, inline formatting)
@@ -63,6 +64,7 @@ def extract_doc_ids_from_column_value(raw: str | None) -> list[int]:
 _HEADING_TYPES = {1: "large_title", 2: "medium_title", 3: "small_title"}
 _BULLET_LIST_TYPE = "bulleted_list"
 
+_TASK_LIST_RE = re.compile(r"^\s*[-*+]\s+\[([ xX])\]\s+(.*)$")
 _BULLET_RE = re.compile(r"^\s*[-*+]\s+(.*)$")
 _NUMBERED_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
 _QUOTE_RE = re.compile(r"^\s*>\s?(.*)$")
@@ -143,6 +145,21 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
             i += 1
             continue
 
+        # GFM task list (must match before plain bullet list, since a
+        # task-list line is a bullet line with `[x]`/`[ ]` after the marker).
+        # monday models checked state via a `checked: true` flag in content;
+        # unchecked items omit the key.
+        m = _TASK_LIST_RE.match(line)
+        if m:
+            flush_paragraph()
+            checked = m.group(1).lower() == "x"
+            content = _text_content(m.group(2).strip())
+            if checked:
+                content["checked"] = True
+            blocks.append({"type": "check_list", "content": content})
+            i += 1
+            continue
+
         # Bullet list
         m = _BULLET_RE.match(line)
         if m:
@@ -202,6 +219,22 @@ def _extract_text(content: Any) -> str:
     return ""
 
 
+def _extract_checked(content: Any) -> bool:
+    """True if a check_list block's content carries `checked: true`.
+
+    monday omits the key (or sets it to false) for unchecked items; an
+    unchecked block has no `checked` field at all in the live API output.
+    """
+    if isinstance(content, str):
+        try:
+            content = json.loads(content)
+        except ValueError:
+            return False
+    if isinstance(content, dict):
+        return bool(content.get("checked"))
+    return False
+
+
 _READ_ALIASES = {
     # old name → normalized-for-dispatch name
     "heading": "large_title",
@@ -249,6 +282,7 @@ _LEAF_TYPES = frozenset(
         "small_title",
         "bulleted_list",
         "numbered_list",
+        "check_list",
         "quote",
         "code",
         "normal_text",
@@ -432,6 +466,9 @@ def _render_block_list(
         elif btype == "numbered_list":
             numbered_counter += 1
             lines.append(f"{prefix}{numbered_counter}. {text}")
+        elif btype == "check_list":
+            mark = "x" if _extract_checked(block.get("content")) else " "
+            lines.append(f"{prefix}- [{mark}] {text}")
         elif btype == "quote":
             lines.append(f"{prefix}> {text}")
         elif btype == "code":
