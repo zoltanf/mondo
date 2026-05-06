@@ -20,11 +20,10 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError, UsageError
 from mondo.api.pagination import iter_items_page
 from mondo.api.queries import (
@@ -36,7 +35,9 @@ from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
-from mondo.columns import UnknownColumnTypeError, parse_value
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -143,6 +144,8 @@ def _encode_row(
     create_labels: bool = False,
 ) -> dict[str, Any]:
     """Turn a CSV row (header → string value) into a monday column_values dict."""
+    from mondo.columns import UnknownColumnTypeError, parse_value
+
     out: dict[str, Any] = {}
     for header, raw in row_values.items():
         if raw == "" or raw is None:

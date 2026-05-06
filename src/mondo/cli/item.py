@@ -7,11 +7,10 @@ import sys
 from contextlib import nullcontext
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import ColumnValueError, MondoError, NotFoundError, UsageError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
@@ -41,8 +40,10 @@ from mondo.cli._exec import (
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
-from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -142,6 +143,8 @@ def _build_column_values(
     `create_or_get_tag` instead of fifty, and `_fetch_column_defs` runs
     once per batch instead of once per row.
     """
+    from mondo.columns import UnknownColumnTypeError, parse_value
+
     parsed_pairs = [parse_column_kv(p) for p in pairs]
 
     if raw_mode:

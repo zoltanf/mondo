@@ -9,13 +9,14 @@ when the board isn't visible — callers render the error in their usual style.
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import NotFoundError
 from mondo.api.queries import GROUPS_LIST
-from mondo.cache.directory import get_groups as _cache_get_groups
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 
 def invalidate_groups_cache(opts: GlobalOpts, board_id: int) -> None:
@@ -46,6 +47,8 @@ def fetch_board_groups(
     """
     cache_cfg = opts.resolve_cache_config()
     if cache_cfg.enabled and not no_cache:
+        from mondo.cache.directory import get_groups as _cache_get_groups
+
         store = opts.build_cache_store("groups", scope=str(board_id))
         cached = _cache_get_groups(
             client, store=store, board_id=board_id, refresh=refresh

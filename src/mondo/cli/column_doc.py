@@ -17,11 +17,10 @@ import json
 import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     CHANGE_COLUMN_VALUE,
@@ -38,6 +37,9 @@ from mondo.docs import (
     extract_doc_ids_from_column_value,
     markdown_to_blocks,
 )
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,

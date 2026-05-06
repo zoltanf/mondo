@@ -9,13 +9,14 @@ when the board isn't visible — callers render the error in their usual style.
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import NotFoundError
 from mondo.api.queries import COLUMNS_ON_BOARD
-from mondo.cache.directory import get_columns as _cache_get_columns
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 
 def invalidate_columns_cache(opts: GlobalOpts, board_id: int) -> None:
@@ -46,6 +47,8 @@ def fetch_board_columns(
     """
     cache_cfg = opts.resolve_cache_config()
     if cache_cfg.enabled and not no_cache:
+        from mondo.cache.directory import get_columns as _cache_get_columns
+
         store = opts.build_cache_store("columns", scope=str(board_id))
         cached = _cache_get_columns(
             client, store=store, board_id=board_id, refresh=refresh

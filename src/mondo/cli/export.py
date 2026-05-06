@@ -19,11 +19,10 @@ import io
 import json
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
@@ -35,6 +34,9 @@ from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,

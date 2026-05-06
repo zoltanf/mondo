@@ -7,7 +7,6 @@ are mounted as sub-apps.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
 from difflib import get_close_matches
 from enum import StrEnum
 from importlib import import_module
@@ -37,15 +36,27 @@ class OutputFormat(StrEnum):
 _HELP_OPTION_NAMES = {"help_option_names": ["-h", "--help"]}
 
 
-@dataclass(frozen=True)
 class _LazyEntry:
-    name: str
-    module: str
-    attr: str
-    help_text: str | None = None
-    epilog: str | None = None
-    hidden: bool = False
-    is_group: bool = True
+    __slots__ = ("attr", "epilog", "help_text", "hidden", "is_group", "module", "name")
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        module: str,
+        attr: str,
+        help_text: str | None = None,
+        epilog: str | None = None,
+        hidden: bool = False,
+        is_group: bool = True,
+    ) -> None:
+        self.name = name
+        self.module = module
+        self.attr = attr
+        self.help_text = help_text
+        self.epilog = epilog
+        self.hidden = hidden
+        self.is_group = is_group
 
 
 _ROOT_EPILOG = "\n\n".join(

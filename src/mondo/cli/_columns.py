@@ -8,12 +8,14 @@ single place to evolve column-codec preflight + tag resolution.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_OR_GET_TAG
 from mondo.cli._exec import exec_or_exit
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 
 def parse_settings(raw: str | None) -> dict[str, Any]:

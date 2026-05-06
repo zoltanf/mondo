@@ -8,11 +8,10 @@ accepts only the monday palette hex codes — we validate client-side.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     GROUP_ARCHIVE,
@@ -34,6 +33,9 @@ from mondo.cli._exec import (
 from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,

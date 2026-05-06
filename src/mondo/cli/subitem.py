@@ -17,11 +17,10 @@ Without it, `--column` values are sent as raw strings/JSON.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.client import MondayClient
 from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     ITEM_ARCHIVE,
@@ -39,8 +38,10 @@ from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
-from mondo.columns import UnknownColumnTypeError, parse_value
 from mondo.util.kvparse import parse_column_kv
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -74,6 +75,8 @@ def _build_column_values(
     With `subitems_board_id` set, does codec dispatch via the subitems-board
     column types. Without it, values pass through verbatim.
     """
+    from mondo.columns import UnknownColumnTypeError, parse_value
+
     parsed_pairs = [parse_column_kv(p) for p in pairs]
     if subitems_board_id is None:
         return dict(parsed_pairs)
