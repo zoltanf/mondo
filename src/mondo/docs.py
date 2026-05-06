@@ -73,9 +73,16 @@ _DIVIDER_RE = re.compile(r"^\s*(?:---+|\*\*\*+|___+)\s*$")
 _CODE_FENCE_RE = re.compile(r"^\s*```\s*([\w-]*)\s*$")
 
 
-def _text_content(text: str) -> dict[str, Any]:
-    """Monday's text-bearing blocks use a Quill-like delta format."""
-    return {"deltaFormat": [{"insert": text}]}
+def _text_content(text: str, *, checked: bool = False) -> dict[str, Any]:
+    """Monday's text-bearing blocks use a Quill-like delta format.
+
+    `checked=True` emits a `check_list`-style flag; unchecked items omit the
+    key to mirror monday's wire shape (the live API never sends `checked: false`).
+    """
+    content: dict[str, Any] = {"deltaFormat": [{"insert": text}]}
+    if checked:
+        content["checked"] = True
+    return content
 
 
 def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
@@ -153,9 +160,7 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
         if m:
             flush_paragraph()
             checked = m.group(1).lower() == "x"
-            content = _text_content(m.group(2).strip())
-            if checked:
-                content["checked"] = True
+            content = _text_content(m.group(2).strip(), checked=checked)
             blocks.append({"type": "check_list", "content": content})
             i += 1
             continue
@@ -187,33 +192,42 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
 # --- blocks → markdown ------------------------------------------------------
 
 
+def _as_content_dict(content: Any) -> dict[str, Any] | None:
+    """Normalize a block's `content` field to a dict, or None if not parseable.
+
+    monday's API returns `content` as a JSON-encoded string in some versions
+    and as an already-parsed dict in others. Callers that need keyed access
+    funnel through this helper instead of repeating the str-or-dict dance.
+    """
+    if isinstance(content, str):
+        try:
+            content = json.loads(content)
+        except ValueError:
+            return None
+    return content if isinstance(content, dict) else None
+
+
 def _extract_text(content: Any) -> str:
     """Pull the plain text out of a block's content field.
 
-    monday's actual API returns `content` as a JSON-encoded **string** (not a
-    parsed object); we detect and re-parse. Known shape:
-    `{"deltaFormat": [{"insert": "..."}]}`.
+    Known shape: `{"deltaFormat": [{"insert": "..."}]}`. Falls back to
+    `text`/`value`/`plainText` for monday variants that embed text directly,
+    and to the raw string for unparseable content (so it isn't silently lost).
     """
     if not content:
         return ""
-    # monday returns content as a JSON string in many API versions — re-parse.
-    if isinstance(content, str):
-        try:
-            parsed = json.loads(content)
-        except ValueError:
-            return content  # plain string fallback
-        content = parsed
-    if not isinstance(content, dict):
-        return str(content)
+    parsed = _as_content_dict(content)
+    if parsed is None:
+        # Unparseable JSON string — surface it verbatim rather than dropping.
+        return content if isinstance(content, str) else str(content)
 
-    delta = content.get("deltaFormat")
+    delta = parsed.get("deltaFormat")
     if isinstance(delta, list):
         pieces = [d.get("insert", "") for d in delta if isinstance(d, dict)]
         return "".join(pieces)
 
-    # Fall-through attempts — some monday variants just embed "text" directly.
     for key in ("text", "value", "plainText"):
-        val = content.get(key)
+        val = parsed.get(key)
         if isinstance(val, str):
             return val
     return ""
@@ -225,14 +239,8 @@ def _extract_checked(content: Any) -> bool:
     monday omits the key (or sets it to false) for unchecked items; an
     unchecked block has no `checked` field at all in the live API output.
     """
-    if isinstance(content, str):
-        try:
-            content = json.loads(content)
-        except ValueError:
-            return False
-    if isinstance(content, dict):
-        return bool(content.get("checked"))
-    return False
+    parsed = _as_content_dict(content)
+    return bool(parsed.get("checked")) if parsed else False
 
 
 _READ_ALIASES = {
@@ -366,15 +374,8 @@ def _render_table(
     schema is missing/malformed and the caller should fall back to the
     generic `[!TABLE]` blockquote so cell text isn't silently dropped.
     """
-    raw = block.get("content")
-    if isinstance(raw, str):
-        try:
-            content = json.loads(raw)
-        except ValueError:
-            return False
-    elif isinstance(raw, dict):
-        content = raw
-    else:
+    content = _as_content_dict(block.get("content"))
+    if content is None:
         return False
 
     cells_matrix = content.get("cells")
@@ -472,8 +473,8 @@ def _render_block_list(
         elif btype == "quote":
             lines.append(f"{prefix}> {text}")
         elif btype == "code":
-            content = block.get("content") or {}
-            lang = content.get("language", "") if isinstance(content, dict) else ""
+            content = _as_content_dict(block.get("content")) or {}
+            lang = content.get("language", "")
             lines.append(f"{prefix}```{lang}")
             if text:
                 lines.append(f"{prefix}{text}")

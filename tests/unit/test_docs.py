@@ -68,20 +68,23 @@ class TestMarkdownToBlocks:
         blocks = markdown_to_blocks("1. one\n2. two")
         assert [b["type"] for b in blocks] == ["numbered_list", "numbered_list"]
 
-    def test_task_list_unchecked(self) -> None:
-        blocks = markdown_to_blocks("- [ ] todo")
+    @pytest.mark.parametrize(
+        "marker,expected_checked",
+        [
+            (" ", False),  # unchecked
+            ("x", True),  # checked, lowercase
+            ("X", True),  # checked, capital
+        ],
+    )
+    def test_task_list_marker(self, marker: str, expected_checked: bool) -> None:
+        blocks = markdown_to_blocks(f"- [{marker}] todo")
         assert blocks[0]["type"] == "check_list"
-        # unchecked items omit the `checked` key (matches monday's wire shape)
-        assert "checked" not in blocks[0]["content"]
-
-    def test_task_list_checked(self) -> None:
-        blocks = markdown_to_blocks("- [x] done")
-        assert blocks[0]["type"] == "check_list"
-        assert blocks[0]["content"]["checked"] is True
-
-    def test_task_list_capital_x_also_checked(self) -> None:
-        blocks = markdown_to_blocks("- [X] done")
-        assert blocks[0]["content"]["checked"] is True
+        # Unchecked items omit the key entirely (mirrors monday's wire shape:
+        # the API never sends `checked: false`).
+        if expected_checked:
+            assert blocks[0]["content"]["checked"] is True
+        else:
+            assert "checked" not in blocks[0]["content"]
 
     def test_task_list_does_not_consume_plain_bullet(self) -> None:
         """`- foo` (no `[ ]`) must remain a bulleted_list, not a check_list."""
