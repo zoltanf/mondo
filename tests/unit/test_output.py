@@ -12,7 +12,7 @@ from mondo.output import (
     choose_default_format,
     format_output,
 )
-from mondo.output.query import apply_query
+from mondo.output.query import apply_query, extract_query_leaf_fields
 
 # ---------- JSON ----------
 
@@ -231,3 +231,59 @@ class TestApplyQuery:
         # Unclosed bracket → LexerError (subclass of JMESPathError).
         with pytest.raises(ValueError, match="JMESPath"):
             apply_query([], "[")
+
+
+class TestExtractQueryLeafFields:
+    def test_empty_returns_empty(self) -> None:
+        assert extract_query_leaf_fields("") == frozenset()
+        assert extract_query_leaf_fields(None) == frozenset()
+
+    def test_simple_identifier(self) -> None:
+        assert extract_query_leaf_fields("name") == frozenset({"name"})
+
+    def test_nested_path(self) -> None:
+        assert extract_query_leaf_fields("[*].workspace.name") == frozenset(
+            {"workspace", "name"}
+        )
+
+    def test_multiselect_dict_excludes_aliases(self) -> None:
+        # `ws` and `owner` are aliases (key_val_pair `value`), not field nodes.
+        # Only `workspace`, `name`, `owner`, `id` survive — and `owner` only
+        # because it's a field on the right of a key_val_pair.
+        result = extract_query_leaf_fields(
+            "{ws: workspace.name, owner: owner.id}"
+        )
+        assert result == frozenset({"workspace", "name", "owner", "id"})
+
+    def test_filter_collects_both_sides(self) -> None:
+        # The filter `[?type==\`x\`].id` projects on `id` and references `type`
+        # in the comparator. Both must be in the GraphQL selection set.
+        result = extract_query_leaf_fields("[?type==`multi_status`].id")
+        assert result == frozenset({"type", "id"})
+
+    def test_function_args_collected_function_name_excluded(self) -> None:
+        # `length` is a JMESPath function — its name is on a function_expression
+        # node, not a field node. The argument `items` IS a field.
+        assert extract_query_leaf_fields("length(items)") == frozenset({"items"})
+
+    def test_pipe_collects_both_sides(self) -> None:
+        result = extract_query_leaf_fields("[*].id | [0]")
+        assert result == frozenset({"id"})
+
+    def test_malformed_expression_returns_empty(self) -> None:
+        # Surfacing a JMESPath syntax error is `apply_query`'s responsibility.
+        # This helper must not raise; it just returns nothing extractable.
+        assert extract_query_leaf_fields("[") == frozenset()
+        assert extract_query_leaf_fields("{unterminated:") == frozenset()
+
+    def test_alias_renaming_extracts_real_field(self) -> None:
+        # Mirrors the report's silent-null example: alias `folder` projects
+        # `board_folder_id`. The warning must fire on the real field, not the
+        # alias.
+        assert extract_query_leaf_fields("{folder: board_folder_id}") == frozenset(
+            {"board_folder_id"}
+        )
+
+    def test_returns_frozenset(self) -> None:
+        result = extract_query_leaf_fields("name")
+        assert isinstance(result, frozenset)

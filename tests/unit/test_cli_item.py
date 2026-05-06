@@ -438,6 +438,233 @@ class TestItemRename:
         assert "change_item_name" not in body["query"]
 
 
+class TestItemCreateBatch:
+    def test_batch_creates_three_in_one_http_call(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """Three batch items fan into a single multi-mutation document."""
+        batch_file = tmp_path / "items.json"
+        batch_file.write_text(
+            json.dumps(
+                [
+                    {"name": "A", "group_id": "topics"},
+                    {"name": "B", "group_id": "topics"},
+                    {"name": "C", "group_id": "topics"},
+                ]
+            )
+        )
+        # One response covers all three aliases.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={
+                "data": {
+                    "m_0": {"id": "11", "name": "A"},
+                    "m_1": {"id": "22", "name": "B"},
+                    "m_2": {"id": "33", "name": "C"},
+                },
+                "extensions": {"request_id": "r"},
+            },
+        )
+        result = runner.invoke(
+            app,
+            ["item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 0, result.stdout
+        envelope = json.loads(result.stdout)
+        assert envelope["summary"] == {"requested": 3, "created": 3, "failed": 0}
+        assert [r["id"] for r in envelope["results"]] == ["11", "22", "33"]
+        # Single HTTP call, regardless of row count.
+        assert len(httpx_mock.get_requests()) == 1
+        body = json.loads(httpx_mock.get_requests()[0].content)
+        assert "m_0:" in body["query"] and "m_2:" in body["query"]
+        # Variables are flattened with per-row suffixes.
+        assert body["variables"]["name_0"] == "A"
+        assert body["variables"]["name_2"] == "C"
+
+    def test_batch_chunking_splits_into_multiple_calls(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """5 items + chunk_size=2 -> 3 HTTP calls (2+2+1)."""
+        rows = [{"name": chr(ord("A") + i)} for i in range(5)]
+        batch_file = tmp_path / "rows.json"
+        batch_file.write_text(json.dumps(rows))
+        for chunk_idx in range(3):
+            httpx_mock.add_response(
+                url=ENDPOINT,
+                method="POST",
+                json={
+                    "data": {
+                        f"m_{i}": {"id": str(100 + chunk_idx * 10 + i), "name": "x"}
+                        for i in range(2 if chunk_idx < 2 else 1)
+                    },
+                    "extensions": {"request_id": "r"},
+                },
+            )
+        result = runner.invoke(
+            app,
+            [
+                "item", "create",
+                "--board", "42",
+                "--batch", str(batch_file),
+                "--chunk-size", "2",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        env = json.loads(result.stdout)
+        assert env["summary"]["created"] == 5
+        assert len(httpx_mock.get_requests()) == 3
+        # Row indices are absolute across chunks.
+        assert [r["row_index"] for r in env["results"]] == [0, 1, 2, 3, 4]
+
+    def test_batch_partial_failure_exits_1_with_envelope(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        batch_file = tmp_path / "two.json"
+        batch_file.write_text(json.dumps([{"name": "A"}, {"name": "B"}]))
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={
+                "data": {"m_0": {"id": "11", "name": "A"}, "m_1": None},
+                "errors": [{"message": "Group not found", "path": ["m_1"]}],
+                "extensions": {"request_id": "r"},
+            },
+        )
+        result = runner.invoke(
+            app,
+            ["item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 1, result.stdout
+        env = json.loads(result.stdout)
+        assert env["summary"] == {"requested": 2, "created": 1, "failed": 1}
+        assert env["results"][0]["ok"] is True
+        assert env["results"][1]["ok"] is False
+        assert env["results"][1]["error"] == "Group not found"
+
+    def test_batch_dry_run_emits_chunks_without_calling_api(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        batch_file = tmp_path / "items.json"
+        batch_file.write_text(json.dumps([{"name": "A"}, {"name": "B"}, {"name": "C"}]))
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "item", "create", "--board", "42",
+                "--batch", str(batch_file),
+                "--chunk-size", "2",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        env = json.loads(result.stdout)
+        assert "chunks" in env
+        assert len(env["chunks"]) == 2
+        assert env["chunks"][0]["row_indices"] == [0, 1]
+        assert env["chunks"][1]["row_indices"] == [2]
+        assert "m_0:" in env["chunks"][0]["query"]
+        # No HTTP calls were made.
+        assert httpx_mock.get_requests() == []
+
+    def test_batch_mutex_with_single_item_flags(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        batch_file = tmp_path / "x.json"
+        batch_file.write_text(json.dumps([{"name": "A"}]))
+        result = runner.invoke(
+            app,
+            [
+                "item", "create",
+                "--board", "42",
+                "--name", "X",
+                "--batch", str(batch_file),
+            ],
+        )
+        assert result.exit_code == 2, result.stdout
+
+    def test_batch_bad_json_exits_2(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        batch_file = tmp_path / "bad.json"
+        batch_file.write_text('{"not": "an array"}')
+        result = runner.invoke(
+            app,
+            ["item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 2, result.stdout
+
+    def test_batch_missing_name_exits_2(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        batch_file = tmp_path / "noname.json"
+        batch_file.write_text(json.dumps([{"group_id": "topics"}]))
+        result = runner.invoke(
+            app,
+            ["item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 2, result.stdout
+
+    def test_batch_empty_array_exits_2(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        batch_file = tmp_path / "empty.json"
+        batch_file.write_text("[]")
+        result = runner.invoke(
+            app,
+            ["item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 2, result.stdout
+
+    def test_create_without_name_or_batch_exits_2(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        result = runner.invoke(app, ["item", "create", "--board", "42"])
+        assert result.exit_code == 2, result.stdout
+
+
+class TestItemRenameByName:
+    def test_name_contains_resolves_via_items_page(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        # First request: items_page lookup. Second: the rename mutation.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "items_page": {
+                                "cursor": None,
+                                "items": [
+                                    {"id": "11", "name": "Apple", "state": "active"},
+                                    {"id": "22", "name": "Banana", "state": "active"},
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"change_simple_column_value": {"id": "22", "name": "Cherry"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item", "rename",
+                "--board", "42",
+                "--name-contains", "banana",
+                "--name", "Cherry",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v == {"board": 42, "id": 22, "name": "Cherry"}
+
+
 class TestItemDuplicate:
     def test_with_updates(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(

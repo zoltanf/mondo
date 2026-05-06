@@ -12,7 +12,7 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import typer
 
@@ -27,12 +27,9 @@ from mondo.api.queries import (
     TEAMS_LIST,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
-
-if TYPE_CHECKING:
-    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -67,6 +64,11 @@ def list_cmd(
     refresh_cache: bool = typer.Option(
         False, "--refresh-cache", help="Force-refresh the local directory cache."
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+    ),
 ) -> None:
     """List teams (optionally filtered to specific IDs or by fuzzy name)."""
     from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
@@ -85,6 +87,7 @@ def list_cmd(
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            explain_cache=explain_cache,
         )
         return
 
@@ -113,8 +116,10 @@ def _list_teams_via_cache(
     fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    explain_cache: bool = False,
 ) -> None:
     from mondo.cache.directory import get_teams as cache_get_teams
+    from mondo.cli._cache_flags import emit_cache_provenance
     from mondo.cli._filters import apply_fuzzy
 
     if opts.dry_run:
@@ -135,15 +140,15 @@ def _list_teams_via_cache(
     try:
         store = opts.build_cache_store("teams")
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             cached = cache_get_teams(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
+
+    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     entries = cached.entries
     if name_fuzzy is not None:

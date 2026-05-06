@@ -13,6 +13,7 @@ from pathlib import Path
 import typer
 
 from mondo.api.errors import MondoError
+from mondo.cli._exec import handle_mondo_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli.context import GlobalOpts
 
@@ -52,14 +53,12 @@ def graphql_command(
     try:
         client = opts.build_client()
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             result = client.execute(query_text, variables=vars_dict, raw=True)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     opts.emit(result)

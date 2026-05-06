@@ -32,6 +32,20 @@ EXAMPLES: dict[str, list[Example]] = {
     "account": [
         Example("Show account tier, plan, and active-member count", "mondo account"),
     ],
+    "schema": [
+        Example(
+            "List GraphQL fields each read command selects",
+            "mondo schema",
+        ),
+        Example(
+            "Just the board commands",
+            "mondo schema board",
+        ),
+        Example(
+            "Project to the `get` field list for an item",
+            "mondo schema item -q get",
+        ),
+    ],
     "graphql": [
         Example(
             "Inline query",
@@ -107,6 +121,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo board list --with-url --max-items 3",
         ),
         Example(
+            "Include each board's tags (bypasses cache; small but extra cost)",
+            "mondo board list --with-tags -q '[?length(tags) > `0`].name'",
+        ),
+        Example(
             "Inspect the shared core shape (matches `doc list`)",
             "mondo board list --max-items 1 -q '.[0] | keys'",
         ),
@@ -121,6 +139,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Include the round-trip URL in the payload",
             "mondo board get 1234567890 --with-url -q url -o none",
+        ),
+        Example(
+            "Also fetch the saved views (table/kanban/timeline/etc.)",
+            "mondo board get 1234567890 --with-views -q 'views[].{n:name,t:type}'",
         ),
         Example(
             "If `type` comes back `document`, switch to `mondo doc get`",
@@ -140,11 +162,6 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Create an empty board (no starter items/groups)",
             'mondo board create --name "Scratch" --kind public --empty',
-        ),
-        Example(
-            "Seed item naming and generation with newer board inputs",
-            'mondo board create --name "Launch plan" --kind public '
-            '--item-nickname \'{"preset_type":"item"}\' --prompt "Build a launch tracker"',
         ),
     ],
     "board update": [
@@ -261,11 +278,32 @@ EXAMPLES: dict[str, list[Example]] = {
             "Dry-run to preview the GraphQL without sending it",
             'mondo --dry-run item create --board 1234567890 --name "Fix CI"',
         ),
+        Example(
+            "Bulk create from a JSON file (one HTTP call per chunk of 10)",
+            "mondo item create --board 1234567890 --batch items.json",
+        ),
+        Example(
+            "Bulk create from stdin",
+            "echo '[{\"name\":\"A\"},{\"name\":\"B\"}]' | "
+            "mondo item create --board 1234567890 --batch -",
+        ),
+        Example(
+            "Smaller chunks (debug or work around complexity limits)",
+            "mondo item create --board 1234567890 --batch items.json --chunk-size 3",
+        ),
     ],
     "item rename": [
         Example(
             "Rename an item",
             'mondo item rename --id 987 --board 1234567890 --name "New title"',
+        ),
+        Example(
+            "Rename by current name (case-insensitive substring)",
+            'mondo item rename --board 1234567890 --name-contains "Old title" --name "New title"',
+        ),
+        Example(
+            "Rename when several items match — pick the first",
+            'mondo item rename --board 1234567890 --name-contains "KR " --first --name "KR 1.1"',
         ),
     ],
     "item duplicate": [
@@ -770,11 +808,23 @@ EXAMPLES: dict[str, list[Example]] = {
             "Rename a group",
             'mondo group rename --board 1234567890 --id topics --title "Workstreams"',
         ),
+        Example(
+            "Rename by current title (handy after `board duplicate` mints unstable ids)",
+            'mondo group rename --board 1234567890 --name-contains "Objective 2" --title "Objective 2: We have launched..."',
+        ),
+        Example(
+            "Multiple matches — pick the first (top-of-board)",
+            'mondo group rename --board 1234567890 --name-contains "Draft" --first --title "Final"',
+        ),
     ],
     "group update": [
         Example(
             "Change a group's color",
             'mondo group update --board 1234567890 --id topics --attribute color --value "#ff007f"',
+        ),
+        Example(
+            "Update by current title",
+            'mondo group update --board 1234567890 --name-contains "Workstreams" --attribute color --value green',
         ),
     ],
     "group reorder": [
@@ -881,6 +931,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Rename a column by id",
             'mondo column rename --board 1234567890 --id status --title "Workflow"',
+        ),
+        Example(
+            "Rename a column by its current title",
+            'mondo column rename --board 1234567890 --name-contains "Status" --title "Workflow"',
         ),
     ],
     "column change-metadata": [

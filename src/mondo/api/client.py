@@ -108,6 +108,7 @@ class MondayClient:
         variables: dict[str, Any] | None = None,
         *,
         raw: bool = False,
+        surface_partial_errors: bool = False,
     ) -> dict[str, Any]:
         """POST the query, return the parsed response envelope, raise on error.
 
@@ -117,6 +118,13 @@ class MondayClient:
         complexity counters; the response's `complexity` block feeds
         `self.meter`. Pass `raw=True` on user-written GraphQL (the `mondo
         graphql` passthrough) to avoid rewriting their query.
+
+        Pass `surface_partial_errors=True` for multi-mutation aliased calls
+        where some operations may fail while others succeed (`mondo item
+        create --batch`). HTTP-layer errors still raise; GraphQL-layer
+        errors in the response body are returned in the envelope so the
+        caller can correlate them to specific aliases via
+        `errors[*].path[0]`.
         """
         should_inject = self._inject_complexity and not raw
         sent_query = inject_complexity_field(query) if should_inject else query
@@ -135,7 +143,9 @@ class MondayClient:
                 last_exc = NetworkError(f"transport error: {e}")
                 logger.warning(f"attempt {attempt}: transport error — {e}")
             else:
-                exc = _classify_response(response)
+                exc = _classify_response(
+                    response, suppress_graphql_errors=surface_partial_errors
+                )
                 if exc is None:
                     parsed: dict[str, Any] = response.json()
                     sample = self.meter.record(parsed.get("data"))
@@ -212,8 +222,16 @@ class MondayClient:
         self.close()
 
 
-def _classify_response(response: httpx.Response) -> MondoError | None:
-    """Turn an httpx response into an exception, or None on success."""
+def _classify_response(
+    response: httpx.Response, *, suppress_graphql_errors: bool = False
+) -> MondoError | None:
+    """Turn an httpx response into an exception, or None on success.
+
+    With `suppress_graphql_errors=True`, GraphQL-layer errors in the
+    response body are NOT raised — the caller will inspect `data` and
+    `errors` itself (used by multi-mutation aliased batches where some
+    operations may fail while others succeed).
+    """
     status = response.status_code
 
     # HTTP-layer errors.
@@ -225,6 +243,9 @@ def _classify_response(response: httpx.Response) -> MondoError | None:
         return NotFoundError("endpoint or resource not found")
     if status >= 500:
         return ServiceError(f"monday returned HTTP {status}")
+
+    if suppress_graphql_errors:
+        return None
 
     # GraphQL-layer errors.
     try:

@@ -6,12 +6,11 @@ are mounted as sub-apps.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from difflib import get_close_matches
-from importlib import import_module
-import sys
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from importlib import import_module
 
 import click
 import typer
@@ -23,9 +22,6 @@ from mondo.cli._examples import epilog_for
 from mondo.cli._help_format import MondoGroup, patch_help_classes
 from mondo.cli.argv import reorder_argv
 from mondo.version import __version__
-
-if TYPE_CHECKING:
-    from mondo.cli.context import GlobalOpts
 
 
 class OutputFormat(StrEnum):
@@ -207,6 +203,14 @@ _TOP_LEVEL_ENTRIES: tuple[_LazyEntry, ...] = (
         is_group=False,
     ),
     _LazyEntry(
+        name="schema",
+        module="mondo.cli.schema",
+        attr="schema_command",
+        help_text="Print the GraphQL fields each read command selects.",
+        epilog=epilog_for("schema"),
+        is_group=False,
+    ),
+    _LazyEntry(
         name="help",
         module="mondo.cli.help",
         attr="help_command",
@@ -352,10 +356,12 @@ def _root(
     ),
 ) -> None:
     """Global options available on every command."""
+    from mondo.cli._skill_freshness import warn_if_skill_outdated
     from mondo.cli.context import GlobalOpts
     from mondo.logging_ import configure_logging
 
     configure_logging(verbose=verbose, debug=debug)
+    warn_if_skill_outdated()
     ctx.obj = GlobalOpts(
         profile_name=profile,
         flag_token=api_token,
@@ -373,10 +379,39 @@ def main() -> None:
     """Console-script entry point.
 
     Reorders argv so root-level global flags work anywhere on the command line
-    (az/gh/gam UX), then hands off to Typer.
+    (az/gh/gam UX), then hands off to Typer. Wraps the Typer call so Click
+    `UsageError` failures (unknown flag, missing arg, bad parameter) get the
+    Phase 5.1 JSON envelope on stderr in machine-output mode, alongside
+    Click's own human-readable line.
     """
     args = reorder_argv(sys.argv[1:])
-    app(args=args)
+    try:
+        app(args=args, standalone_mode=False)
+    except click.exceptions.UsageError as e:
+        from mondo.cli._errors import (
+            emit_envelope,
+            error_envelope,
+            is_machine_output_argv,
+            suggest_for_no_such_option,
+        )
+
+        # Match the MondoError path's ordering: human-readable first,
+        # then JSON envelope. Agents tail-grepping for the JSON line
+        # see the same shape regardless of which error source fired.
+        e.show()
+        if is_machine_output_argv(args):
+            emit_envelope(
+                error_envelope(e, suggestion=suggest_for_no_such_option(e))
+            )
+        sys.exit(e.exit_code or 2)
+    except click.exceptions.Abort:
+        click.echo("Aborted!", err=True)
+        sys.exit(1)
+    except click.exceptions.Exit as e:
+        sys.exit(e.exit_code)
+    except click.exceptions.ClickException as e:
+        e.show()
+        sys.exit(e.exit_code)
 
 
 if __name__ == "__main__":

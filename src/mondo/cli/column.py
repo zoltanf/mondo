@@ -25,15 +25,21 @@ from mondo.api.queries import (
     COLUMN_CREATE,
     COLUMN_DELETE,
     COLUMN_RENAME,
-    CREATE_OR_GET_TAG,
 )
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, exec_or_exit, execute
+from mondo.cli._exec import (
+    client_or_exit,
+    dry_run_and_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import resolve_required_id
+from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
@@ -53,16 +59,6 @@ app.add_typer(doc_app, name="doc", help="Read/write the content of a `doc`-typed
 
 
 # ----- helpers -----
-
-
-def _parse_settings(raw: str | None) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
 
 
 def _fetch_column_context(
@@ -86,27 +82,6 @@ def _fetch_column_context(
     defs = {c["id"]: c for c in (board.get("columns") or [])}
     values = {v["id"]: v for v in (item.get("column_values") or [])}
     return board_id, defs, values
-
-
-def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, value: str) -> str:
-    """If `value` contains tag names (non-integers), create/resolve them via
-    `create_or_get_tag` and return a comma-joined ID list. Leaves pure-int
-    inputs unchanged so TagsCodec.parse() can just consume the output."""
-    parts = [p.strip() for p in value.split(",") if p.strip()]
-    if not parts:
-        return ""
-    resolved_ids: list[int] = []
-    for part in parts:
-        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
-            resolved_ids.append(int(part))
-            continue
-        data = exec_or_exit(client, CREATE_OR_GET_TAG, {"name": part, "board": board_id})
-        tag = data.get("create_or_get_tag") or {}
-        tag_id = tag.get("id")
-        if tag_id is None:
-            raise MondoError(f"create_or_get_tag returned no id for name {part!r}")
-        resolved_ids.append(int(tag_id))
-    return ",".join(str(i) for i in resolved_ids)
 
 
 def _load_value(value: str | None, from_file: Path | None, from_stdin: bool) -> str:
@@ -171,8 +146,7 @@ def list_cmd(
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from None
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     # Strip settings_str from default output (noisy); it's still in raw JSON.
     simplified = [
         {
@@ -211,8 +185,7 @@ def labels_cmd(
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from None
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     column = next((c for c in columns if c.get("id") == column_id), None)
     if column is None:
         typer.secho(
@@ -222,7 +195,7 @@ def labels_cmd(
         )
         raise typer.Exit(code=6)
     col_type = column.get("type")
-    settings = _parse_settings(column.get("settings_str"))
+    settings = parse_settings(column.get("settings_str"))
     if col_type == "status":
         opts.emit(iter_status_labels(settings))
         return
@@ -259,8 +232,7 @@ def get_cmd(
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     current = values.get(column_id)
     if current is None:
@@ -325,7 +297,7 @@ def set_cmd(
                 raise typer.Exit(code=6)
 
             col_type = definition["type"]
-            settings = _parse_settings(definition.get("settings_str"))
+            settings = parse_settings(definition.get("settings_str"))
 
             if column_raw:
                 try:
@@ -340,7 +312,7 @@ def set_cmd(
             else:
                 if col_type == "tags":
                     # Resolve tag names to IDs before the codec sees them.
-                    raw_input = _resolve_tag_names_to_ids(client, board_id, raw_input)
+                    raw_input = resolve_tag_names_to_ids(client, board_id, raw_input)
                 try:
                     parsed = parse_value(
                         col_type, raw_input, settings, create_labels=create_labels_if_missing
@@ -384,8 +356,7 @@ def set_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if create_labels_if_missing:
         # `create_labels_if_missing=True` may have minted a new status/dropdown
@@ -451,8 +422,7 @@ def set_many_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if create_labels_if_missing:
         # May have minted a label in a status/dropdown column's settings_str.
@@ -513,8 +483,7 @@ def clear_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     opts.emit(data.get("change_column_value") or {})
 
@@ -604,17 +573,87 @@ def create_cmd(
     opts.emit(data.get("create_column") or {})
 
 
+def _resolve_column_target(
+    opts: GlobalOpts,
+    client: MondayClient,
+    board_id: int,
+    *,
+    column_id: str | None,
+    name_contains: str | None,
+    name_matches_re: str | None,
+    name_fuzzy: str | None,
+    first: bool,
+    fuzzy_threshold: int,
+) -> str:
+    """Pick a single column id for the mutation. Mirrors the group helper."""
+    if column_id is not None and not (name_contains or name_matches_re or name_fuzzy):
+        return column_id
+    columns = fetch_board_columns(opts, client, board_id)
+    chosen = resolve_by_filters(
+        columns,
+        explicit_id=column_id,
+        name_contains=name_contains,
+        name_matches_re=name_matches_re,
+        name_fuzzy=name_fuzzy,
+        first=first,
+        fuzzy_threshold=fuzzy_threshold,
+        key="title",
+        resource="column",
+    )
+    return str(chosen["id"])
+
+
 @app.command("rename", epilog=epilog_for("column rename"))
 def rename_cmd(
     ctx: typer.Context,
     board_id: int = typer.Option(..., "--board", help="Board ID."),
-    column_id: str = typer.Option(..., "--id", "--column", help="Column ID."),
+    column_id: str | None = typer.Option(
+        None, "--id", "--column", help="Column ID (or use --name-* selectors)."
+    ),
+    name_contains: str | None = typer.Option(
+        None, "--name-contains", help="Pick the column by case-insensitive title substring."
+    ),
+    name_matches_re: str | None = typer.Option(
+        None, "--name-matches", help="Pick the column by Python regex over its title."
+    ),
+    name_fuzzy: str | None = typer.Option(
+        None, "--name-fuzzy", help="Pick the column by fuzzy match over its title."
+    ),
+    fuzzy_threshold: int = typer.Option(
+        70, "--fuzzy-threshold", help="Minimum 0-100 fuzzy score (default 70)."
+    ),
+    first: bool = typer.Option(
+        False, "--first", help="If a filter matches >1 column, pick the first one."
+    ),
     title: str = typer.Option(..., "--title", help="New column title."),
 ) -> None:
-    """Rename a column (shortcut for change-metadata --property title)."""
+    """Rename a column (shortcut for change-metadata --property title).
+
+    Pick the target by id (`--id`/`--column`) or by client-side title match
+    (`--name-contains` / `--name-matches` / `--name-fuzzy`). Pass `--first`
+    to auto-pick the first match when the filter is ambiguous.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    variables = {"board": board_id, "col": column_id, "title": title}
-    data = execute(opts, COLUMN_RENAME, variables)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_column = _resolve_column_target(
+                opts,
+                client,
+                board_id,
+                column_id=column_id,
+                name_contains=name_contains,
+                name_matches_re=name_matches_re,
+                name_fuzzy=name_fuzzy,
+                first=first,
+                fuzzy_threshold=fuzzy_threshold,
+            )
+            variables = {"board": board_id, "col": resolved_column, "title": title}
+            if opts.dry_run:
+                dry_run_and_exit(opts, COLUMN_RENAME, variables)
+            data = exec_or_exit(client, COLUMN_RENAME, variables)
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
     invalidate_columns_cache(opts, board_id)
     opts.emit(data.get("change_column_title") or {})
 

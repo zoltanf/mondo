@@ -77,3 +77,14 @@ def test_install_overwrites_with_yes_flag(tmp_path: Path, monkeypatch: pytest.Mo
 def test_skill_resource_is_present() -> None:
     payload = resources.files("mondo.skill").joinpath("SKILL.md").read_text(encoding="utf-8")
     assert "name: mondo" in payload
+
+
+def test_skill_resource_has_version_field() -> None:
+    """The bundled SKILL.md must carry a `version:` field so the freshness
+    check at startup has something to compare installed copies against."""
+    payload = resources.files("mondo.skill").joinpath("SKILL.md").read_text(encoding="utf-8")
+    from mondo.cli._skill_freshness import _parse_skill_version
+
+    version = _parse_skill_version(payload)
+    assert version is not None, "source SKILL.md is missing `version:` in frontmatter"
+    assert version.count(".") >= 1, f"version {version!r} doesn't look semver-shaped"

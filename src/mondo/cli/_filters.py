@@ -2,9 +2,9 @@
 
 Both `mondo board list` and `mondo doc list` accept `--name-contains`,
 `--name-matches`, and `--name-fuzzy` as client-side filters over cached
-directory entries. The helpers here operate on the entry's `name` field and
-are entity-agnostic; any list command whose entries expose a `name` scalar
-can reuse them.
+directory entries. The helpers here operate on the entry's `name` field by
+default, but accept a `key=` argument so commands whose entries expose the
+human label as `title` (groups, columns) can reuse the same machinery.
 """
 
 from __future__ import annotations
@@ -44,8 +44,10 @@ def name_matches(
     entry: dict[str, Any],
     needle_lower: str | None,
     pattern: re.Pattern[str] | None,
+    *,
+    key: str = "name",
 ) -> bool:
-    name = entry.get("name") or ""
+    name = entry.get(key) or ""
     if needle_lower is not None and needle_lower not in name.lower():
         return False
     return not (pattern is not None and pattern.search(name) is None)
@@ -57,13 +59,14 @@ def apply_fuzzy(
     *,
     threshold: int,
     include_score: bool,
+    key: str = "name",
 ) -> list[dict[str, Any]]:
     """Apply fuzzy name filter to entries, returning results in score-desc order.
 
     When `include_score` is True, a `_fuzzy_score` key is injected into each
     returned entry (shallow-copied so the source list isn't mutated).
     """
-    scored = fuzzy_score(query, entries, threshold=threshold)
+    scored = fuzzy_score(query, entries, threshold=threshold, name_key=key)
     if include_score:
         return [{**entry, "_fuzzy_score": score} for entry, score in scored]
     return [entry for entry, _ in scored]

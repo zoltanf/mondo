@@ -271,6 +271,164 @@ class TestGroupRename:
         assert v["group"] == "topics"
 
 
+class TestGroupRenameByName:
+    """Phase 3.1: --name-* selectors resolve a group by client-side title match.
+
+    The fetch path issues a `groups` query first (cached), then runs
+    `update_group` with the resolved id.
+    """
+
+    def test_name_contains_unique_match(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok(
+                {"id": "obj1", "title": "Objective 1: Launch"},
+                {"id": "obj2", "title": "Objective 2: Adoption"},
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_group": {"id": "obj2", "title": "Done"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group", "rename",
+                "--board", "42",
+                "--name-contains", "objective 2",
+                "--title", "Done",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert v["group"] == "obj2"
+        assert v["value"] == "Done"
+
+    def test_name_matches_regex(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok(
+                {"id": "obj1", "title": "Objective 1: Launch"},
+                {"id": "obj2", "title": "Objective 2: Adoption"},
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_group": {"id": "obj2", "title": "Done"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group", "rename",
+                "--board", "42",
+                "--name-matches", r"Objective\s+2:",
+                "--title", "Done",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"]["group"] == "obj2"
+
+    def test_ambiguous_match_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok(
+                {"id": "draft1", "title": "Draft A"},
+                {"id": "draft2", "title": "Draft B"},
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group", "rename",
+                "--board", "42",
+                "--name-contains", "draft",
+                "--title", "X",
+            ],
+        )
+        assert result.exit_code == 2, result.stdout
+        assert "matched" in result.stderr or "matched" in result.output
+        assert "--first" in (result.stderr + result.output)
+
+    def test_ambiguous_with_first_picks_top(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok(
+                {"id": "draft1", "title": "Draft A"},
+                {"id": "draft2", "title": "Draft B"},
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_group": {"id": "draft1", "title": "Final"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group", "rename",
+                "--board", "42",
+                "--name-contains", "draft",
+                "--first",
+                "--title", "Final",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"]["group"] == "draft1"
+
+    def test_zero_matches_exits_6(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "topics", "title": "Topics"}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group", "rename",
+                "--board", "42",
+                "--name-contains", "nonexistent",
+                "--title", "X",
+            ],
+        )
+        assert result.exit_code == 6, result.stdout
+
+    def test_id_and_filter_mutex_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "topics", "title": "Topics"}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "group", "rename",
+                "--board", "42",
+                "--id", "topics",
+                "--name-contains", "Topics",
+                "--title", "X",
+            ],
+        )
+        assert result.exit_code == 2, result.stdout
+
+    def test_neither_id_nor_filter_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_groups_ok({"id": "topics", "title": "Topics"}),
+        )
+        result = runner.invoke(
+            app,
+            ["group", "rename", "--board", "42", "--title", "X"],
+        )
+        assert result.exit_code == 2, result.stdout
+
+
 class TestGroupUpdate:
     def test_color_value_passes_through_unchanged(self, httpx_mock: HTTPXMock) -> None:
         """Monday's `update_group` mutation wants color NAMES ('green'), not

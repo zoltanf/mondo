@@ -494,6 +494,43 @@ class TestColumnRename:
         v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
         assert v == {"board": 42, "col": "status", "title": "Renamed"}
 
+    def test_name_contains_resolves_by_title(self, httpx_mock: HTTPXMock) -> None:
+        # Cache is disabled in this test fixture, so the columns fetch is live.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "columns": [
+                                {"id": "status", "title": "Status", "type": "status"},
+                                {"id": "owner", "title": "Owner", "type": "people"},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"change_column_title": {"id": "status", "title": "Workflow"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column", "rename",
+                "--board", "42",
+                "--name-contains", "status",
+                "--title", "Workflow",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert v == {"board": 42, "col": "status", "title": "Workflow"}
+
 
 class TestColumnChangeMetadata:
     def test_description(self, httpx_mock: HTTPXMock) -> None:

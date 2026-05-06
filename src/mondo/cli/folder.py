@@ -11,7 +11,7 @@ Per monday-api.md §14:
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import typer
 
@@ -23,13 +23,10 @@ from mondo.api.queries import (
     FOLDER_UPDATE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
-
-if TYPE_CHECKING:
-    from mondo.cli._cache_flags import CachePrefs
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -59,9 +56,19 @@ def list_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List folders (page-based). Served from the local directory cache when available."""
-    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+    from mondo.cli._cache_flags import (
+        emit_cache_provenance,
+        reject_mutually_exclusive,
+        resolve_cache_prefs,
+    )
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -89,8 +96,9 @@ def list_cmd(
             with client:
                 cached = cache_get_folders(client, store=store, refresh=refresh_cache)
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
+
+        emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
         items = cached.entries
         if workspace:
@@ -98,7 +106,9 @@ def list_cmd(
             items = [f for f in items if str(f.get("workspace_id") or "") in wanted]
         if max_items is not None:
             items = items[:max_items]
-        opts.emit(items)
+        from mondo.cli._field_sets import folder_list_fields
+
+        opts.emit(items, selected_fields=folder_list_fields())
         return
 
     # Live path
@@ -131,10 +141,11 @@ def list_cmd(
                 )
             ]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
-    opts.emit(items)
+    from mondo.cli._field_sets import folder_list_fields
+
+    opts.emit(items, selected_fields=folder_list_fields())
 
 
 _TABLE_FORMATS: frozenset[str | None] = frozenset({"table", None})
@@ -185,9 +196,19 @@ def tree_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """Show folders as a hierarchy tree, grouped by workspace."""
-    from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
+    from mondo.cli._cache_flags import (
+        emit_cache_provenance,
+        reject_mutually_exclusive,
+        resolve_cache_prefs,
+    )
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -210,8 +231,8 @@ def tree_cmd(
             with client:
                 cached = cache_get_folders(client, store=store, refresh=refresh_cache)
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
+        emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
         folders = cached.entries
     else:
         # Live path
@@ -242,8 +263,7 @@ def tree_cmd(
                     )
                 ]
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
 
     # Client-side workspace filter applied unconditionally: the live path passes
     # workspaceIds to GraphQL (server-side), the cache path does not. Applying
@@ -332,7 +352,9 @@ def get_cmd(
     if not folders:
         typer.secho(f"folder {folder_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(normalize_folder_entry(folders[0]))
+    from mondo.cli._field_sets import folder_get_fields
+
+    opts.emit(normalize_folder_entry(folders[0]), selected_fields=folder_get_fields())
 
 
 # ----- write commands -----

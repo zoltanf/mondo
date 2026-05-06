@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import typer
-
 from mondo.api.errors import MondoError
+from mondo.cli._exec import handle_mondo_error_or_exit
 
 if TYPE_CHECKING:
     from mondo.cli.context import GlobalOpts
@@ -40,8 +39,7 @@ def apply_board_urls(
         with opts.build_client() as client:
             slug = get_tenant_slug(client)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     for b in entries:
         try:
             bid = int(b.get("id"))  # type: ignore[arg-type]

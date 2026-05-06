@@ -33,6 +33,7 @@ from mondo.api.queries import (
     DELETE_DOC,
     DELETE_DOC_BLOCK,
     DOC_GET_BY_ID_BLOCKS_PAGE,
+    DOC_HEAD_BY_OBJECT_ID,
     DOC_VERSION_DIFF,
     DOC_VERSION_HISTORY,
     DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
@@ -48,6 +49,7 @@ from mondo.cli._exec import (
     dry_run_and_exit,
     exec_or_exit,
     execute,
+    handle_mondo_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
@@ -298,6 +300,12 @@ def list_cmd(
         help="Force-refresh the local directory cache before serving.",
         rich_help_panel="Cache",
     ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List docs (page-based).
 
@@ -335,6 +343,7 @@ def list_cmd(
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            explain_cache=explain_cache,
             with_url=with_url,
         )
         return
@@ -399,8 +408,7 @@ def list_cmd(
                 and _name_matches(d, needle_lower, pattern)
             ]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if name_fuzzy is not None:
         items = apply_fuzzy(
@@ -437,9 +445,11 @@ def _list_via_cache(
     fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    explain_cache: bool,
     with_url: bool,
 ) -> None:
     from mondo.cache.directory import get_docs as cache_get_docs
+    from mondo.cli._cache_flags import emit_cache_provenance
     from mondo.cli._filters import apply_fuzzy
     from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
@@ -469,8 +479,9 @@ def _list_via_cache(
         with client:
             cached = cache_get_docs(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
+
+    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     entries = cached.entries
     if kind is not None:
@@ -580,8 +591,7 @@ def get_cmd(
                 _emit_doc_not_found(client, doc_id=doc_id, object_id=object_id)
                 raise typer.Exit(code=6)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if fmt is DocFormat.markdown:
         blocks = doc.get("blocks") or []
@@ -707,8 +717,7 @@ def add_block_cmd(
                 },
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     opts.emit(data.get("create_doc_block") or {})
 
 
@@ -762,8 +771,7 @@ def add_content_cmd(
             prev_id = _last_block_id(existing_doc)
             created = create_blocks(client, doc_id, blocks, after_block_id=prev_id)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     opts.emit(created)
 
 
@@ -830,8 +838,8 @@ def rename_cmd(
 def duplicate_cmd(
     ctx: typer.Context,
     doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
-    duplicate_type: DuplicateDocType | None = typer.Option(
-        None,
+    duplicate_type: DuplicateDocType = typer.Option(
+        DuplicateDocType.duplicate_doc_with_content,
         "--duplicate-type",
         help="Copy only content, or content+updates.",
         case_sensitive=False,
@@ -842,9 +850,40 @@ def duplicate_cmd(
     data = execute(
         opts,
         DUPLICATE_DOC,
-        {"doc": doc_id, "dup": duplicate_type.value if duplicate_type else None},
+        {"doc": doc_id, "dup": duplicate_type.value},
     )
-    opts.emit(data.get("duplicate_doc"))
+    result = data.get("duplicate_doc") or {}
+    if not result.get("success"):
+        err = result.get("error") or "duplicate_doc failed"
+        typer.secho(f"error: {err}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=5)
+    new_object_id = result.get("id")
+    if new_object_id is None:
+        typer.secho(
+            "error: duplicate_doc returned no id",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=5)
+    lookup = execute(opts, DOC_HEAD_BY_OBJECT_ID, {"objs": [int(new_object_id)]})
+    matches = lookup.get("docs") or []
+    if not matches:
+        typer.secho(
+            f"error: duplicated doc with object_id={new_object_id} not "
+            "visible in workspace lookup",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=5)
+    new_doc = matches[0]
+    opts.emit(
+        {
+            "id": new_doc.get("id"),
+            "object_id": new_doc.get("object_id"),
+            "name": new_doc.get("name"),
+            "url": new_doc.get("url"),
+        }
+    )
 
 
 @app.command("delete", epilog=epilog_for("doc delete"))

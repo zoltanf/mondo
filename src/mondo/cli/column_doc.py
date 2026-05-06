@@ -31,7 +31,7 @@ from mondo.api.queries import (
     DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit
+from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
 from mondo.cli.context import GlobalOpts
 from mondo.docs import (
     blocks_to_markdown,
@@ -212,12 +212,8 @@ def get_cmd(
                 return
 
             doc = _fetch_doc_blocks(client, object_ids[0])
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     blocks = doc.get("blocks") or []
 
@@ -315,12 +311,8 @@ def set_cmd(
                     "created": False,
                 }
             )
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
 
 @app.command("append", epilog=epilog_for("column doc append"))
@@ -367,12 +359,8 @@ def append_cmd(
                 )
                 raise typer.Exit(0)
             create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     opts.emit({"doc_id": doc.get("id"), "blocks_created": len(blocks)})
 
@@ -416,12 +404,8 @@ def clear_cmd(
                     "create_labels": None,
                 },
             )
-    except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     opts.emit(data.get("change_column_value") or {})
 

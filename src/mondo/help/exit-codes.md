@@ -17,8 +17,12 @@ on failure mode without parsing stderr.
 
 ## What stderr carries
 
-When stdout isn't a TTY, error messages on stderr are also JSON — one line,
-shape `{"error": "...", "code": N}`. Agents can parse either stream.
+When stdout isn't a TTY (or `-o json|jsonc|yaml` is explicit), error messages
+on stderr are also JSON — one line, shape
+`{"error": "...", "code": "<name>", "exit_code": <int>, ...}`. `code` is a
+string identifier (e.g. `"AuthError"`, `"NoSuchOption"`); `exit_code` is the
+integer to branch on. See `mondo help agent-tips` for the full envelope
+schema and examples.
 
 ## Retry guidance
 

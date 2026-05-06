@@ -28,7 +28,7 @@ from mondo.api.queries import (
     BOARD_UPDATE_HIERARCHY,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, execute_read
+from mondo.cli._exec import client_or_exit, execute, execute_read, handle_mondo_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
@@ -242,6 +242,11 @@ def list_cmd(
         "--with-url",
         help="Include a synthesized `url` field on every emitted board.",
     ),
+    with_tags: bool = typer.Option(
+        False,
+        "--with-tags",
+        help="Include each board's `tags { id name color }` (bypasses cache).",
+    ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -252,6 +257,12 @@ def list_cmd(
         False,
         "--refresh-cache",
         help="Force-refresh the local directory cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Print verbose cache provenance to stderr (path, ttl, fetched_at).",
         rich_help_panel="Cache",
     ),
 ) -> None:
@@ -283,7 +294,9 @@ def list_cmd(
         opts,
         no_cache=no_cache,
         fuzzy_threshold=fuzzy_threshold,
-        extra_disable=with_item_counts,
+        # `--with-tags` and `--with-item-counts` extend the selection set
+        # past what the cache stores, so they always need a live fetch.
+        extra_disable=with_item_counts or with_tags,
     )
 
     if prefs.use_cache:
@@ -301,6 +314,7 @@ def list_cmd(
             fuzzy_score_flag=fuzzy_score_flag,
             max_items=max_items,
             refresh=refresh_cache,
+            explain_cache=explain_cache,
             with_url=with_url,
         )
         return
@@ -312,6 +326,7 @@ def list_cmd(
         workspace_ids=workspace or None,
         order_by=order_by.value if order_by else None,
         with_item_counts=with_item_counts,
+        with_tags=with_tags,
     )
 
     if opts.dry_run:
@@ -349,8 +364,7 @@ def list_cmd(
                 if _type_matches(b, type_filter) and _name_matches(b, needle_lower, pattern)
             ]
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     if name_fuzzy is not None:
         boards = apply_fuzzy(
@@ -373,7 +387,14 @@ def list_cmd(
 
     # Re-normalize last so optional decorators don't break key-order invariants.
     boards = [normalize_board_entry(b) for b in boards]
-    opts.emit(boards)
+    from mondo.cli._field_sets import board_list_fields
+
+    opts.emit(
+        boards,
+        selected_fields=board_list_fields(
+            with_item_counts=with_item_counts, with_tags=with_tags
+        ),
+    )
 
 
 def _list_via_cache(
@@ -391,6 +412,7 @@ def _list_via_cache(
     fuzzy_score_flag: bool,
     max_items: int | None,
     refresh: bool,
+    explain_cache: bool,
     with_url: bool,
 ) -> None:
     """Serve `board list` from the local directory cache.
@@ -427,15 +449,17 @@ def _list_via_cache(
     try:
         store = opts.build_cache_store("boards")
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     try:
         with client:
             cached = cache_get_boards(client, store=store, refresh=refresh)
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
+
+    from mondo.cli._cache_flags import emit_cache_provenance
+
+    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     # Spec default for boards list is "active" when --state omitted. Preserve that
     # client-side since the cache holds all states.
@@ -474,7 +498,9 @@ def _list_via_cache(
 
     # Re-normalize last so optional decorators don't break key-order invariants.
     entries = [normalize_board_entry(b) for b in entries]
-    opts.emit(entries)
+    from mondo.cli._field_sets import board_list_fields
+
+    opts.emit(entries, selected_fields=board_list_fields())
 
 
 @app.command("get", epilog=epilog_for("board get"))
@@ -498,14 +524,21 @@ def get_cmd(
         "--with-url",
         help="Include a synthesized `url` field in the emitted payload.",
     ),
+    with_views: bool = typer.Option(
+        False,
+        "--with-views",
+        help="Also fetch the board's `views { id name type settings_str }` array.",
+    ),
 ) -> None:
     """Fetch a single board by ID with columns, groups, and subscribers."""
+    from mondo.api.queries import BOARD_GET_WITH_VIEWS
     from mondo.cli._normalize import normalize_board_entry
     from mondo.cli._url import board_url, get_tenant_slug, warn_cross_type
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
-    data = execute(opts, BOARD_GET, {"id": board_id})
+    query = BOARD_GET_WITH_VIEWS if with_views else BOARD_GET
+    data = execute(opts, query, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
@@ -517,7 +550,9 @@ def get_cmd(
         with client:
             board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
     board = normalize_board_entry(board)
-    opts.emit(board)
+    from mondo.cli._field_sets import board_get_fields
+
+    opts.emit(board, selected_fields=board_get_fields(with_views=with_views))
 
 
 # ----- write commands -----
@@ -547,17 +582,6 @@ def create_cmd(
     subscriber_team: list[int] | None = typer.Option(
         None, "--subscriber-team", help="Subscriber team ID (repeatable)."
     ),
-    item_nickname: str | None = typer.Option(
-        None,
-        "--item-nickname",
-        metavar="JSON",
-        help='Item nickname config as JSON, e.g. `{"preset_type":"item"}`.',
-    ),
-    prompt: str | None = typer.Option(
-        None,
-        "--prompt",
-        help="AI prompt to generate the board's structure and content.",
-    ),
     empty: bool = typer.Option(
         False, "--empty", help="Create without the default group/column structure."
     ),
@@ -567,9 +591,6 @@ def create_cmd(
     from mondo.cli._normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    item_nickname_obj: Any = None
-    if item_nickname is not None:
-        item_nickname_obj = parse_json_flag(item_nickname, flag_name="--item-nickname")
     variables: dict[str, Any] = {
         "name": name,
         "kind": kind.value,
@@ -581,8 +602,6 @@ def create_cmd(
         "ownerTeamIds": owner_team or None,
         "subscriberIds": subscriber or None,
         "subscriberTeamIds": subscriber_team or None,
-        "itemNickname": item_nickname_obj,
-        "prompt": prompt,
         "empty": True if empty else None,
     }
     data = execute(opts, BOARD_CREATE, variables)
@@ -835,8 +854,7 @@ def duplicate_cmd(
                     interval_s=poll_interval_s,
                 )
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
+            handle_mondo_error_or_exit(e)
         matched = expected_count is not None and final_count == expected_count
         duplicate_payload = {
             **duplicate_payload,

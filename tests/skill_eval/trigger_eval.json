@@ -1,0 +1,82 @@
+[
+  {
+    "query": "i need to grab all the items from this monday board https://marktguru.monday.com/boards/5094861043 and dump them as csv to ~/Desktop/qbr.csv — keep the status column",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you mark the auth-refactor item on our monday Backlog as Done? It's the Refactor auth middleware one. Item id is 9876543210.",
+    "should_trigger": true
+  },
+  {
+    "query": "post an update on monday item 9876543210 saying 'reviewed and approved by sec — proceeding with deploy thursday'",
+    "should_trigger": true
+  },
+  {
+    "query": "duplicate the launch-checklist board to a new folder called Q3 Launch in our marktguru workspace, items but no comments",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a webhook in monday so any time someone changes the status column on board 5094861043 it pings my zapier endpoint at https://hooks.zapier.com/abc123",
+    "should_trigger": true
+  },
+  {
+    "query": "i pasted this URL https://marktguru.monday.com/boards/5094861043/pulses/9876543210 — what is it and can you show me what's in it",
+    "should_trigger": true
+  },
+  {
+    "query": "bulk-create 50 items on the QA tracker board, names are in this csv: /tmp/qa-tickets.csv, dump them in the Backlog group",
+    "should_trigger": true
+  },
+  {
+    "query": "what columns does the marktguru project tracker board have on monday and what types are they — i need to know before i can map our airtable export",
+    "should_trigger": true
+  },
+  {
+    "query": "rename the 'In Progress' group on monday board 5094861043 to 'Doing Now' but only the one with that exact title, not the 'In Progress (legacy)' one",
+    "should_trigger": true
+  },
+  {
+    "query": "export the monday doc with object id abcd1234 to markdown so i can drop it in a confluence page",
+    "should_trigger": true
+  },
+  {
+    "query": "show me all the open issues in the linear project INGEST that have status set to 'in progress' and assigned to me",
+    "should_trigger": false
+  },
+  {
+    "query": "create a folder called Q3 Launch in my home directory and put the planning docs there",
+    "should_trigger": false
+  },
+  {
+    "query": "update the README in our github repo to reflect the new auth middleware behaviour and bump the version badge",
+    "should_trigger": false
+  },
+  {
+    "query": "i need to bulk-edit the 'workspace' column in my snowflake table dim_orgs to set all rows where region='emea' to workspace='mg-prod'",
+    "should_trigger": false
+  },
+  {
+    "query": "set up a webhook on stripe for charge.refunded events that posts to our slack channel #fin-ops",
+    "should_trigger": false
+  },
+  {
+    "query": "post a comment on github PR #1234 with the latest test results from the nightly CI run",
+    "should_trigger": false
+  },
+  {
+    "query": "i pasted this URL https://app.shortcut.com/marktguru/story/5094861043 — can you tell me what's in this shortcut story",
+    "should_trigger": false
+  },
+  {
+    "query": "delete all the rows in the items table where status = 'archived' from our postgres db using a single transactional DELETE",
+    "should_trigger": false
+  },
+  {
+    "query": "duplicate the docs/architecture.md file in this repo and rename it to docs/v2-architecture.md so i can edit a fresh draft",
+    "should_trigger": false
+  },
+  {
+    "query": "list the boards in our miro workspace and tell me which ones haven't been touched in 6 months",
+    "should_trigger": false
+  }
+]

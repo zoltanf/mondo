@@ -32,7 +32,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, exec_or_exit, execute
+from mondo.cli._exec import client_or_exit, exec_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -170,9 +170,10 @@ def list_cmd(
                         break
                     page += 1
         except MondoError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=int(e.exit_code)) from e
-        opts.emit(collected)
+            handle_mondo_error_or_exit(e)
+        from mondo.cli._field_sets import update_list_fields
+
+        opts.emit(collected, selected_fields=update_list_fields())
         return
 
     # Account-wide path — root updates query with page-based pagination.
@@ -198,9 +199,10 @@ def list_cmd(
                 )
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
-    opts.emit(items)
+        handle_mondo_error_or_exit(e)
+    from mondo.cli._field_sets import update_list_fields
+
+    opts.emit(items, selected_fields=update_list_fields())
 
 
 @app.command("get", epilog=epilog_for("update get"))
@@ -218,7 +220,9 @@ def get_cmd(
     if not updates:
         typer.secho(f"update {update_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(updates[0])
+    from mondo.cli._field_sets import update_get_fields
+
+    opts.emit(updates[0], selected_fields=update_get_fields())
 
 
 # ----- write commands -----

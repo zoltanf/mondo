@@ -66,3 +66,22 @@ def test_name_matches_contains_and_pattern() -> None:
     assert name_matches({"name": "proj-42"}, None, re.compile(r"^proj-\d+$")) is True
     assert name_matches({"name": "nope"}, None, re.compile(r"^proj-\d+$")) is False
     assert name_matches({}, "x", None) is False
+
+
+def test_name_matches_with_alternate_key() -> None:
+    # Groups and columns expose their human label as `title`, not `name`.
+    # The `key=` arg lets the same predicate work over those entities.
+    assert name_matches({"title": "Objective 1"}, "objective", None, key="title") is True
+    assert name_matches({"title": "Other"}, "objective", None, key="title") is False
+
+
+def test_apply_fuzzy_with_alternate_key() -> None:
+    entries = [
+        {"id": "a", "title": "Objective 1: Launch"},
+        {"id": "b", "title": "Objective 2: Adoption"},
+        {"id": "c", "title": "Workstreams"},
+    ]
+    out = apply_fuzzy(entries, "objective", threshold=50, include_score=False, key="title")
+    titles = {e["title"] for e in out}
+    assert "Workstreams" not in titles
+    assert "Objective 1: Launch" in titles

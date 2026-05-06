@@ -26,7 +26,7 @@ from mondo.api.queries import (
     FILE_UPLOAD_UPDATE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit
+from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -116,8 +116,7 @@ def upload_cmd(
                 filename=filename,
             )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
     data = result.get("data") or {}
     opts.emit(data.get(response_key) or {})
 
@@ -219,7 +218,6 @@ def download_cmd(
                     }
                 )
     except MondoError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     opts.emit(results[0] if len(results) == 1 else results)
