@@ -256,6 +256,22 @@ EXAMPLES: dict[str, list[Example]] = {
             "--order-by date4,desc -o json -q '[].{id:id,name:name}'",
         ),
     ],
+    "item find": [
+        Example(
+            "Find items where status is Done",
+            "mondo item find --board 1234567890 --column status --value Done",
+        ),
+        Example(
+            "Project to id + name with -q",
+            "mondo item find --board 1234567890 --column status --value Done "
+            "-q '[].{id:id,name:name}'",
+        ),
+        Example(
+            "Match multiple labels (CSV)",
+            "mondo item find --board 1234567890 --column status "
+            "--value 'Done,Working on it'",
+        ),
+    ],
     "item get": [
         Example("Fetch one item", "mondo item get --id 987"),
         Example(

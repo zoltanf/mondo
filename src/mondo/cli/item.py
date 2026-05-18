@@ -407,6 +407,46 @@ def list_cmd(
     opts.emit(items, selected_fields=item_list_fields())
 
 
+@app.command("find", epilog=epilog_for("item find"))
+def find_cmd(
+    ctx: typer.Context,
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    board_id_alias: int | None = typer.Option(
+        None, "--board-id", help="(hidden alias for --board)", hidden=True,
+    ),
+    column_id: str = typer.Option(
+        ..., "--column", help="Column ID to match on (e.g. 'status')."
+    ),
+    value: str = typer.Option(
+        ..., "--value", help="Column value to match (label, index #N, or CSV)."
+    ),
+) -> None:
+    """Find items by column value.
+
+    Sugar over `mondo item list --filter COL=VAL`. Returns the same shape as
+    `item list` so projection with `--fields` / `-q '<jmespath>'` works the
+    same way. Codec dispatch (status indices, dropdown ids) and the
+    `mondo column labels` pointer on unknown labels are inherited.
+    """
+    board_flag = board_flag if board_flag is not None else board_id_alias
+    ctx.invoke(
+        list_cmd,
+        ctx=ctx,
+        board_pos=board_pos,
+        board_flag=board_flag,
+        board_id_alias=None,
+        group_id=None,
+        parent_id=None,
+        filter_expr=[f"{column_id}={value}"],
+        order_by=None,
+        limit=MAX_PAGE_SIZE,
+        max_items=None,
+    )
+
+
 # ----- write commands -----
 
 
