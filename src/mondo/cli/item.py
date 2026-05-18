@@ -278,6 +278,12 @@ def list_cmd(
     board_id_alias: int | None = typer.Option(
         None, "--board-id", help="(hidden alias for --board)", hidden=True,
     ),
+    group_id: str | None = typer.Option(
+        None,
+        "--group",
+        help="Filter to a single group (alias for --filter group=<id>).",
+        rich_help_panel="Filters",
+    ),
     filter_expr: list[str] | None = typer.Option(
         None,
         "--filter",
@@ -311,6 +317,10 @@ def list_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_flag = board_flag if board_flag is not None else board_id_alias
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
+
+    # --group <id> is sugar over --filter group=<id>; merge it in.
+    if group_id is not None:
+        filter_expr = [*(filter_expr or []), f"group={group_id}"]
 
     # Fail fast on malformed `--filter` syntax before opening the client or
     # fetching board metadata, so usage errors stay exit 2.

@@ -243,6 +243,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo item list --board 1234567890 --filter status=Done",
         ),
         Example(
+            "Just the items in one group",
+            "mondo item list --board 1234567890 --group topics",
+        ),
+        Example(
             "Filter + sort + project as JSON",
             "mondo item list --board 1234567890 --filter status!=Stuck "
             "--order-by date4,desc -o json -q '[].{id:id,name:name}'",
