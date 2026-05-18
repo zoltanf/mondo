@@ -247,6 +247,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo item list --board 1234567890 --group topics",
         ),
         Example(
+            "Subitems of a parent (equivalent to `mondo subitem list --parent`)",
+            "mondo item list --parent 987654321",
+        ),
+        Example(
             "Filter + sort + project as JSON",
             "mondo item list --board 1234567890 --filter status!=Stuck "
             "--order-by date4,desc -o json -q '[].{id:id,name:name}'",

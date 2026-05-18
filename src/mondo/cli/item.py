@@ -24,6 +24,7 @@ from mondo.api.queries import (
     ITEM_MOVE_BOARD,
     ITEM_MOVE_GROUP,
     ITEM_RENAME,
+    SUBITEMS_LIST,
 )
 from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
@@ -284,6 +285,13 @@ def list_cmd(
         help="Filter to a single group (alias for --filter group=<id>).",
         rich_help_panel="Filters",
     ),
+    parent_id: int | None = typer.Option(
+        None,
+        "--parent",
+        help="List subitems of this parent item ID instead of board items. "
+        "When set, --board is ignored.",
+        rich_help_panel="Filters",
+    ),
     filter_expr: list[str] | None = typer.Option(
         None,
         "--filter",
@@ -316,6 +324,19 @@ def list_cmd(
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_flag = board_flag if board_flag is not None else board_id_alias
+
+    # --parent <id> shortcircuits the items_page path: it delegates to the
+    # same SUBITEMS_LIST query that `mondo subitem list --parent` uses, so
+    # both commands return identical shapes.
+    if parent_id is not None:
+        data = execute(opts, SUBITEMS_LIST, {"parent": parent_id})
+        items = data.get("items") or []
+        if not items:
+            typer.secho(f"parent item {parent_id} not found.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=6)
+        opts.emit(items[0].get("subitems") or [])
+        return
+
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     # --group <id> is sugar over --filter group=<id>; merge it in.
