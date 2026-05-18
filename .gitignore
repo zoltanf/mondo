@@ -45,6 +45,9 @@ Thumbs.db
 # Agent handoff notes (per-session, not for the repo)
 HANDOFF.md
 
+# Local analysis output (agent-friction reports, backlogs, etc.)
+todo/
+
 # Project-local secrets
 *.local.yaml
 credentials.yaml
