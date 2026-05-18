@@ -7,7 +7,6 @@ are mounted as sub-apps.
 from __future__ import annotations
 
 import sys
-from difflib import get_close_matches
 from enum import StrEnum
 from importlib import import_module
 
@@ -276,20 +275,9 @@ class LazyMondoGroup(MondoGroup):
         self.commands[cmd_name] = command
         return command
 
-    def resolve_command(
-        self, ctx: click.Context, args: list[str]
-    ) -> tuple[str | None, click.Command | None, list[str]]:
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError as e:
-            if self.suggest_commands and args:
-                typo = args[0]
-                matches = get_close_matches(typo, list(_LAZY_ENTRY_ORDER))
-                if matches:
-                    suggestions = ", ".join(f"{m!r}" for m in matches)
-                    message = e.message.rstrip(".")
-                    e.message = f"{message}. Did you mean {suggestions}?"
-            raise
+    # No resolve_command override: MondoGroup.resolve_command already
+    # appends "Did you mean" + the full sibling list using
+    # self.list_commands(ctx), which delegates to _LAZY_ENTRY_ORDER here.
 
 
 app = typer.Typer(

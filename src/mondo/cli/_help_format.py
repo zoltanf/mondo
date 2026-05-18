@@ -76,6 +76,37 @@ class MondoGroup(typer.core.TyperGroup):
     def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         _format_help_with_globals(self, ctx, formatter, super().format_help)
 
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        """Append "Available subcommands: a, b, c" on No such command errors.
+
+        Friction report A3: Click's default fuzzy-match suggestion (`Did you
+        mean 'duplicate'?`) is actively misleading when the user typo'd
+        their way to a wrong namespace (e.g. `mondo item update` when they
+        wanted `mondo update create`). Listing every sibling subcommand
+        gives the agent enough information to recover regardless of how
+        close their typo was.
+        """
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError as exc:
+            if args:
+                from difflib import get_close_matches
+
+                siblings = sorted(self.list_commands(ctx))
+                if siblings:
+                    close = get_close_matches(args[0], siblings)
+                    parts = [exc.message.rstrip(".")]
+                    if close:
+                        parts.append(
+                            "Did you mean "
+                            + ", ".join(repr(m) for m in close) + "?"
+                        )
+                    parts.append("Available subcommands: " + ", ".join(siblings) + ".")
+                    exc.message = " ".join(parts)
+            raise
+
 
 class MondoCommand(typer.core.TyperCommand):
     def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
