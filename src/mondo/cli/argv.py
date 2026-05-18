@@ -20,6 +20,7 @@ _GLOBAL_FLAGS_WITH_VALUE: frozenset[str] = frozenset(
         "-o",
         "--query",
         "-q",
+        "--fields",
     }
 )
 

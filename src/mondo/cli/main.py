@@ -345,6 +345,13 @@ def _root(
         metavar="JMESPATH",
         help="JMESPath projection applied before formatting.",
     ),
+    fields: str | None = typer.Option(
+        None,
+        "--fields",
+        metavar="KEY1,KEY2,...",
+        help="Project the payload to a CSV list of keys (dotted paths OK). "
+        "Runs before --query.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Log INFO-level events to stderr."),
     debug: bool = typer.Option(
         False, "--debug", help="Log every GraphQL query and response to stderr."
@@ -381,6 +388,7 @@ def _root(
         debug=debug,
         output=output.value if output is not None else None,
         query=query,
+        fields=fields,
         yes=yes,
         dry_run=dry_run,
     )

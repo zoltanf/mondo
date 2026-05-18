@@ -36,6 +36,7 @@ class GlobalOpts:
     debug: bool
     output: str | None = None
     query: str | None = None
+    fields: str | None = None
     yes: bool = False
     dry_run: bool = False
     _config: Config | None = field(default=None, init=False, repr=False)
@@ -74,10 +75,12 @@ class GlobalOpts:
             else hasattr(out, "isatty") and out.isatty()
         )
         from mondo.output import choose_default_format, format_output
+        from mondo.output.fields import apply_fields
         from mondo.output.query import apply_query
 
         fmt = self.output or choose_default_format(is_tty=is_tty)
         projected = apply_query(data, self.query)
+        projected = apply_fields(projected, self.fields)
         if (
             self.query
             and selected_fields is not None

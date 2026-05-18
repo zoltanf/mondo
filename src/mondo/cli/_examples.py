@@ -1301,6 +1301,7 @@ _READ_SUFFIXES = frozenset(
 )
 _QUERY_HINT = (
     "[dim]Tip: every command supports `-q '<jmespath>'` projection and "
+    "`--fields id,name,...` for a final row-shape narrow, plus "
     "`-o json|yaml|csv|tsv|none` \u2014 see `mondo help output`.[/dim]"
 )
 
