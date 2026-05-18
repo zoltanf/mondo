@@ -86,6 +86,80 @@ class TestExecuteBody:
         assert result == payload
 
 
+class TestDebugLogging:
+    """`--debug` advertises 'Log every GraphQL query and response to stderr'.
+
+    The CLI flag → DEBUG log level (see test_logging.TestConfigureLogging).
+    The client must emit the outgoing query+variables and the response payload
+    at DEBUG so `--debug` actually surfaces them. Registered tokens stay
+    redacted via `_redaction_patcher`.
+    """
+
+    def test_request_body_logged_at_debug(self, httpx_mock: HTTPXMock) -> None:
+        import io
+
+        from mondo.logging_ import configure_logging, register_secret
+
+        buf = io.StringIO()
+        configure_logging(verbose=False, debug=True, sink=buf)
+        register_secret("my-real-token-xxxxxxxxxxxxxxxxxxxx")
+
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"me": {"id": 1}}))
+        client = MondayClient(
+            token="my-real-token-xxxxxxxxxxxxxxxxxxxx",
+            api_version="2026-01",
+            inject_complexity=False,
+        )
+        client.execute("query ($x: Int!) { me { id } }", variables={"x": 42})
+
+        out = buf.getvalue()
+        # The query string must appear on the debug stream.
+        assert "query ($x: Int!) { me { id } }" in out
+        # Variables must appear (so future filter regressions are diagnosable).
+        assert '"x": 42' in out or "'x': 42" in out
+        # The token must NOT appear in plain text.
+        assert "my-real-token-xxxxxxxxxxxxxxxxxxxx" not in out
+
+    def test_response_body_logged_at_debug(self, httpx_mock: HTTPXMock) -> None:
+        import io
+
+        from mondo.logging_ import configure_logging
+
+        buf = io.StringIO()
+        configure_logging(verbose=False, debug=True, sink=buf)
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"me": {"id": "7", "name": "Distinctive"}}),
+        )
+        client = MondayClient(token="t", api_version="2026-01", inject_complexity=False)
+        client.execute("query { me { id name } }")
+
+        out = buf.getvalue()
+        # Response payload must appear on the debug stream.
+        assert "Distinctive" in out
+
+    def test_request_response_silent_without_debug(self, httpx_mock: HTTPXMock) -> None:
+        """Normal runs (no --debug) must not spam stderr with payloads."""
+        import io
+
+        from mondo.logging_ import configure_logging
+
+        buf = io.StringIO()
+        configure_logging(verbose=False, debug=False, sink=buf)
+
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"me": {"id": "7", "name": "QuietPayload"}}),
+        )
+        client = MondayClient(token="t", api_version="2026-01", inject_complexity=False)
+        client.execute("query { me { id name } }")
+
+        assert "QuietPayload" not in buf.getvalue()
+
+
 class TestErrorMapping:
     def test_graphql_auth_error_raises_auth_error(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(

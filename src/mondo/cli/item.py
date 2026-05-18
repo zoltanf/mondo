@@ -85,24 +85,44 @@ def _execute_create_item(
         handle_mondo_error_or_exit(e)
 
 
-def _parse_filter(expr: str) -> dict[str, Any]:
-    """Parse `--filter COL=VAL` into an items_page rule.
-
-    Supports:
-      status=Done           → any_of ["Done"]
-      status!=Done          → not_any_of ["Done"]
-      status=Done,Working   → any_of ["Done","Working"]
-    """
+def _split_filter_expr(expr: str) -> tuple[str, str, str]:
+    """Return ``(column_id, raw_value, operator)`` for a `--filter` expression."""
     if "!=" in expr:
         col, _, raw = expr.partition("!=")
-        operator = "not_any_of"
-    elif "=" in expr:
+        return col.strip(), raw, "not_any_of"
+    if "=" in expr:
         col, _, raw = expr.partition("=")
-        operator = "any_of"
+        return col.strip(), raw, "any_of"
+    raise UsageError(f"invalid --filter {expr!r}: expected COL=VAL or COL!=VAL")
+
+
+def _build_filter_rule(
+    expr: str, column_defs: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Build one `items_page.query_params.rule` from `COL=VAL` / `COL!=VAL`.
+
+    Dispatches by column type so status / dropdown filters end up with the
+    integer indices / option ids monday actually accepts (sending labels
+    returns 0 results silently). Falls back to a raw string list when the
+    column id isn't on the board (server will raise `Column not found`) or
+    when the column type has no codec.
+    """
+    from mondo.columns import UnknownColumnTypeError, parse_filter_value
+
+    col, raw, operator = _split_filter_expr(expr)
+    definition = column_defs.get(col)
+    if definition is None:
+        compare_value: list[Any] = [v.strip() for v in raw.split(",")]
     else:
-        raise UsageError(f"invalid --filter {expr!r}: expected COL=VAL or COL!=VAL")
-    values = [v.strip() for v in raw.split(",")]
-    return {"column_id": col.strip(), "compare_value": values, "operator": operator}
+        col_type = definition["type"]
+        settings = parse_settings(definition.get("settings_str"))
+        try:
+            compare_value = parse_filter_value(col_type, raw, settings)
+        except UnknownColumnTypeError:
+            compare_value = [v.strip() for v in raw.split(",")]
+        except ValueError as e:
+            raise UsageError(f"--filter {col}={raw!r}: {e}") from e
+    return {"column_id": col, "compare_value": compare_value, "operator": operator}
 
 
 def _fetch_column_defs(
@@ -172,10 +192,15 @@ def _build_column_values(
     return out
 
 
-def _build_query_params(filters: list[str] | None, order_by: str | None) -> dict[str, Any] | None:
+def _build_query_params(
+    filters: list[str] | None,
+    order_by: str | None,
+    column_defs: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     qp: dict[str, Any] = {}
     if filters:
-        qp["rules"] = [_parse_filter(f) for f in filters]
+        defs = column_defs or {}
+        qp["rules"] = [_build_filter_rule(f, defs) for f in filters]
         qp["operator"] = "and"
     if order_by:
         # Syntax: "column_id" or "column_id,asc" / "column_id,desc"
@@ -283,31 +308,42 @@ def list_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
-    if opts.dry_run:
-        opts.emit(
-            {
-                "query": "<items_page iterator>",
-                "variables": {
-                    "boards": [board_id],
-                    "limit": limit,
-                    "qp": _build_query_params(filter_expr, order_by),
-                    "max_items": max_items,
-                },
-            }
-        )
-        raise typer.Exit(0)
+    # Fail fast on malformed `--filter` syntax before opening the client or
+    # fetching board metadata, so usage errors stay exit 2.
+    if filter_expr:
+        try:
+            for f in filter_expr:
+                _split_filter_expr(f)
+        except UsageError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
 
     try:
         client = opts.build_client()
-        qp = _build_query_params(filter_expr, order_by)
-    except MondoError as e:
-        handle_mondo_error_or_exit(e)
-    except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
-
-    try:
         with client:
+            # Codec dispatch needs the board's column types/settings — fetch
+            # them whenever a `--filter` is in play. Cheap on cache hit;
+            # required for status/dropdown to translate labels → integer
+            # indices/ids.
+            column_defs: dict[str, dict[str, Any]] = {}
+            if filter_expr:
+                column_defs = _fetch_column_defs(opts, client, board_id)
+            qp = _build_query_params(filter_expr, order_by, column_defs)
+
+            if opts.dry_run:
+                opts.emit(
+                    {
+                        "query": "<items_page iterator>",
+                        "variables": {
+                            "boards": [board_id],
+                            "limit": limit,
+                            "qp": qp,
+                            "max_items": max_items,
+                        },
+                    }
+                )
+                raise typer.Exit(0)
+
             items = list(
                 iter_items_page(
                     client,
@@ -319,6 +355,9 @@ def list_cmd(
             )
     except MondoError as e:
         handle_mondo_error_or_exit(e)
+    except UsageError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e
 
     from mondo.cli._field_sets import item_list_fields
 

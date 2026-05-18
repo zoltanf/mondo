@@ -38,6 +38,20 @@ class ColumnCodec(ABC):
         """Override when the column doesn't clear with `{}` (checkbox, file, ...)."""
         return {}
 
+    def parse_filter(self, value: str, settings: dict[str, Any]) -> list[Any]:
+        """Turn `--filter COL=raw` into the `compare_value` list monday wants.
+
+        The mutation `parse()` shape and the filter `compare_value` shape are
+        *not* the same: filter rules want a flat list of scalars (strings for
+        text/numbers/date, **integer indices** for status, **integer option
+        ids** for dropdown), while mutations want full objects like
+        ``{"label": "Done"}``.
+
+        Default: split on commas, send strings. Override per codec when the
+        column has settings-driven label→id resolution.
+        """
+        return [v.strip() for v in value.split(",")]
+
 
 _REGISTRY: dict[str, ColumnCodec] = {}
 
@@ -80,6 +94,20 @@ def parse_value(
     if isinstance(codec, LabelAwareCodec):
         return codec.parse(value, settings, create_labels=create_labels)
     return codec.parse(value, settings)
+
+
+def parse_filter_value(
+    type_name: str,
+    value: str,
+    settings: dict[str, Any],
+) -> list[Any]:
+    """Codec dispatch for filter `compare_value`.
+
+    Raises ``UnknownColumnTypeError`` for types without a registered codec —
+    caller should fall back to a raw string list to preserve today's behavior
+    for niche column types.
+    """
+    return get_codec(type_name).parse_filter(value, settings)
 
 
 def render_value(type_name: str, value: Any, text: str | None) -> str:

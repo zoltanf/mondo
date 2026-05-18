@@ -48,6 +48,52 @@ class StatusCodec(LabelAwareCodec):
     def render(self, value: Any, text: str | None) -> str:
         return text or ""
 
+    def parse_filter(self, value: str, settings: dict[str, Any]) -> list[int]:
+        """Resolve `--filter status=<labels-or-#N>` to integer indices.
+
+        monday's `items_page` rejects status filters silently when
+        `compare_value` is a label string or a stringified index — it only
+        matches when each entry is an integer index. Verified empirically
+        against the live API on 2026-05-18.
+        """
+        labels_map = settings.get("labels") or {}
+        # Build label → index mapping (case-sensitive, mirrors `parse()`).
+        label_to_index: dict[str, int] = {}
+        if isinstance(labels_map, dict):
+            for idx_key, label in labels_map.items():
+                try:
+                    label_to_index[str(label)] = int(idx_key)
+                except (TypeError, ValueError):
+                    continue
+        out: list[int] = []
+        for raw in value.split(","):
+            token = raw.strip()
+            if not token:
+                continue
+            if token.startswith("#"):
+                idx_str = token[1:]
+                try:
+                    idx = int(idx_str)
+                except ValueError as e:
+                    raise ValueError(
+                        f"invalid status index {token!r}: use format #N"
+                    ) from e
+                if labels_map and str(idx) not in labels_map:
+                    allowed = ", ".join(sorted(labels_map.keys()))
+                    raise ValueError(
+                        f"status index {idx} out of range. Valid indices: {allowed}"
+                    )
+                out.append(idx)
+                continue
+            if token in label_to_index:
+                out.append(label_to_index[token])
+                continue
+            known = ", ".join(label_to_index) if label_to_index else "(no labels known)"
+            raise ValueError(
+                f"unknown status label {token!r}. Known: {known}"
+            )
+        return out
+
 
 def iter_status_labels(settings: dict[str, Any]) -> list[dict[str, Any]]:
     """Return the status column's labels as ``[{index, label}, ...]`` sorted by index."""

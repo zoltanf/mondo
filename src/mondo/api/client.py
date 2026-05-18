@@ -132,6 +132,11 @@ class MondayClient:
         attempt = 0
         last_exc: MondoError | None = None
 
+        # `--debug` advertises "every GraphQL query and response to stderr".
+        # Emit the request body up-front so it's logged even on transport
+        # failures. Registered secrets pass through `_redaction_patcher`.
+        logger.debug(f"GraphQL request: query={sent_query} variables={body['variables']}")
+
         while attempt < self._max_retries:
             attempt += 1
             try:
@@ -148,6 +153,7 @@ class MondayClient:
                 )
                 if exc is None:
                     parsed: dict[str, Any] = response.json()
+                    logger.debug(f"GraphQL response: {parsed}")
                     sample = self.meter.record(parsed.get("data"))
                     if sample is not None:
                         logger.debug(

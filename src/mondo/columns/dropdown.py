@@ -47,6 +47,43 @@ class DropdownCodec(LabelAwareCodec):
     def render(self, value: Any, text: str | None) -> str:
         return text or ""
 
+    def parse_filter(self, value: str, settings: dict[str, Any]) -> list[int]:
+        """Resolve `--filter dd=<labels-or-id:N,M>` to integer option ids.
+
+        Mirrors status: monday's `items_page` wants compare_value as integer
+        ids, not label strings. The `id:` prefix lets users bypass label
+        resolution.
+        """
+        stripped = value.strip()
+        if stripped.lower().startswith("id:"):
+            id_part = stripped[3:]
+            try:
+                return [int(x.strip()) for x in id_part.split(",") if x.strip()]
+            except ValueError as e:
+                raise ValueError(
+                    f"dropdown ids must be integer, got {id_part!r}"
+                ) from e
+        entries = iter_dropdown_labels(settings)
+        # name → id (only entries that carry a numeric id are usable here)
+        name_to_id: dict[str, int] = {}
+        for entry in entries:
+            entry_id = entry.get("id")
+            if isinstance(entry_id, int):
+                name_to_id[str(entry.get("name"))] = entry_id
+        out: list[int] = []
+        for raw in value.split(","):
+            token = raw.strip()
+            if not token:
+                continue
+            if token in name_to_id:
+                out.append(name_to_id[token])
+                continue
+            known = ", ".join(name_to_id) if name_to_id else "(no labels known)"
+            raise ValueError(
+                f"unknown dropdown label {token!r}. Known: {known}"
+            )
+        return out
+
 
 def iter_dropdown_labels(settings: dict[str, Any]) -> list[dict[str, Any]]:
     """Return the dropdown's labels as ``[{id, name}, ...]``.

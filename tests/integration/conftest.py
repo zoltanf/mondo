@@ -113,6 +113,13 @@ class PmBoard:
     group_ids: dict[str, str]  # logical name -> group id (e.g. "backlog" -> "topics")
     item_ids: list[int]  # 5 fixture items, position-stable
     item_names: list[str]
+    status_value: str = ""  # label set on item_ids[0]'s status column
+    dropdown_value: str = ""  # label set on item_ids[0]'s dropdown column
+    person_id: int = 0  # user id set on item_ids[0]'s people column
+    date_value: str = ""  # YYYY-MM-DD set on item_ids[0]'s date column
+    numbers_value: str = ""  # number string seeded on item_ids[0]
+    text_value: str = ""  # text seeded on item_ids[0]
+    long_text_value: str = ""  # long_text seeded on item_ids[0]
 
 
 @pytest.fixture(scope="session")
@@ -193,6 +200,7 @@ def pm_board_session(
     # 3. Columns. Stable IDs so tests can reference them by name.
     column_specs = [
         ("status", "status", "Status"),
+        ("dropdown", "dropdown", "Tag"),
         ("person", "people", "Owner"),
         ("date", "date", "Due Date"),
         ("timeline", "timeline", "Timeline"),
@@ -259,6 +267,58 @@ def pm_board_session(
         item_names.append(name)
         # No per-item cleanup — folder/board cascade handles it.
 
+    # 6. Seed values on item_ids[0] for every filter-relevant column type
+    # so `--filter` tests have something to match.
+    # `--create-labels-if-missing` lets us pick human-readable labels for
+    # status/dropdown without preconfiguring the columns.
+    status_value = "Done"
+    dropdown_value = "auth"
+    date_value = "2026-04-15"
+    # Item 0 already has text/long_text/numbers from create above — mirror
+    # those values into the dataclass so filter tests can reference them.
+    numbers_value = item_specs[0][2]  # "5"
+    text_value = item_specs[0][3]  # "design@e2e.test"
+    long_text_value = item_specs[0][4]  # "Initial spec for login + 2FA."
+    # Look up the authenticated user id once so we can seed the people column
+    # without a hardcoded id.
+    auth = invoke_json(["auth", "status"])
+    person_id = int(auth["user_id"])
+
+    invoke_json(
+        [
+            "column", "set",
+            "--item", str(item_ids[0]),
+            "--column", column_ids["status"],
+            "--value", status_value,
+            "--create-labels-if-missing",
+        ]
+    )
+    invoke_json(
+        [
+            "column", "set",
+            "--item", str(item_ids[0]),
+            "--column", column_ids["dropdown"],
+            "--value", dropdown_value,
+            "--create-labels-if-missing",
+        ]
+    )
+    invoke_json(
+        [
+            "column", "set",
+            "--item", str(item_ids[0]),
+            "--column", column_ids["date"],
+            "--value", date_value,
+        ]
+    )
+    invoke_json(
+        [
+            "column", "set",
+            "--item", str(item_ids[0]),
+            "--column", column_ids["person"],
+            "--value", str(person_id),
+        ]
+    )
+
     # Sanity probe: all items visible.
     wait_for(
         "pm board items visible",
@@ -273,6 +333,13 @@ def pm_board_session(
         group_ids=group_ids,
         item_ids=item_ids,
         item_names=item_names,
+        status_value=status_value,
+        dropdown_value=dropdown_value,
+        person_id=person_id,
+        date_value=date_value,
+        numbers_value=numbers_value,
+        text_value=text_value,
+        long_text_value=long_text_value,
     )
 
 

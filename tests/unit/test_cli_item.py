@@ -229,23 +229,174 @@ class TestItemList:
         assert [r["id"] for r in parsed] == ["1", "2"]
         assert len(httpx_mock.get_requests()) == 1
 
-    def test_filter_builds_rule(self, httpx_mock: HTTPXMock) -> None:
+    def test_bad_filter_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "nobareequals"])
+        assert result.exit_code == 2
+        assert len(httpx_mock.get_requests()) == 0
+
+
+def _columns_response(columns: list[dict[str, object]]) -> dict[str, object]:
+    """Build a COLUMNS_ON_BOARD response with the given column defs."""
+    return _ok(
+        {
+            "boards": [
+                {
+                    "id": "42",
+                    "name": "B",
+                    "columns": [
+                        {
+                            "id": c["id"],
+                            "title": c.get("title", c["id"]),
+                            "type": c["type"],
+                            "description": "",
+                            "archived": False,
+                            "settings_str": c.get("settings_str", "{}"),
+                        }
+                        for c in columns
+                    ],
+                }
+            ]
+        }
+    )
+
+
+_STATUS_SETTINGS = json.dumps({"labels": {"0": "Working on it", "1": "Done", "2": "Stuck"}})
+_DROPDOWN_SETTINGS = json.dumps(
+    {"labels": [{"id": 1, "name": "Cookie"}, {"id": 2, "name": "Cupcake"}]}
+)
+
+
+class TestItemListFilterCodec:
+    """Filter rules must consult board column defs and translate per type.
+
+    Monday's `items_page` query_params expect:
+    - status: compare_value as integer indices (not labels, not stringified)
+    - dropdown: compare_value as integer option ids
+    - text/numbers/date/etc.: passthrough as strings
+    """
+
+    def _add_columns_then_items(
+        self, httpx_mock: HTTPXMock, columns: list[dict[str, object]]
+    ) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_columns_response(columns))
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
             json=_ok({"boards": [{"items_page": {"cursor": None, "items": []}}]}),
         )
-        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "status=Done"])
-        assert result.exit_code == 0
+
+    def test_filter_status_resolves_label_to_int_index(self, httpx_mock: HTTPXMock) -> None:
+        self._add_columns_then_items(
+            httpx_mock,
+            [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "status=Done"]
+        )
+        assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
         assert qp["rules"] == [
-            {"column_id": "status", "compare_value": ["Done"], "operator": "any_of"}
+            {"column_id": "status", "compare_value": [1], "operator": "any_of"}
         ]
 
-    def test_bad_filter_exits_2(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "nobareequals"])
-        assert result.exit_code == 2
-        assert len(httpx_mock.get_requests()) == 0
+    def test_filter_status_accepts_index_syntax(self, httpx_mock: HTTPXMock) -> None:
+        self._add_columns_then_items(
+            httpx_mock,
+            [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "status=#1"]
+        )
+        assert result.exit_code == 0, result.stdout
+        qp = _last_body(httpx_mock)["variables"]["qp"]
+        assert qp["rules"][0]["compare_value"] == [1]
+
+    def test_filter_status_multiple_labels(self, httpx_mock: HTTPXMock) -> None:
+        self._add_columns_then_items(
+            httpx_mock,
+            [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
+        )
+        result = runner.invoke(
+            app,
+            ["item", "list", "--board", "42", "--filter", "status=Done,Working on it"],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"]["qp"]["rules"][0]["compare_value"] == [1, 0]
+
+    def test_filter_status_not_equals(self, httpx_mock: HTTPXMock) -> None:
+        self._add_columns_then_items(
+            httpx_mock,
+            [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "status!=Done"]
+        )
+        assert result.exit_code == 0, result.stdout
+        qp = _last_body(httpx_mock)["variables"]["qp"]
+        assert qp["rules"] == [
+            {"column_id": "status", "compare_value": [1], "operator": "not_any_of"}
+        ]
+
+    def test_filter_status_unknown_label_errors(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_columns_response(
+                [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}]
+            ),
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "status=Nope"]
+        )
+        assert result.exit_code != 0
+        # Error should name the column id and known labels so the user can self-correct.
+        assert "status" in result.stdout + (result.stderr or "")
+        combined = result.stdout + (result.stderr or "")
+        assert "Done" in combined and "Working on it" in combined
+        # Crucial: no items_page request was issued — we failed fast on the codec preflight.
+        urls = [str(r.url) for r in httpx_mock.get_requests()]
+        assert sum(1 for u in urls if u == ENDPOINT) == 1
+
+    def test_filter_dropdown_resolves_label_to_int_id(self, httpx_mock: HTTPXMock) -> None:
+        self._add_columns_then_items(
+            httpx_mock,
+            [{"id": "dd", "type": "dropdown", "settings_str": _DROPDOWN_SETTINGS}],
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "dd=Cookie"]
+        )
+        assert result.exit_code == 0, result.stdout
+        qp = _last_body(httpx_mock)["variables"]["qp"]
+        assert qp["rules"] == [
+            {"column_id": "dd", "compare_value": [1], "operator": "any_of"}
+        ]
+
+    def test_filter_text_passthrough(self, httpx_mock: HTTPXMock) -> None:
+        self._add_columns_then_items(
+            httpx_mock,
+            [{"id": "txt", "type": "text", "settings_str": "{}"}],
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "txt=hello"]
+        )
+        assert result.exit_code == 0, result.stdout
+        qp = _last_body(httpx_mock)["variables"]["qp"]
+        assert qp["rules"] == [
+            {"column_id": "txt", "compare_value": ["hello"], "operator": "any_of"}
+        ]
+
+    def test_filter_unknown_column_falls_back_to_raw(self, httpx_mock: HTTPXMock) -> None:
+        """Unknown column id → pass values through as strings, let the server
+        surface 'Column not found' as before."""
+        self._add_columns_then_items(httpx_mock, [])
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--filter", "missing=foo"]
+        )
+        assert result.exit_code == 0, result.stdout
+        qp = _last_body(httpx_mock)["variables"]["qp"]
+        assert qp["rules"] == [
+            {"column_id": "missing", "compare_value": ["foo"], "operator": "any_of"}
+        ]
 
 
 # --- create ---
