@@ -43,9 +43,13 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    board_id_alias: int | None = typer.Option(
+        None, "--board-id", help="(hidden alias for --board)", hidden=True,
+    ),
 ) -> None:
     """List validation rules on a board (required columns + rules JSON)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_flag = board_flag if board_flag is not None else board_id_alias
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     variables = {"id": board_id}
     data = execute(opts, VALIDATIONS_LIST, variables)

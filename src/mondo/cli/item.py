@@ -275,6 +275,9 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    board_id_alias: int | None = typer.Option(
+        None, "--board-id", help="(hidden alias for --board)", hidden=True,
+    ),
     filter_expr: list[str] | None = typer.Option(
         None,
         "--filter",
@@ -306,6 +309,7 @@ def list_cmd(
     --order-by col[,asc|desc] to sort.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_flag = board_flag if board_flag is not None else board_id_alias
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     # Fail fast on malformed `--filter` syntax before opening the client or

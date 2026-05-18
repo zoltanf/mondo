@@ -102,7 +102,11 @@ def _walk(
         "epilog": cmd.epilog or "",
         "hidden": bool(getattr(cmd, "hidden", False)),
         "deprecated": bool(getattr(cmd, "deprecated", False)),
-        "params": [_param_to_dict(p) for p in cmd.params if p.name != "help"],
+        "params": [
+            _param_to_dict(p)
+            for p in cmd.params
+            if p.name != "help" and not getattr(p, "hidden", False)
+        ],
         "examples": [
             {"description": ex.description, "command": ex.command}
             for ex in EXAMPLES.get(example_key, [])
