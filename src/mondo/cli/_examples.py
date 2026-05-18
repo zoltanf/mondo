@@ -251,6 +251,11 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo item list --parent 987654321",
         ),
         Example(
+            "Wait for at least one item to appear (poll up to 30s)",
+            "mondo item list --board 1234567890 "
+            "--poll-until 'length(@) > `0`' --poll-interval 2s --poll-timeout 30s",
+        ),
+        Example(
             "Filter + sort + project as JSON",
             "mondo item list --board 1234567890 --filter status!=Stuck "
             "--order-by date4,desc -o json -q '[].{id:id,name:name}'",

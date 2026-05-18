@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from typing import Any
 
 from mondo.api.client import MondayClient
 from mondo.api.errors import WaitTimeoutError
@@ -81,3 +82,43 @@ def wait_for_items_count_stable(
                 f"(last items_count={current}, target={target})"
             )
         time.sleep(interval_s)
+
+
+def poll_until_jmespath(
+    fetch: Callable[[], Any],
+    expression: str,
+    *,
+    interval_s: float,
+    timeout_s: float,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.monotonic,
+) -> Any:
+    """Re-call `fetch()` until `jmespath.search(expression, result)` is truthy.
+
+    On a truthy match, returns the result that was passed to JMESPath (NOT
+    the evaluated expression — the caller wants the full payload to emit).
+    Raises `WaitTimeoutError` when the cumulative `now()` exceeds the
+    deadline before any match.
+
+    `interval_s` is the sleep between polls; `timeout_s` is the total
+    deadline measured from the first `now()` call. `sleep` and `now` are
+    injectable for tests.
+    """
+    import jmespath
+
+    try:
+        compiled = jmespath.compile(expression)
+    except Exception as e:  # noqa: BLE001 — jmespath raises ParseError etc.
+        raise ValueError(f"invalid --poll-until expression {expression!r}: {e}") from e
+
+    deadline = now() + timeout_s
+    while True:
+        result = fetch()
+        if compiled.search(result):
+            return result
+        if now() >= deadline:
+            raise WaitTimeoutError(
+                f"--poll-until expression {expression!r} stayed falsy "
+                f"after {timeout_s:.1f}s"
+            )
+        sleep(interval_s)

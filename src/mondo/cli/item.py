@@ -246,6 +246,25 @@ def get_cmd(
         "--with-url",
         help="Include the item's canonical monday.com URL in the emitted payload.",
     ),
+    poll_until: str | None = typer.Option(
+        None,
+        "--poll-until",
+        metavar="JMESPATH",
+        help="Re-fetch until this JMESPath expression evaluates truthy.",
+        rich_help_panel="Polling",
+    ),
+    poll_interval: str = typer.Option(
+        "2s",
+        "--poll-interval",
+        help="Duration between polls (e.g. 500ms, 2s, 1m). Default 2s.",
+        rich_help_panel="Polling",
+    ),
+    poll_timeout: str = typer.Option(
+        "60s",
+        "--poll-timeout",
+        help="Total deadline for polling (e.g. 30s, 5m). Default 60s.",
+        rich_help_panel="Polling",
+    ),
 ) -> None:
     """Fetch a single item by ID or pulses URL."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -264,12 +283,33 @@ def get_cmd(
     else:
         query = ITEM_GET
 
-    data = execute(opts, query, {"id": item_id})
-    items = data.get("items") or []
-    if not items:
+    def _fetch_once() -> dict[str, Any] | None:
+        data = execute(opts, query, {"id": item_id})
+        items = data.get("items") or []
+        return items[0] if items else None
+
+    if poll_until is not None:
+        from mondo.api.polling import poll_until_jmespath
+        from mondo.util.duration import parse_duration
+        try:
+            interval_s = parse_duration(poll_interval)
+            timeout_s = parse_duration(poll_timeout)
+        except ValueError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
+        try:
+            item = poll_until_jmespath(
+                _fetch_once, poll_until,
+                interval_s=interval_s, timeout_s=timeout_s,
+            )
+        except ValueError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
+    else:
+        item = _fetch_once()
+    if item is None:
         typer.secho(f"item {item_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    item = items[0]
     if not with_url:
         item.pop("url", None)
     from mondo.cli._field_sets import item_get_fields
@@ -323,6 +363,25 @@ def list_cmd(
         "--max-items",
         help="Stop after this many items total.",
         rich_help_panel="Pagination",
+    ),
+    poll_until: str | None = typer.Option(
+        None,
+        "--poll-until",
+        metavar="JMESPATH",
+        help="Re-fetch until this JMESPath expression evaluates truthy.",
+        rich_help_panel="Polling",
+    ),
+    poll_interval: str = typer.Option(
+        "2s",
+        "--poll-interval",
+        help="Duration between polls (e.g. 500ms, 2s, 1m). Default 2s.",
+        rich_help_panel="Polling",
+    ),
+    poll_timeout: str = typer.Option(
+        "60s",
+        "--poll-timeout",
+        help="Total deadline for polling. Default 60s.",
+        rich_help_panel="Polling",
     ),
 ) -> None:
     """List items on a board (cursor pagination).
@@ -387,15 +446,36 @@ def list_cmd(
                 )
                 raise typer.Exit(0)
 
-            items = list(
-                iter_items_page(
-                    client,
-                    board_id=board_id,
-                    limit=limit,
-                    query_params=qp,
-                    max_items=max_items,
+            def _fetch_items_once() -> list[dict[str, Any]]:
+                return list(
+                    iter_items_page(
+                        client,
+                        board_id=board_id,
+                        limit=limit,
+                        query_params=qp,
+                        max_items=max_items,
+                    )
                 )
-            )
+
+            if poll_until is not None:
+                from mondo.api.polling import poll_until_jmespath
+                from mondo.util.duration import parse_duration
+                try:
+                    interval_s = parse_duration(poll_interval)
+                    timeout_s = parse_duration(poll_timeout)
+                except ValueError as e:
+                    typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+                    raise typer.Exit(code=2) from e
+                try:
+                    items = poll_until_jmespath(
+                        _fetch_items_once, poll_until,
+                        interval_s=interval_s, timeout_s=timeout_s,
+                    )
+                except ValueError as e:
+                    typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+                    raise typer.Exit(code=2) from e
+            else:
+                items = _fetch_items_once()
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     except UsageError as e:
@@ -444,6 +524,9 @@ def find_cmd(
         order_by=None,
         limit=MAX_PAGE_SIZE,
         max_items=None,
+        poll_until=None,
+        poll_interval="2s",
+        poll_timeout="60s",
     )
 
 
