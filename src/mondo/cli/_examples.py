@@ -451,8 +451,13 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
     ],
     "update get": [
-        Example("Fetch a single update", "mondo update get --id 555"),
+        Example("Fetch a single update (includes replies by default)",
+                "mondo update get --id 555"),
         Example("Just the body markdown", "mondo update get --id 555 -q body -o none"),
+        Example("Just the replies thread",
+                "mondo update get --id 555 -q replies"),
+        Example("Count of replies",
+                "mondo update get --id 555 -q 'length(replies)' -o none"),
     ],
     "update create": [
         Example(

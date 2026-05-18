@@ -211,7 +211,12 @@ def get_cmd(
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Update ID (positional)."),
     id_flag: int | None = typer.Option(None, "--id", "--update", help="Update ID (flag form)."),
 ) -> None:
-    """Fetch a single update by ID with replies, likes, and pinning info."""
+    """Fetch a single update by ID.
+
+    Always includes the full `replies` array (default-on, no flag needed),
+    plus `likes`, `assets`, and `pinned_to_top`. Use `-q replies` to
+    project just the replies thread.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
