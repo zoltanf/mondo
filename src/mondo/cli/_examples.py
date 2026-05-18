@@ -31,6 +31,7 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "account": [
         Example("Show account tier, plan, and active-member count", "mondo account"),
+        Example("Just the plan tier", "mondo account -q tier -o none"),
     ],
     "schema": [
         Example(
@@ -71,6 +72,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Full identity + where the token was resolved from",
             "mondo auth status",
         ),
+        Example(
+            "Just the resolved token source",
+            "mondo auth status -q token_source -o none",
+        ),
     ],
     "auth login": [
         Example(
@@ -86,6 +91,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example("Age and entry counts for every cache file", "mondo cache status"),
         Example("Just the boards cache", "mondo cache status boards"),
         Example("Machine-readable output", "mondo cache status -o json"),
+        Example(
+            "Project to type / fresh / entries (great for piping into jq)",
+            "mondo cache status -q '[].{type:type,fresh:fresh,entries:entries}'",
+        ),
     ],
     "cache refresh": [
         Example("Force-refresh every cached entity type", "mondo cache refresh"),
@@ -349,6 +358,10 @@ EXAMPLES: dict[str, list[Example]] = {
     # --- subitem -----------------------------------------------------------
     "subitem list": [
         Example("List subitems of a parent", "mondo subitem list --parent 1234567890"),
+        Example(
+            "Just the subitem names",
+            "mondo subitem list --parent 1234567890 -q '[].name'",
+        ),
     ],
     "subitem get": [
         Example("Fetch one subitem", "mondo subitem get --id 9876543210"),
@@ -410,6 +423,7 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "update get": [
         Example("Fetch a single update", "mondo update get --id 555"),
+        Example("Just the body markdown", "mondo update get --id 555 -q body -o none"),
     ],
     "update create": [
         Example(
@@ -516,6 +530,7 @@ EXAMPLES: dict[str, list[Example]] = {
             "Render the block tree as markdown",
             "mondo doc get --id 7 --format markdown",
         ),
+        Example("Just the doc name", "mondo doc get --id 7 -q name -o none"),
     ],
     "doc create": [
         Example(
@@ -605,6 +620,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Only webhooks registered by the current app",
             "mondo webhook list --board 1234567890 --app-only",
         ),
+        Example(
+            "Project to id + event type only",
+            "mondo webhook list --board 1234567890 -q '[].{id:id,event:event}'",
+        ),
     ],
     "webhook create": [
         Example(
@@ -648,15 +667,24 @@ EXAMPLES: dict[str, list[Example]] = {
     "folder list": [
         Example("Across every workspace", "mondo folder list"),
         Example("In one workspace", "mondo folder list --workspace 42"),
+        Example(
+            "Just the folder names in a workspace",
+            "mondo folder list --workspace 42 -q '[].name'",
+        ),
     ],
     "folder tree": [
         Example("ASCII tree of all folders, grouped by workspace", "mondo folder tree"),
         Example("Restrict to one workspace", "mondo folder tree --workspace 42"),
         Example("Structured JSON tree", "mondo folder tree -o json"),
         Example("Bypass local cache", "mondo folder tree --no-cache"),
+        Example(
+            "Flatten root-folder names out of the JSON tree",
+            "mondo folder tree --workspace 42 -o json -q '[].folders[].name'",
+        ),
     ],
     "folder get": [
         Example("One folder", "mondo folder get --id 7"),
+        Example("Just the folder name", "mondo folder get --id 7 -q name -o none"),
     ],
     "folder create": [
         Example(
@@ -692,9 +720,11 @@ EXAMPLES: dict[str, list[Example]] = {
             "Specific tag ids",
             "mondo tag list --id 123 --id 456",
         ),
+        Example("Just id + name pairs", "mondo tag list -q '[].{id:id,name:name}'"),
     ],
     "tag get": [
         Example("One tag", "mondo tag get --id 123"),
+        Example("Just the tag color", "mondo tag get --id 123 -q color -o none"),
     ],
     "tag create-or-get": [
         Example(
@@ -707,6 +737,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Boards/dashboards/workspaces/docs the current user favorited",
             "mondo favorite list",
+        ),
+        Example(
+            "Project to id + favorited object type",
+            "mondo favorite list -q '[].{id:id,type:object.type}'",
         ),
     ],
     # --- activity ----------------------------------------------------------
@@ -762,6 +796,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Every rule on a board",
             "mondo validation list --board 1234567890",
         ),
+        Example(
+            "Just the required column ids",
+            "mondo validation list --board 1234567890 -q required_column_ids",
+        ),
     ],
     "validation create": [
         Example(
@@ -789,6 +827,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Every group on a board",
             "mondo group list --board 1234567890",
+        ),
+        Example(
+            "Project to id, title, archived",
+            "mondo group list --board 1234567890 -q '[].{id:id,title:title,archived:archived}'",
         ),
     ],
     "group create": [
@@ -865,6 +907,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Flag form (still works for scripts)",
             "mondo column list --board 1234567890",
         ),
+        Example(
+            "Project to id, type, title",
+            "mondo column list 1234567890 -q '[].{id:id,type:type,title:title}'",
+        ),
     ],
     "column labels": [
         Example(
@@ -875,6 +921,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "List dropdown labels with their ids",
             "mondo column labels 1234567890 --column dropdown_mkrnym4p",
         ),
+        Example(
+            "Just the label count",
+            "mondo column labels 1234567890 --column status -q 'length(@)' -o none",
+        ),
     ],
     "column get": [
         Example(
@@ -884,6 +934,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Raw server payload (id/type/value/text)",
             "mondo column get --item 987 --column status --raw",
+        ),
+        Example(
+            "Just the text label from the raw payload",
+            "mondo column get --item 987 --column status --raw -q text -o none",
         ),
     ],
     "column set": [
@@ -960,6 +1014,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Raw block JSON",
             "mondo column doc get --item 987 --column spec --format raw-blocks",
         ),
+        Example(
+            "Just the block types from the raw JSON",
+            "mondo column doc get --item 987 --column spec --format raw-blocks -q '[].type'",
+        ),
     ],
     "column doc set": [
         Example(
@@ -991,9 +1049,11 @@ EXAMPLES: dict[str, list[Example]] = {
             'mondo workspace list --name-fuzzy "marketng"',
         ),
         Example("Bypass local cache", "mondo workspace list --no-cache"),
+        Example("Just the workspace names", "mondo workspace list -q '[].name'"),
     ],
     "workspace get": [
         Example("One workspace", "mondo workspace get --id 7"),
+        Example("Just the kind", "mondo workspace get --id 7 -q kind -o none"),
     ],
     "workspace create": [
         Example(
@@ -1062,9 +1122,14 @@ EXAMPLES: dict[str, list[Example]] = {
             'mondo user list --name-fuzzy "jon smth" --fuzzy-score --max-items 3',
         ),
         Example("Force-refresh the cache", "mondo user list --refresh-cache"),
+        Example(
+            "Map ids to email addresses",
+            "mondo user list -q '[].{id:id,email:email}'",
+        ),
     ],
     "user get": [
         Example("One user", "mondo user get --id 42"),
+        Example("Just the email", "mondo user get --id 42 -q email -o none"),
     ],
     "user deactivate": [
         Example(
@@ -1108,9 +1173,14 @@ EXAMPLES: dict[str, list[Example]] = {
             "Fuzzy name search",
             'mondo team list --name-fuzzy "platfrm"',
         ),
+        Example(
+            "Project to id, name, member count",
+            "mondo team list -q '[].{id:id,name:name,n:length(users)}'",
+        ),
     ],
     "team get": [
         Example("One team", "mondo team get --id 7"),
+        Example("Just the member ids", "mondo team get --id 7 -q 'users[].id'"),
     ],
     "team create": [
         Example(
@@ -1216,8 +1286,23 @@ EXAMPLES: dict[str, list[Example]] = {
             "Per-call drain logging (mix with any command)",
             "mondo --debug item list --board 42",
         ),
+        Example(
+            "Just the remaining budget",
+            "mondo complexity status -q budget_after -o none",
+        ),
     ],
 }
+
+
+# Matched against the final whitespace-delimited segment of the dotted path,
+# so hyphenated writes like "tag create-or-get" don't trip the heuristic.
+_READ_SUFFIXES = frozenset(
+    {"list", "get", "find", "show", "status", "tree", "labels", "inspect"}
+)
+_QUERY_HINT = (
+    "[dim]Tip: every command supports `-q '<jmespath>'` projection and "
+    "`-o json|yaml|csv|tsv|none` \u2014 see `mondo help output`.[/dim]"
+)
 
 
 def epilog_for(path: str) -> str | None:
@@ -1241,4 +1326,7 @@ def epilog_for(path: str) -> str | None:
             paragraphs.append("\u200b")
         paragraphs.append(f"[dim]# {ex.description}[/dim]")
         paragraphs.append(f"  $ {ex.command}")
+    if path.rsplit(" ", 1)[-1] in _READ_SUFFIXES:
+        paragraphs.append("\u200b")
+        paragraphs.append(_QUERY_HINT)
     return "\n\n".join(paragraphs)

@@ -8,16 +8,26 @@ coverage here.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from mondo.cli._examples import EXAMPLES, epilog_for
+from mondo.cli._examples import EXAMPLES, _READ_SUFFIXES, epilog_for
 from mondo.cli.help import _list_topics, _read_topic
 from mondo.cli.main import app
 
 runner = CliRunner()
+
+
+def _iter_leaves(node: dict) -> Iterator[dict]:
+    """Walk the `--dump-spec` tree and yield each leaf command node."""
+    if "commands" in node:
+        for child in node["commands"]:
+            yield from _iter_leaves(child)
+        return
+    yield node
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +96,24 @@ class TestEpilogs:
         assert result.exit_code == 0, result.output
         assert "Examples" in result.output
         assert "Minimal create" in result.output
+
+    def test_epilog_appends_query_hint_for_reads(self) -> None:
+        rendered = epilog_for("item list")
+        assert rendered is not None
+        assert "Tip: every command supports" in rendered
+        assert "mondo help output" in rendered
+
+    def test_epilog_omits_query_hint_for_writes(self) -> None:
+        rendered = epilog_for("item create")
+        assert rendered is not None
+        assert "Tip: every command supports" not in rendered
+
+    def test_epilog_omits_query_hint_for_hyphenated_writes(self) -> None:
+        # `tag create-or-get` ends in `get` only if you split on hyphens — we
+        # split on whitespace, so this stays a write (no tip).
+        rendered = epilog_for("tag create-or-get")
+        assert rendered is not None
+        assert "Tip: every command supports" not in rendered
 
 
 # --- --dump-spec contract ---------------------------------------------------
@@ -216,21 +244,28 @@ class TestDumpSpec:
     def test_every_leaf_command_has_examples(self, spec: dict) -> None:
         """The binary is the docs — every runnable leaf command must ship
         copy-pasteable examples. `help` itself is exempt (it's a meta-command)."""
-        missing: list[str] = []
-
-        def walk(node: dict) -> None:
-            if "commands" in node:
-                for child in node["commands"]:
-                    walk(child)
-                return
-            path = node["path"].removeprefix("mondo ")
-            if path == "help":
-                return
-            if not node["examples"]:
-                missing.append(path)
-
-        walk(spec["root"])
+        missing = [
+            path
+            for node in _iter_leaves(spec["root"])
+            if (path := node["path"].removeprefix("mondo ")) != "help"
+            if not node["examples"]
+        ]
         assert not missing, f"leaf commands without examples: {missing}"
+
+    def test_every_read_leaf_demonstrates_query(self, spec: dict) -> None:
+        """Locks backlog #1: agents discover `-q` JMESPath projection from
+        per-command Examples. Any read-style leaf (list/get/find/show/status/
+        tree/labels/inspect) must demonstrate `-q` in at least one example."""
+        missing = [
+            path
+            for node in _iter_leaves(spec["root"])
+            if (path := node["path"].removeprefix("mondo ")).rsplit(" ", 1)[-1] in _READ_SUFFIXES
+            if not any("-q " in ex["command"] for ex in node["examples"])
+        ]
+        assert not missing, (
+            f"read leaves without a -q example (add one to EXAMPLES in "
+            f"src/mondo/cli/_examples.py): {missing}"
+        )
 
 
 # --- bundled-topic contract ------------------------------------------------
