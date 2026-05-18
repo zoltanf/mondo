@@ -98,7 +98,9 @@ def _split_filter_expr(expr: str) -> tuple[str, str, str]:
 
 
 def _build_filter_rule(
-    expr: str, column_defs: dict[str, dict[str, Any]]
+    expr: str,
+    column_defs: dict[str, dict[str, Any]],
+    board_id: int | None = None,
 ) -> dict[str, Any]:
     """Build one `items_page.query_params.rule` from `COL=VAL` / `COL!=VAL`.
 
@@ -122,7 +124,12 @@ def _build_filter_rule(
         except UnknownColumnTypeError:
             compare_value = [v.strip() for v in raw.split(",")]
         except ValueError as e:
-            raise UsageError(f"--filter {col}={raw!r}: {e}") from e
+            board_hint = f"--board {board_id} " if board_id is not None else ""
+            raise UsageError(
+                f"--filter {col}={raw!r}: {e}. "
+                f"Run `mondo column labels {board_hint}--column {col}` "
+                f"for the canonical list."
+            ) from e
     return {"column_id": col, "compare_value": compare_value, "operator": operator}
 
 
@@ -197,11 +204,12 @@ def _build_query_params(
     filters: list[str] | None,
     order_by: str | None,
     column_defs: dict[str, dict[str, Any]] | None = None,
+    board_id: int | None = None,
 ) -> dict[str, Any] | None:
     qp: dict[str, Any] = {}
     if filters:
         defs = column_defs or {}
-        qp["rules"] = [_build_filter_rule(f, defs) for f in filters]
+        qp["rules"] = [_build_filter_rule(f, defs, board_id=board_id) for f in filters]
         qp["operator"] = "and"
     if order_by:
         # Syntax: "column_id" or "column_id,asc" / "column_id,desc"
@@ -363,7 +371,7 @@ def list_cmd(
             column_defs: dict[str, dict[str, Any]] = {}
             if filter_expr:
                 column_defs = _fetch_column_defs(opts, client, board_id)
-            qp = _build_query_params(filter_expr, order_by, column_defs)
+            qp = _build_query_params(filter_expr, order_by, column_defs, board_id=board_id)
 
             if opts.dry_run:
                 opts.emit(
