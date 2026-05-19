@@ -52,7 +52,8 @@ class DropdownCodec(LabelAwareCodec):
 
         Mirrors status: monday's `items_page` wants compare_value as integer
         ids, not label strings. The `id:` prefix lets users bypass label
-        resolution.
+        resolution. A whole-value `id:N,M` shorthand also short-circuits the
+        per-token label lookup so users can mix it with a single rule.
         """
         stripped = value.strip()
         if stripped.lower().startswith("id:"):
@@ -63,26 +64,28 @@ class DropdownCodec(LabelAwareCodec):
                 raise ValueError(
                     f"dropdown ids must be integer, got {id_part!r}"
                 ) from e
-        entries = iter_dropdown_labels(settings)
         # name → id (only entries that carry a numeric id are usable here)
         name_to_id: dict[str, int] = {}
-        for entry in entries:
+        for entry in iter_dropdown_labels(settings):
             entry_id = entry.get("id")
             if isinstance(entry_id, int):
                 name_to_id[str(entry.get("name"))] = entry_id
-        out: list[int] = []
-        for raw in value.split(","):
-            token = raw.strip()
-            if not token:
-                continue
-            if token in name_to_id:
-                out.append(name_to_id[token])
-                continue
-            known = ", ".join(name_to_id) if name_to_id else "(no labels known)"
-            raise ValueError(
-                f"unknown dropdown label {token!r}. Known: {known}"
-            )
-        return out
+
+        def _resolve_id(id_str: str) -> int:
+            try:
+                return int(id_str.strip())
+            except ValueError as e:
+                raise ValueError(
+                    f"dropdown ids must be integer, got {id_str!r}"
+                ) from e
+
+        return self._resolve_label_csv(
+            value,
+            name_to_id=name_to_id,
+            escape_prefix="id:",
+            escape_resolver=_resolve_id,
+            label_kind="dropdown",
+        )
 
 
 def iter_dropdown_labels(settings: dict[str, Any]) -> list[dict[str, Any]]:

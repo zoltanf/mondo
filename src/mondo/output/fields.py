@@ -1,34 +1,33 @@
 """Field projection for --fields CSV spec. Runs before -q JMESPath.
 
-Friction report C2: agents repeatedly pipe `mondo X list -o json | jq '[].{...}'`
-because the JMESPath -q is hard to discover. `--fields id,name,status` is a
-discoverable shortcut for the most common shape: a flat record (or list of
-records) projected down to a handful of named keys.
-
-Dotted paths (`creator.name`) are walked through nested dicts; the result
-key is the dotted form so a downstream JMESPath / formatter sees a flat
-record. Missing keys map to None — never raise — so a heterogeneous list
-projects cleanly.
+`--fields id,name,creator.name` is a discoverable shortcut for the most
+common shape: a flat record (or list of records) projected down to a few
+named keys. Dotted paths walk through nested dicts; the result key is the
+dotted form so a downstream JMESPath / formatter sees a flat record.
+Missing keys map to None — never raise — so a heterogeneous list projects
+cleanly. Projection is client-side; it does not narrow the GraphQL request.
 """
 from __future__ import annotations
 
 from typing import Any
 
 
-def _project_one(record: dict[str, Any], keys: list[str]) -> dict[str, Any]:
+def _project_one(
+    record: dict[str, Any], split_keys: list[tuple[str, list[str]]]
+) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for key in keys:
-        if "." in key:
-            value: Any = record
-            for part in key.split("."):
-                if isinstance(value, dict):
-                    value = value.get(part)
-                else:
-                    value = None
-                    break
-            out[key] = value
-        else:
+    for key, parts in split_keys:
+        if len(parts) == 1:
             out[key] = record.get(key)
+            continue
+        value: Any = record
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                value = None
+                break
+        out[key] = value
     return out
 
 
@@ -44,11 +43,13 @@ def apply_fields(data: Any, spec: str | None) -> Any:
     keys = [k.strip() for k in spec.split(",") if k.strip()]
     if not keys:
         return data
+    # Pre-split dotted keys once so a list of N rows doesn't re-split per row.
+    split_keys = [(k, k.split(".")) for k in keys]
     if isinstance(data, list):
         return [
-            _project_one(item, keys) if isinstance(item, dict) else item
+            _project_one(item, split_keys) if isinstance(item, dict) else item
             for item in data
         ]
     if isinstance(data, dict):
-        return _project_one(data, keys)
+        return _project_one(data, split_keys)
     return data

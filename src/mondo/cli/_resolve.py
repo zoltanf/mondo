@@ -23,6 +23,16 @@ from mondo.api.errors import NotFoundError, UsageError
 from mondo.cli._filters import apply_fuzzy, compile_name_filter, name_matches
 
 
+def coalesce_board_flag(board_flag: int | None, board_id_alias: int | None) -> int | None:
+    """Pick `--board-id` (hidden alias) only when `--board` was not given.
+
+    All commands that accept a board id expose the same hidden `--board-id`
+    alias for users coming from az/gh CLIs. This collapses the repeated
+    `board_flag = board_flag if board_flag is not None else board_id_alias`.
+    """
+    return board_flag if board_flag is not None else board_id_alias
+
+
 def resolve_required_id[T: (int, str)](
     positional: T | None,
     flag_value: T | None,

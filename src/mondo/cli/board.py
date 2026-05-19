@@ -29,6 +29,9 @@ from mondo.api.queries import (
 )
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
+    PollIntervalOpt,
+    PollTimeoutOpt,
+    PollUntilOpt,
     client_or_exit,
     execute,
     execute_read,
@@ -535,25 +538,9 @@ def get_cmd(
         "--with-views",
         help="Also fetch the board's `views { id name type settings_str }` array.",
     ),
-    poll_until: str | None = typer.Option(
-        None,
-        "--poll-until",
-        metavar="JMESPATH",
-        help="Re-fetch until this JMESPath expression evaluates truthy.",
-        rich_help_panel="Polling",
-    ),
-    poll_interval: str = typer.Option(
-        "2s",
-        "--poll-interval",
-        help="Duration between polls (e.g. 500ms, 2s, 1m). Default 2s.",
-        rich_help_panel="Polling",
-    ),
-    poll_timeout: str = typer.Option(
-        "60s",
-        "--poll-timeout",
-        help="Total deadline for polling. Default 60s.",
-        rich_help_panel="Polling",
-    ),
+    poll_until: PollUntilOpt = None,
+    poll_interval: PollIntervalOpt = "2s",
+    poll_timeout: PollTimeoutOpt = "60s",
 ) -> None:
     """Fetch a single board by ID with columns, groups, and subscribers."""
     from mondo.api.queries import BOARD_GET_WITH_VIEWS
@@ -812,17 +799,17 @@ def duplicate_cmd(
         help="Poll the new board's items_count until it stabilises (matches the "
         "source board's count, or stops growing). Exits with code 8 on timeout.",
     ),
-    timeout_s: int = typer.Option(
-        300,
+    timeout: str = typer.Option(
+        "5m",
         "--timeout",
-        metavar="SECONDS",
-        help="Timeout for --wait (default: 300s).",
+        metavar="DURATION",
+        help="Timeout for --wait (e.g. 30s, 5m). Default 5m.",
     ),
-    poll_interval_s: float = typer.Option(
-        2.0,
+    poll_interval: str = typer.Option(
+        "2s",
         "--poll-interval",
-        metavar="SECONDS",
-        help="Poll interval for --wait (default: 2s).",
+        metavar="DURATION",
+        help="Poll interval for --wait (e.g. 500ms, 2s). Default 2s.",
     ),
 ) -> None:
     """Duplicate a board (async — response may be partial).
@@ -870,6 +857,13 @@ def duplicate_cmd(
                 err=True,
             )
             raise typer.Exit(code=1) from None
+        from mondo.util.duration import parse_duration
+        try:
+            timeout_s = parse_duration(timeout)
+            poll_interval_s = parse_duration(poll_interval)
+        except ValueError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
         # Structure-only duplicates never copy items, so the target is 0 by
         # definition — using the source's count would mismatch and force the
         # stall-counter path to terminate the wait, which is correct but
@@ -887,7 +881,7 @@ def duplicate_cmd(
                     client,
                     dup_id,
                     target=expected_count,
-                    timeout_s=float(timeout_s),
+                    timeout_s=timeout_s,
                     interval_s=poll_interval_s,
                 )
         except MondoError as e:

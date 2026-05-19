@@ -57,42 +57,31 @@ class StatusCodec(LabelAwareCodec):
         against the live API on 2026-05-18.
         """
         labels_map = settings.get("labels") or {}
-        # Build label → index mapping (case-sensitive, mirrors `parse()`).
-        label_to_index: dict[str, int] = {}
-        if isinstance(labels_map, dict):
-            for idx_key, label in labels_map.items():
-                try:
-                    label_to_index[str(label)] = int(idx_key)
-                except (TypeError, ValueError):
-                    continue
-        out: list[int] = []
-        for raw in value.split(","):
-            token = raw.strip()
-            if not token:
-                continue
-            if token.startswith("#"):
-                idx_str = token[1:]
-                try:
-                    idx = int(idx_str)
-                except ValueError as e:
-                    raise ValueError(
-                        f"invalid status index {token!r}: use format #N"
-                    ) from e
-                if labels_map and str(idx) not in labels_map:
-                    allowed = ", ".join(sorted(labels_map.keys()))
-                    raise ValueError(
-                        f"status index {idx} out of range. Valid indices: {allowed}"
-                    )
-                out.append(idx)
-                continue
-            if token in label_to_index:
-                out.append(label_to_index[token])
-                continue
-            known = ", ".join(label_to_index) if label_to_index else "(no labels known)"
-            raise ValueError(
-                f"unknown status label {token!r}. Known: {known}"
-            )
-        return out
+        name_to_id = {
+            entry["label"]: entry["index"] for entry in iter_status_labels(settings)
+        }
+
+        def _resolve_index(idx_str: str) -> int:
+            try:
+                idx = int(idx_str)
+            except ValueError as e:
+                raise ValueError(
+                    f"invalid status index {'#' + idx_str!r}: use format #N"
+                ) from e
+            if labels_map and str(idx) not in labels_map:
+                allowed = ", ".join(sorted(labels_map.keys()))
+                raise ValueError(
+                    f"status index {idx} out of range. Valid indices: {allowed}"
+                )
+            return idx
+
+        return self._resolve_label_csv(
+            value,
+            name_to_id=name_to_id,
+            escape_prefix="#",
+            escape_resolver=_resolve_index,
+            label_kind="status",
+        )
 
 
 def iter_status_labels(settings: dict[str, Any]) -> list[dict[str, Any]]:

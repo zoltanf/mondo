@@ -10,6 +10,7 @@ Each codec owns:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 
@@ -81,6 +82,41 @@ class LabelAwareCodec(ColumnCodec):
     @abstractmethod
     def parse(self, value: str, settings: dict[str, Any], *, create_labels: bool = False) -> Any:
         ...
+
+    def _resolve_label_csv(
+        self,
+        value: str,
+        *,
+        name_to_id: dict[str, int],
+        escape_prefix: str,
+        escape_resolver: Callable[[str], int],
+        label_kind: str,
+    ) -> list[int]:
+        """Shared `parse_filter` loop for status / dropdown.
+
+        - `name_to_id` maps the user-visible label to the integer id.
+        - `escape_prefix` is the literal id-escape (e.g. "#" or "id:").
+        - `escape_resolver` parses one escaped token (without the prefix) into
+          an int; it may raise ValueError with a kind-specific message.
+        - `label_kind` is "status"/"dropdown" — used only in the unknown-label
+          error.
+        """
+        out: list[int] = []
+        for raw in value.split(","):
+            token = raw.strip()
+            if not token:
+                continue
+            if token.lower().startswith(escape_prefix):
+                out.append(escape_resolver(token[len(escape_prefix):]))
+                continue
+            if token in name_to_id:
+                out.append(name_to_id[token])
+                continue
+            known = ", ".join(name_to_id) if name_to_id else "(no labels known)"
+            raise ValueError(
+                f"unknown {label_kind} label {token!r}. Known: {known}"
+            )
+        return out
 
 
 def parse_value(

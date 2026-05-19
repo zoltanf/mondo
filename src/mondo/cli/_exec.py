@@ -13,7 +13,7 @@ mutation query in dry-run mode) uses `execute_read`.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import click
 import typer
@@ -107,6 +107,33 @@ def execute(
     if opts.dry_run:
         dry_run_and_exit(opts, query, variables)
     return execute_read(opts, query, variables)
+
+
+PollUntilOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--poll-until",
+        metavar="JMESPATH",
+        help="Re-fetch until this JMESPath expression evaluates truthy.",
+        rich_help_panel="Polling",
+    ),
+]
+PollIntervalOpt = Annotated[
+    str,
+    typer.Option(
+        "--poll-interval",
+        help="Duration between polls (e.g. 500ms, 2s, 1m). Default 2s.",
+        rich_help_panel="Polling",
+    ),
+]
+PollTimeoutOpt = Annotated[
+    str,
+    typer.Option(
+        "--poll-timeout",
+        help="Total deadline for polling (e.g. 30s, 5m). Default 60s.",
+        rich_help_panel="Polling",
+    ),
+]
 
 
 def poll_or_exit(

@@ -135,7 +135,9 @@ class MondayClient:
         # `--debug` advertises "every GraphQL query and response to stderr".
         # Emit the request body up-front so it's logged even on transport
         # failures. Registered secrets pass through `_redaction_patcher`.
-        logger.debug(f"GraphQL request: query={sent_query} variables={body['variables']}")
+        # Curly-brace args (not f-string): Loguru skips .format() when the
+        # level is filtered out, so large payloads don't pay repr() cost.
+        logger.debug("GraphQL request: query={} variables={}", sent_query, body["variables"])
 
         while attempt < self._max_retries:
             attempt += 1
@@ -153,7 +155,7 @@ class MondayClient:
                 )
                 if exc is None:
                     parsed: dict[str, Any] = response.json()
-                    logger.debug(f"GraphQL response: {parsed}")
+                    logger.debug("GraphQL response: {}", parsed)
                     sample = self.meter.record(parsed.get("data"))
                     if sample is not None:
                         logger.debug(

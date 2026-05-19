@@ -31,7 +31,7 @@ from mondo.cli._exec import (
     handle_mondo_error_or_exit,
 )
 from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
-from mondo.cli._resolve import resolve_by_filters, resolve_required_id
+from mondo.cli._resolve import coalesce_board_flag, resolve_by_filters, resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 if TYPE_CHECKING:
@@ -130,7 +130,7 @@ def list_cmd(
 ) -> None:
     """List all groups on a board (nested query — no standalone groups root)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = board_flag if board_flag is not None else board_id_alias
+    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     reject_mutually_exclusive(no_cache, refresh_cache)
     client = client_or_exit(opts)

@@ -32,6 +32,9 @@ from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
+    PollIntervalOpt,
+    PollTimeoutOpt,
+    PollUntilOpt,
     client_or_exit,
     dry_run_and_exit,
     exec_or_exit,
@@ -39,7 +42,7 @@ from mondo.cli._exec import (
     handle_mondo_error_or_exit,
     poll_or_exit,
 )
-from mondo.cli._resolve import resolve_by_filters, resolve_required_id
+from mondo.cli._resolve import coalesce_board_flag, resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
 from mondo.util.kvparse import parse_column_kv
@@ -99,11 +102,11 @@ def _split_filter_expr(expr: str) -> tuple[str, str, str]:
 
 
 def _build_filter_rule(
-    expr: str,
+    parsed: tuple[str, str, str],
     column_defs: dict[str, dict[str, Any]],
     board_id: int | None = None,
 ) -> dict[str, Any]:
-    """Build one `items_page.query_params.rule` from `COL=VAL` / `COL!=VAL`.
+    """Build one `items_page.query_params.rule` from a parsed `(col, raw, op)`.
 
     Dispatches by column type so status / dropdown filters end up with the
     integer indices / option ids monday actually accepts (sending labels
@@ -113,7 +116,7 @@ def _build_filter_rule(
     """
     from mondo.columns import UnknownColumnTypeError, parse_filter_value
 
-    col, raw, operator = _split_filter_expr(expr)
+    col, raw, operator = parsed
     definition = column_defs.get(col)
     if definition is None:
         compare_value: list[Any] = [v.strip() for v in raw.split(",")]
@@ -135,7 +138,12 @@ def _build_filter_rule(
 
 
 def _fetch_column_defs(
-    opts: GlobalOpts, client: MondayClient, board_id: int
+    opts: GlobalOpts,
+    client: MondayClient,
+    board_id: int,
+    *,
+    no_cache: bool = False,
+    refresh: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """One-shot fetch of `{col_id: {type, settings_str, ...}}` for a board.
 
@@ -145,7 +153,9 @@ def _fetch_column_defs(
     mirroring the previous behavior when the API returned no boards.
     """
     try:
-        columns = fetch_board_columns(opts, client, board_id)
+        columns = fetch_board_columns(
+            opts, client, board_id, no_cache=no_cache, refresh=refresh
+        )
     except NotFoundError:
         return {}
     return {c["id"]: c for c in columns}
@@ -202,15 +212,15 @@ def _build_column_values(
 
 
 def _build_query_params(
-    filters: list[str] | None,
+    parsed_filters: list[tuple[str, str, str]] | None,
     order_by: str | None,
     column_defs: dict[str, dict[str, Any]] | None = None,
     board_id: int | None = None,
 ) -> dict[str, Any] | None:
     qp: dict[str, Any] = {}
-    if filters:
+    if parsed_filters:
         defs = column_defs or {}
-        qp["rules"] = [_build_filter_rule(f, defs, board_id=board_id) for f in filters]
+        qp["rules"] = [_build_filter_rule(f, defs, board_id=board_id) for f in parsed_filters]
         qp["operator"] = "and"
     if order_by:
         # Syntax: "column_id" or "column_id,asc" / "column_id,desc"
@@ -247,25 +257,9 @@ def get_cmd(
         "--with-url",
         help="Include the item's canonical monday.com URL in the emitted payload.",
     ),
-    poll_until: str | None = typer.Option(
-        None,
-        "--poll-until",
-        metavar="JMESPATH",
-        help="Re-fetch until this JMESPath expression evaluates truthy.",
-        rich_help_panel="Polling",
-    ),
-    poll_interval: str = typer.Option(
-        "2s",
-        "--poll-interval",
-        help="Duration between polls (e.g. 500ms, 2s, 1m). Default 2s.",
-        rich_help_panel="Polling",
-    ),
-    poll_timeout: str = typer.Option(
-        "60s",
-        "--poll-timeout",
-        help="Total deadline for polling (e.g. 30s, 5m). Default 60s.",
-        rich_help_panel="Polling",
-    ),
+    poll_until: PollUntilOpt = None,
+    poll_interval: PollIntervalOpt = "2s",
+    poll_timeout: PollTimeoutOpt = "60s",
 ) -> None:
     """Fetch a single item by ID or pulses URL."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -355,37 +349,21 @@ def list_cmd(
         help="Stop after this many items total.",
         rich_help_panel="Pagination",
     ),
-    poll_until: str | None = typer.Option(
-        None,
-        "--poll-until",
-        metavar="JMESPATH",
-        help="Re-fetch until this JMESPath expression evaluates truthy.",
-        rich_help_panel="Polling",
-    ),
-    poll_interval: str = typer.Option(
-        "2s",
-        "--poll-interval",
-        help="Duration between polls (e.g. 500ms, 2s, 1m). Default 2s.",
-        rich_help_panel="Polling",
-    ),
-    poll_timeout: str = typer.Option(
-        "60s",
-        "--poll-timeout",
-        help="Total deadline for polling. Default 60s.",
-        rich_help_panel="Polling",
-    ),
-    refresh_cache: bool = typer.Option(  # noqa: ARG001
+    poll_until: PollUntilOpt = None,
+    poll_interval: PollIntervalOpt = "2s",
+    poll_timeout: PollTimeoutOpt = "60s",
+    refresh_cache: bool = typer.Option(
         False,
         "--refresh-cache",
-        help="Accepted for parity with other list commands. Items are "
-        "fetched live; this flag is currently a no-op.",
+        help="Refresh the cached column definitions used to resolve "
+        "`--filter` labels. Items themselves are always fetched live.",
         rich_help_panel="Cache",
     ),
-    no_cache: bool = typer.Option(  # noqa: ARG001
+    no_cache: bool = typer.Option(
         False,
         "--no-cache",
-        help="Accepted for parity with other list commands. Items are "
-        "fetched live; this flag is currently a no-op.",
+        help="Bypass the cached column definitions used to resolve "
+        "`--filter` labels. Items themselves are always fetched live.",
         rich_help_panel="Cache",
     ),
 ) -> None:
@@ -395,8 +373,48 @@ def list_cmd(
     --order-by col[,asc|desc] to sort.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = board_flag if board_flag is not None else board_id_alias
+    board_flag = coalesce_board_flag(board_flag, board_id_alias)
+    _list_items_impl(
+        opts,
+        board_pos=board_pos,
+        board_flag=board_flag,
+        group_id=group_id,
+        parent_id=parent_id,
+        filter_expr=filter_expr,
+        order_by=order_by,
+        limit=limit,
+        max_items=max_items,
+        poll_until=poll_until,
+        poll_interval=poll_interval,
+        poll_timeout=poll_timeout,
+        refresh_cache=refresh_cache,
+        no_cache=no_cache,
+    )
 
+
+def _list_items_impl(
+    opts: GlobalOpts,
+    *,
+    board_pos: int | None = None,
+    board_flag: int | None = None,
+    group_id: str | None = None,
+    parent_id: int | None = None,
+    filter_expr: list[str] | None = None,
+    order_by: str | None = None,
+    limit: int = MAX_PAGE_SIZE,
+    max_items: int | None = None,
+    poll_until: str | None = None,
+    poll_interval: str = "2s",
+    poll_timeout: str = "60s",
+    refresh_cache: bool = False,
+    no_cache: bool = False,
+) -> None:
+    """Core body shared by `item list` and `item find`.
+
+    Resolves the board id, fetches the items_page (or subitems on --parent),
+    optionally polls, then emits. Keeping this off the Typer command callbacks
+    means `item find` doesn't have to restate every `list` default.
+    """
     # --parent <id> shortcircuits the items_page path: it delegates to the
     # same SUBITEMS_LIST query that `mondo subitem list --parent` uses, so
     # both commands return identical shapes.
@@ -416,11 +434,12 @@ def list_cmd(
         filter_expr = [*(filter_expr or []), f"group={group_id}"]
 
     # Fail fast on malformed `--filter` syntax before opening the client or
-    # fetching board metadata, so usage errors stay exit 2.
+    # fetching board metadata, so usage errors stay exit 2. Reuse the parsed
+    # tuples below instead of re-splitting each expression in the rule builder.
+    parsed_filters: list[tuple[str, str, str]] = []
     if filter_expr:
         try:
-            for f in filter_expr:
-                _split_filter_expr(f)
+            parsed_filters = [_split_filter_expr(f) for f in filter_expr]
         except UsageError as e:
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2) from e
@@ -433,9 +452,12 @@ def list_cmd(
             # required for status/dropdown to translate labels → integer
             # indices/ids.
             column_defs: dict[str, dict[str, Any]] = {}
-            if filter_expr:
-                column_defs = _fetch_column_defs(opts, client, board_id)
-            qp = _build_query_params(filter_expr, order_by, column_defs, board_id=board_id)
+            if parsed_filters:
+                column_defs = _fetch_column_defs(
+                    opts, client, board_id,
+                    no_cache=no_cache, refresh=refresh_cache,
+                )
+            qp = _build_query_params(parsed_filters, order_by, column_defs, board_id=board_id)
 
             if opts.dry_run:
                 opts.emit(
@@ -506,22 +528,13 @@ def find_cmd(
     same way. Codec dispatch (status indices, dropdown ids) and the
     `mondo column labels` pointer on unknown labels are inherited.
     """
-    board_flag = board_flag if board_flag is not None else board_id_alias
-    ctx.invoke(
-        list_cmd,
-        ctx=ctx,
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_flag = coalesce_board_flag(board_flag, board_id_alias)
+    _list_items_impl(
+        opts,
         board_pos=board_pos,
         board_flag=board_flag,
-        board_id_alias=None,
-        group_id=None,
-        parent_id=None,
         filter_expr=[f"{column_id}={value}"],
-        order_by=None,
-        limit=MAX_PAGE_SIZE,
-        max_items=None,
-        poll_until=None,
-        poll_interval="2s",
-        poll_timeout="60s",
     )
 
 
@@ -715,45 +728,47 @@ def create_cmd(
         )
         raise typer.Exit(code=2)
 
-    # Resolve column values — codec dispatch needs a live client for the
-    # board-columns preflight and (for tags) create_or_get_tag.
+    # Build the ITEM_CREATE variables via the same helper that the batch path
+    # uses, so any future addition to the create shape lands in one place.
     # `--raw-columns` skips the preflight, so `--dry-run --raw-columns` is fully offline.
-    col_values: dict[str, Any] = {}
-    if columns:
-        if raw_columns:
-            col_values = dict(parse_column_kv(p) for p in columns)
-        else:
-            try:
-                client_for_preflight = opts.build_client()
-            except MondoError as e:
-                handle_mondo_error_or_exit(e)
-            try:
-                with client_for_preflight:
-                    col_values = _build_column_values(
-                        opts,
-                        client_for_preflight,
-                        board_id,
-                        columns,
-                        raw_mode=False,
-                        create_labels=create_labels_if_missing,
-                    )
-            except ValueError as e:
-                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=5) from e
-            except MondoError as e:
-                handle_mondo_error_or_exit(e)
-
-    variables: dict[str, Any] = {
-        "board": board_id,
+    row: dict[str, Any] = {
         "name": name,
-        "group": group_id,
-        # monday's column_values wants a JSON-*string*, not a JSON object (§11.4).
-        "values": json.dumps(col_values) if col_values else None,
-        "create_labels": create_labels_if_missing if create_labels_if_missing else None,
-        "prm": position_relative_method.value if position_relative_method else None,
-        "relto": relative_to,
+        "group_id": group_id,
+        "columns": list(columns) if columns else [],
+        "create_labels": create_labels_if_missing,
+        "position_relative_method": (
+            position_relative_method.value if position_relative_method else None
+        ),
+        "relative_to": relative_to,
     }
-    col_ids = ", ".join(col_values.keys()) if col_values else ""
+    needs_preflight = not raw_columns and bool(columns)
+    client_for_preflight: MondayClient | None = None
+    if needs_preflight:
+        try:
+            client_for_preflight = opts.build_client()
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+
+    ctx_mgr: Any = client_for_preflight if client_for_preflight is not None else nullcontext()
+    try:
+        with ctx_mgr:
+            variables = _build_create_variables_for_row(
+                opts,
+                client_for_preflight,
+                board_id,
+                row,
+                raw_columns=raw_columns,
+                create_labels_default=create_labels_if_missing,
+            )
+    except ValueError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=5) from e
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+
+    col_ids = (
+        ", ".join(parse_column_kv(p)[0] for p in columns) if columns else ""
+    )
     data = _execute_create_item(
         opts,
         ITEM_CREATE,

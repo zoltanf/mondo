@@ -27,9 +27,6 @@ _GLOBAL_PANEL_TITLE = "Global Options"
 _OUTPUT_PANEL_TITLE = "Output / Query"
 _PANEL_ATTR = "rich_help_panel"
 
-# Friction report E2: hoist the data-shaping flags into their own panel so
-# agents scanning `--help` find `-q` / `-o` / `--fields` without paging past
-# config-y noise like --profile/--debug/--api-token.
 _OUTPUT_PARAM_NAMES: frozenset[str] = frozenset({"output", "query", "fields"})
 
 # Root-app params that aren't true globals: `--help` is context-sensitive and
@@ -57,6 +54,7 @@ def _panel_for(param: click.Parameter) -> str:
 def _global_option_clones(ctx: click.Context) -> list[click.Option]:
     """Return panel-tagged copies of the root command's options for this ctx."""
     root_cmd = ctx.find_root().command
+    _assert_output_params_exist(root_cmd)
     out: list[click.Option] = []
     for param in root_cmd.params:
         if not is_global_param(param):
@@ -65,6 +63,21 @@ def _global_option_clones(ctx: click.Context) -> list[click.Option]:
         setattr(clone, _PANEL_ATTR, _panel_for(param))
         out.append(clone)
     return out
+
+
+def _assert_output_params_exist(root_cmd: click.Command) -> None:
+    """Fail loudly if `_OUTPUT_PARAM_NAMES` drifts from the root's option names.
+
+    Otherwise the Output / Query panel silently empties out when a flag is
+    renamed in `main.py`, with no test signal until someone runs `--help`.
+    """
+    declared = {p.name for p in root_cmd.params if isinstance(p, click.Option)}
+    missing = _OUTPUT_PARAM_NAMES - declared
+    if missing:
+        raise AssertionError(
+            f"_OUTPUT_PARAM_NAMES references param(s) not on the root command: "
+            f"{sorted(missing)}. Root declares: {sorted(declared)}."
+        )
 
 
 def _format_help_with_globals(
@@ -94,12 +107,11 @@ class MondoGroup(typer.core.TyperGroup):
     ) -> tuple[str | None, click.Command | None, list[str]]:
         """Append "Available subcommands: a, b, c" on No such command errors.
 
-        Friction report A3: Click's default fuzzy-match suggestion (`Did you
-        mean 'duplicate'?`) is actively misleading when the user typo'd
-        their way to a wrong namespace (e.g. `mondo item update` when they
-        wanted `mondo update create`). Listing every sibling subcommand
-        gives the agent enough information to recover regardless of how
-        close their typo was.
+        Click's default fuzzy-match suggestion (`Did you mean 'duplicate'?`)
+        is misleading across namespaces — e.g. `mondo item update` suggests
+        a sibling under `item` when the user actually wanted `update create`.
+        Listing every sibling subcommand lets the agent recover regardless
+        of how close their typo was.
         """
         try:
             return super().resolve_command(ctx, args)
@@ -124,6 +136,20 @@ class MondoGroup(typer.core.TyperGroup):
 class MondoCommand(typer.core.TyperCommand):
     def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         _format_help_with_globals(self, ctx, formatter, super().format_help)
+
+
+def _assert_output_params_exist(root_cmd: click.Command) -> None:
+    """Fail loudly if `_OUTPUT_PARAM_NAMES` drifts from the root's option names.
+
+    Otherwise the Output / Query panel silently empties out when a flag is
+    renamed in `main.py`, with no test signal until someone runs `--help`.
+    """
+    declared = {p.name for p in root_cmd.params if isinstance(p, click.Option)}
+    missing = _OUTPUT_PARAM_NAMES - declared
+    assert not missing, (
+        f"_OUTPUT_PARAM_NAMES references param(s) not on the root command: "
+        f"{sorted(missing)}. Root declares: {sorted(declared)}."
+    )
 
 
 def patch_help_classes(cmd: click.Command) -> None:
