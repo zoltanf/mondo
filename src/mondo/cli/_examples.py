@@ -1037,6 +1037,15 @@ EXAMPLES: dict[str, list[Example]] = {
             "Discover the legal labels for a status column",
             "mondo column labels --board 1234567890 --column status",
         ),
+        Example(
+            "board_relation: link items by CSV of IDs",
+            "mondo column set --item 987 --column related --value '12345,67890'",
+        ),
+        Example(
+            "board_relation: GraphQL-native JSON shape also accepted",
+            "mondo column set --item 987 --column related "
+            "--value '{\"item_ids\":[12345,67890]}'",
+        ),
     ],
     "column set-many": [
         Example(
