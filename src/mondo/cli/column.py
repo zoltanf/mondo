@@ -166,6 +166,63 @@ def list_cmd(
     opts.emit(simplified)
 
 
+@app.command("get-meta", epilog=epilog_for("column get-meta"))
+def get_meta_cmd(
+    ctx: typer.Context,
+    board_pos: int | None = typer.Argument(
+        None, metavar="[BOARD_ID]", help="Board ID (positional)."
+    ),
+    board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
+    board_id_alias: int | None = typer.Option(
+        None, "--board-id", help="(hidden alias for --board)", hidden=True,
+    ),
+    column_id: str = typer.Option(..., "--column", help="Column ID to inspect."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Skip the local columns cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local columns cache before serving.",
+        rich_help_panel="Cache",
+    ),
+) -> None:
+    """Fetch metadata for a single column (id, title, type, settings_str, archived).
+
+    Like `column list` but narrowed to one column — useful when you already
+    know the column ID and only need its `settings_str` (e.g. to enumerate
+    dropdown options or read a board_relation's target board ID). Unlike
+    `column list`, the full `settings_str` is preserved in the output.
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    board_flag = board_flag if board_flag is not None else board_id_alias
+    board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            columns = fetch_board_columns(
+                opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
+            )
+    except NotFoundError:
+        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=6) from None
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+    column = next((c for c in columns if c.get("id") == column_id), None)
+    if column is None:
+        typer.secho(
+            f"column {column_id!r} not found on board {board_id}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=6)
+    opts.emit(column)
+
+
 @app.command("labels", epilog=epilog_for("column labels"))
 def labels_cmd(
     ctx: typer.Context,

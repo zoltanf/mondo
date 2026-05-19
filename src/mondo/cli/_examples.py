@@ -994,6 +994,25 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo column labels 1234567890 --column status -q 'length(@)' -o none",
         ),
     ],
+    "column get-meta": [
+        Example(
+            "Full metadata for one column (id/type/settings_str/archived)",
+            "mondo column get-meta --board 1234567890 --column status",
+        ),
+        Example(
+            "Just the settings_str (for parsing labels/options)",
+            "mondo column get-meta --board 1234567890 --column status -q settings_str",
+        ),
+        Example(
+            "Project to id + title + type",
+            "mondo column get-meta --board 1234567890 --column status "
+            "--fields id,title,type",
+        ),
+        Example(
+            "Force-refresh cache before reading",
+            "mondo column get-meta --board 1234567890 --column status --refresh-cache",
+        ),
+    ],
     "column get": [
         Example(
             "Codec-rendered display value",

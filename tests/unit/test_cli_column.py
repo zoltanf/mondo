@@ -79,6 +79,119 @@ class TestColumnList:
         ]
 
 
+class TestColumnGetMeta:
+    """Friction report B3: agents wanted a single-column metadata fetch
+    (rather than `column list` returning *every* column or raw GraphQL).
+    """
+
+    def test_returns_single_column_with_settings_str(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "Board",
+                            "columns": [
+                                {
+                                    "id": "status",
+                                    "title": "Status",
+                                    "type": "status",
+                                    "archived": False,
+                                    "settings_str": json.dumps(
+                                        {"labels": {"0": "New", "1": "Done"}}
+                                    ),
+                                },
+                                {
+                                    "id": "name",
+                                    "title": "Name",
+                                    "type": "name",
+                                    "archived": False,
+                                    "settings_str": "{}",
+                                },
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app, ["column", "get-meta", "--board", "42", "--column", "status"]
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["id"] == "status"
+        assert parsed["title"] == "Status"
+        assert parsed["type"] == "status"
+        # Crucially: get-meta MUST preserve settings_str (unlike `column list`,
+        # which strips it for noise reduction).
+        assert "settings_str" in parsed
+        assert "labels" in parsed["settings_str"]
+
+    def test_unknown_column_errors_with_clear_message(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "Board",
+                            "columns": [
+                                {
+                                    "id": "name",
+                                    "title": "Name",
+                                    "type": "name",
+                                    "archived": False,
+                                    "settings_str": "{}",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app, ["column", "get-meta", "--board", "42", "--column", "missing"]
+        )
+        assert result.exit_code == 6
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "missing" in combined.lower() and "not found" in combined.lower()
+
+    def test_board_id_alias_accepted(self, httpx_mock: HTTPXMock) -> None:
+        """--board-id should be accepted as a hidden alias (parity with `column list`)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "Board",
+                            "columns": [
+                                {
+                                    "id": "status",
+                                    "title": "Status",
+                                    "type": "status",
+                                    "archived": False,
+                                    "settings_str": "{}",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app, ["column", "get-meta", "--board-id", "42", "--column", "status"]
+        )
+        assert result.exit_code == 0, result.stdout
+
+
 class TestColumnGet:
     def test_human_rendered(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
