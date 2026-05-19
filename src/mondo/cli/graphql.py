@@ -27,10 +27,16 @@ def _load_query(source: str) -> str:
     return source
 
 
+def _looks_like_graphql(s: str) -> bool:
+    """Heuristic: does `s` look like a GraphQL document, not a JMESPath?"""
+    stripped = s.lstrip()
+    return stripped.startswith(("query", "mutation", "subscription", "{", "fragment"))
+
+
 def graphql_command(
     ctx: typer.Context,
-    query: str = typer.Argument(
-        ...,
+    query: str | None = typer.Argument(
+        None,
         metavar="QUERY",
         help="GraphQL query/mutation. Use `-` for stdin or `@path` for a file.",
     ),
@@ -44,6 +50,28 @@ def graphql_command(
 ) -> None:
     """Send a raw GraphQL query to monday.com and print the response."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if query is None:
+        # A4/A5 in the friction report: detect when the user passed their
+        # GraphQL to `-q` (global JMESPath) instead of as the positional,
+        # and emit a targeted recovery hint instead of the generic
+        # "Missing argument 'QUERY'" Click message.
+        if opts.query and _looks_like_graphql(opts.query):
+            typer.secho(
+                "error: your GraphQL query was passed to `-q` (global JMESPath "
+                "projection) instead of as a positional argument. Pass it "
+                "positionally:\n"
+                "  mondo graphql 'query { … }'",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        typer.secho(
+            "error: missing required argument 'QUERY'.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     query_text = _load_query(query)
     vars_dict: dict[str, object] = {}

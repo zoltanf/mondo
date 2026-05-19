@@ -62,6 +62,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Pipe a mutation through stdin",
             "cat mutation.graphql | mondo graphql -",
         ),
+        Example(
+            "Tip: pass GraphQL as positional, not `-q` (which is global JMESPath)",
+            "mondo graphql 'query { me { id } }'",
+        ),
     ],
     # --- auth --------------------------------------------------------------
     "auth whoami": [

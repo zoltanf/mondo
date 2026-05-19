@@ -85,3 +85,26 @@ def test_graphql_query_from_file(httpx_mock: HTTPXMock, tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     body = json.loads(httpx_mock.get_request().content)  # type: ignore[union-attr]
     assert body["query"] == "query { me { id } }"
+
+
+def test_graphql_hint_when_q_swallowed_query() -> None:
+    """User typed `mondo graphql -q 'query { … }'`. After `reorder_argv`,
+    Typer parses `-q` as the global JMESPath and dispatches `graphql` with
+    no positional. Emit a targeted recovery hint instead of the generic
+    "Missing argument 'QUERY'" message.
+    """
+    # Reordered form, matching what `main()` produces from the user's argv.
+    result = runner.invoke(app, ["-q", "query { me { id } }", "graphql"])
+    assert result.exit_code != 0
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "graphql query" in combined and "-q" in combined
+    assert "positional" in combined
+
+
+def test_graphql_hint_only_when_q_looks_like_graphql() -> None:
+    """A real JMESPath in -q (e.g. 'data.me.id') without a positional should
+    still error, but without the GraphQL-payload hint (it'd be misleading)."""
+    result = runner.invoke(app, ["-q", "data.me.id", "graphql"])
+    assert result.exit_code != 0
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "passed to" not in combined
