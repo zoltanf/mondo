@@ -342,3 +342,52 @@ class TestBundledTopics:
         topics = _list_topics()
         assert "codecs" in topics
         assert "output" in topics
+
+
+# --- panel grouping (friction report E2) -----------------------------------
+
+
+class TestHelpPanels:
+    """Friction report E2: `-q`/`-o`/`--fields` were buried inside the
+    "Global Options" panel that agents scan past. They want a dedicated
+    "Output / Query" panel that signals where the data-shaping flags live.
+    """
+
+    def test_output_query_panel_separates_q_o_fields(self) -> None:
+        result = runner.invoke(app, ["item", "list", "--help"])
+        assert result.exit_code == 0, result.output
+        out = result.output
+        assert "Output / Query" in out, out
+        # The Output / Query panel must contain --output, --query, --fields.
+        # Use the panel boundary characters to slice cleanly.
+        output_section = out.split("Output / Query", 1)[1]
+        # Stop at the next panel heading (which always starts with a Rich box border).
+        # The first newline-newline sequence after the panel header is the body;
+        # find the panel-close mark.
+        end_markers = ["Global Options", "Cache", "Polling", "Pagination", "Filters"]
+        end_idx = min(
+            (output_section.find(m) for m in end_markers if output_section.find(m) != -1),
+            default=len(output_section),
+        )
+        output_section = output_section[:end_idx]
+        assert "--output" in output_section, output_section
+        assert "--query" in output_section, output_section
+        assert "--fields" in output_section, output_section
+
+    def test_global_options_panel_no_longer_lists_output_or_query(self) -> None:
+        result = runner.invoke(app, ["item", "list", "--help"])
+        assert result.exit_code == 0, result.output
+        out = result.output
+        if "Global Options" not in out:
+            pytest.skip("no Global Options panel rendered (test environment)")
+        # Scope to just the Global Options panel body — slice between its
+        # header and the next panel header (any "╭─ <title> ─").
+        global_start = out.find("Global Options")
+        rest = out[global_start:]
+        next_panel = rest.find("\n╭─", 1)
+        global_body = rest if next_panel == -1 else rest[:next_panel]
+        # --output, --query, --fields must NOT appear inside the Global
+        # Options panel (they now live in the Output / Query panel).
+        assert "--query" not in global_body, global_body
+        assert "--fields" not in global_body, global_body
+        assert "--output" not in global_body, global_body

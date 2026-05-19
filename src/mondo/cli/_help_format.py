@@ -24,7 +24,13 @@ import click
 import typer.core
 
 _GLOBAL_PANEL_TITLE = "Global Options"
+_OUTPUT_PANEL_TITLE = "Output / Query"
 _PANEL_ATTR = "rich_help_panel"
+
+# Friction report E2: hoist the data-shaping flags into their own panel so
+# agents scanning `--help` find `-q` / `-o` / `--fields` without paging past
+# config-y noise like --profile/--debug/--api-token.
+_OUTPUT_PARAM_NAMES: frozenset[str] = frozenset({"output", "query", "fields"})
 
 # Root-app params that aren't true globals: `--help` is context-sensitive and
 # `--install-completion`/`--show-completion` only work at the root by nature.
@@ -41,6 +47,13 @@ def is_global_param(param: click.Parameter) -> bool:
     return param.name not in _ROOT_PARAM_SKIP
 
 
+def _panel_for(param: click.Parameter) -> str:
+    """Choose which Rich help panel a cloned global lands in."""
+    if param.name in _OUTPUT_PARAM_NAMES:
+        return _OUTPUT_PANEL_TITLE
+    return _GLOBAL_PANEL_TITLE
+
+
 def _global_option_clones(ctx: click.Context) -> list[click.Option]:
     """Return panel-tagged copies of the root command's options for this ctx."""
     root_cmd = ctx.find_root().command
@@ -49,7 +62,7 @@ def _global_option_clones(ctx: click.Context) -> list[click.Option]:
         if not is_global_param(param):
             continue
         clone = copy.copy(param)
-        setattr(clone, _PANEL_ATTR, _GLOBAL_PANEL_TITLE)
+        setattr(clone, _PANEL_ATTR, _panel_for(param))
         out.append(clone)
     return out
 
