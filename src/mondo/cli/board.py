@@ -28,7 +28,13 @@ from mondo.api.queries import (
     BOARD_UPDATE_HIERARCHY,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, execute_read, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    execute,
+    execute_read,
+    handle_mondo_error_or_exit,
+    poll_or_exit,
+)
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
@@ -564,22 +570,12 @@ def get_cmd(
         return boards[0] if boards else None
 
     if poll_until is not None:
-        from mondo.api.polling import poll_until_jmespath
-        from mondo.util.duration import parse_duration
-        try:
-            interval_s = parse_duration(poll_interval)
-            timeout_s = parse_duration(poll_timeout)
-        except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
-        try:
-            board = poll_until_jmespath(
-                _fetch_once, poll_until,
-                interval_s=interval_s, timeout_s=timeout_s,
-            )
-        except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+        board = poll_or_exit(
+            _fetch_once,
+            expression=poll_until,
+            interval=poll_interval,
+            timeout=poll_timeout,
+        )
     else:
         board = _fetch_once()
     if board is None:

@@ -12,6 +12,7 @@ mutation query in dry-run mode) uses `execute_read`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
@@ -106,3 +107,35 @@ def execute(
     if opts.dry_run:
         dry_run_and_exit(opts, query, variables)
     return execute_read(opts, query, variables)
+
+
+def poll_or_exit(
+    fetch: Callable[[], Any],
+    *,
+    expression: str,
+    interval: str,
+    timeout: str,
+) -> Any:
+    """Re-call `fetch()` until `expression` is truthy against the result.
+
+    Bridges the `--poll-until` / `--poll-interval` / `--poll-timeout` flag
+    trio to `poll_until_jmespath`. Duration parse errors and bad-syntax
+    JMESPath expressions surface as `error: ...` on stderr with exit 2.
+    `WaitTimeoutError` is allowed to bubble so it keeps its own exit_code
+    (8, TIMEOUT) via the central MondoError envelope.
+    """
+    from mondo.api.polling import poll_until_jmespath
+    from mondo.util.duration import parse_duration
+    try:
+        interval_s = parse_duration(interval)
+        timeout_s = parse_duration(timeout)
+    except ValueError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e
+    try:
+        return poll_until_jmespath(
+            fetch, expression, interval_s=interval_s, timeout_s=timeout_s,
+        )
+    except ValueError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e

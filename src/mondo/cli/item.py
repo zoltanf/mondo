@@ -37,6 +37,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    poll_or_exit,
 )
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
@@ -289,22 +290,12 @@ def get_cmd(
         return items[0] if items else None
 
     if poll_until is not None:
-        from mondo.api.polling import poll_until_jmespath
-        from mondo.util.duration import parse_duration
-        try:
-            interval_s = parse_duration(poll_interval)
-            timeout_s = parse_duration(poll_timeout)
-        except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
-        try:
-            item = poll_until_jmespath(
-                _fetch_once, poll_until,
-                interval_s=interval_s, timeout_s=timeout_s,
-            )
-        except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+        item = poll_or_exit(
+            _fetch_once,
+            expression=poll_until,
+            interval=poll_interval,
+            timeout=poll_timeout,
+        )
     else:
         item = _fetch_once()
     if item is None:
@@ -458,22 +449,12 @@ def list_cmd(
                 )
 
             if poll_until is not None:
-                from mondo.api.polling import poll_until_jmespath
-                from mondo.util.duration import parse_duration
-                try:
-                    interval_s = parse_duration(poll_interval)
-                    timeout_s = parse_duration(poll_timeout)
-                except ValueError as e:
-                    typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                    raise typer.Exit(code=2) from e
-                try:
-                    items = poll_until_jmespath(
-                        _fetch_items_once, poll_until,
-                        interval_s=interval_s, timeout_s=timeout_s,
-                    )
-                except ValueError as e:
-                    typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                    raise typer.Exit(code=2) from e
+                items = poll_or_exit(
+                    _fetch_items_once,
+                    expression=poll_until,
+                    interval=poll_interval,
+                    timeout=poll_timeout,
+                )
             else:
                 items = _fetch_items_once()
     except MondoError as e:
