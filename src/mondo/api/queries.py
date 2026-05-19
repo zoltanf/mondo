@@ -200,6 +200,7 @@ mutation (
   ) {
     id
     name
+    url
     state
     created_at
     group { id title }

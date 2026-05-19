@@ -642,6 +642,11 @@ def create_cmd(
         "--chunk-size",
         help="Items per HTTP call when --batch is used (default 10).",
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include the new item's canonical monday.com URL in the emitted payload.",
+    ),
 ) -> None:
     """Create a new item on a board.
 
@@ -684,6 +689,7 @@ def create_cmd(
             raw_columns=raw_columns,
             create_labels_default=create_labels_if_missing,
             chunk_size=chunk_size,
+            with_url=with_url,
         )
         return
 
@@ -748,7 +754,10 @@ def create_cmd(
         # May have minted a status/dropdown label in settings_str; drop the
         # cached column defs so the next read sees the new labels.
         invalidate_columns_cache(opts, board_id)
-    opts.emit(data.get("create_item") or {})
+    payload = data.get("create_item") or {}
+    if not with_url:
+        payload.pop("url", None)
+    opts.emit(payload)
 
 
 def _run_batch(
@@ -759,6 +768,7 @@ def _run_batch(
     raw_columns: bool,
     create_labels_default: bool,
     chunk_size: int,
+    with_url: bool = False,
 ) -> None:
     """Execute a batched item create. Fans each chunk into a single
     multi-mutation GraphQL document via aliasing; aggregates per-row
@@ -840,6 +850,12 @@ def _run_batch(
 
     if create_labels_default or any(row.get("create_labels") for row in rows):
         invalidate_columns_cache(opts, board_id)
+
+    if not with_url:
+        for row in results:
+            row_data = row.get("data")
+            if isinstance(row_data, dict):
+                row_data.pop("url", None)
 
     failed = sum(1 for r in results if not r["ok"])
     summary = {

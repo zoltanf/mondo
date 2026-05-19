@@ -416,6 +416,62 @@ class TestItemCreate:
         assert body["variables"]["name"] == "New"
         assert body["variables"]["values"] is None
 
+    def test_with_url_includes_url_in_response(self, httpx_mock: HTTPXMock) -> None:
+        """--with-url on item create returns the new item's monday URL."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_item": {
+                        "id": "99",
+                        "name": "New",
+                        "url": "https://marktguru.monday.com/boards/42/pulses/99",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["item", "create", "--board", "42", "--name", "New", "--with-url"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://marktguru.monday.com/boards/42/pulses/99"
+
+    def test_without_with_url_strips_url(self, httpx_mock: HTTPXMock) -> None:
+        """Default behavior: don't surface url even if monday returned it."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_item": {
+                        "id": "99",
+                        "name": "New",
+                        "url": "https://marktguru.monday.com/boards/42/pulses/99",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(
+            app, ["item", "create", "--board", "42", "--name", "New"]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "url" not in json.loads(result.stdout)
+
+    def test_item_create_mutation_selects_url(self, httpx_mock: HTTPXMock) -> None:
+        """The ITEM_CREATE mutation must select `url` so --with-url has data
+        to return without a follow-up GET."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "99", "name": "New"}}),
+        )
+        runner.invoke(app, ["item", "create", "--board", "42", "--name", "New"])
+        query = _last_body(httpx_mock)["query"]
+        assert "url" in query
+
     def test_with_codec_dispatch(self, httpx_mock: HTTPXMock) -> None:
         # Preflight: board columns — used by the codec dispatcher
         httpx_mock.add_response(

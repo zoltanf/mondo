@@ -338,6 +338,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Smaller chunks (debug or work around complexity limits)",
             "mondo item create --board 1234567890 --batch items.json --chunk-size 3",
         ),
+        Example(
+            "Create + get back the new item's URL (avoid a follow-up GET)",
+            'mondo item create --board 1234567890 --name "New item" --with-url',
+        ),
     ],
     "item rename": [
         Example(
