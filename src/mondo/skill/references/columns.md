@@ -23,6 +23,34 @@ mondo column list --board 5094861043 -o json
 
 *Gotcha:* `id` is the column key you'll use for `column set --column <id>`. The first column is always `name` (item title) and is non-deletable. The `people` type aliases to `person` in some response paths — match on `type in ('people', 'person')` if you're filtering.
 
+*Note:* `column list` strips `settings_str` from each row (it's noisy). When you need the full metadata for a single column — e.g. enumerate dropdown options or read a `board_relation`'s target board id — use `column get-meta` instead (next section).
+
+## Get metadata for a single column
+
+```bash
+mondo column get-meta --board 5094861043 --column e2e_status -o json
+```
+
+```json
+{
+  "id": "e2e_status",
+  "title": "Status",
+  "type": "status",
+  "archived": false,
+  "settings_str": "{\"labels\":{\"0\":\"Working on it\",\"1\":\"Done\",\"2\":\"Stuck\"}}"
+}
+```
+
+*Gotcha:* `column get-meta` is sugar over `column list` narrowed to one column, with `settings_str` preserved (the whole reason this command exists). For dropdown/status columns prefer `mondo column labels --board X --column COL` which parses the labels for you.
+
+```bash
+# Just the settings_str payload, parsed downstream:
+mondo column get-meta --board 5094861043 --column e2e_status -q settings_str -o none
+
+# Project to a smaller shape:
+mondo column get-meta --board 5094861043 --column e2e_status --fields id,title,type
+```
+
 ## Create a typed column with a stable id
 
 ```bash
@@ -97,6 +125,23 @@ mondo item create --board 5094861043 --group backlog \
 ```
 
 *Gotcha:* `--column k=v` uses the same codec layer as `column set` — same value formats apply. Quote values with spaces.
+
+## `board_relation` / `dependency`: three accepted input shapes
+
+For columns that take a list of item IDs (`board_relation`, `dependency`), the codec accepts any of:
+
+```bash
+# Single integer
+mondo column set --item 987 --column related --value 12345
+
+# CSV of integers
+mondo column set --item 987 --column related --value '12345,67890'
+
+# GraphQL-native JSON object — useful when you've copied a value from a monday API response
+mondo column set --item 987 --column related --value '{"item_ids":[12345,67890]}'
+```
+
+All three produce the same payload (`{"item_ids":[...]}`). The JSON form is validated strictly: wrong top-level keys, non-list `item_ids`, or non-int IDs are rejected with a recovery-oriented error message that lists every accepted shape.
 
 ## Delete a column
 

@@ -58,6 +58,7 @@ graphql`:
 | `board list`      | `--with-item-counts`, `--with-url`, `--with-tags`   |
 | `board get`       | `--with-url`, `--with-views`                        |
 | `item get`        | `--with-url`                                        |
+| `item create`     | `--with-url` (returns the new item's URL without a follow-up GET) |
 | `item duplicate`  | `--with-updates`                                    |
 | `subitem get`     | `--with-url`                                        |
 | `doc list`        | `--with-url`                                        |
@@ -66,6 +67,15 @@ graphql`:
 Some of these (e.g. `--with-item-counts`, `--with-tags`) bypass the
 local cache because the extra fields aren't cached — read each
 command's `--help` for the trade-offs.
+
+## Where the data-shaping flags live in `--help`
+
+`--output / -o`, `--query / -q`, and `--fields` are surfaced in a
+dedicated **"Output / Query"** Rich help panel on every subcommand — not
+buried in "Global Options". Scan there first when you need to project,
+filter client-side, or change format. For the most common projection
+shape ("give me id, name, status"), `--fields id,name,status` is
+shorter than the equivalent `-q '[].{id:id,name:name,status:status}'`.
 
 ## Cache provenance
 

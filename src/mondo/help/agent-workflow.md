@@ -37,6 +37,20 @@ Recommended defaults when driven by an agent:
     # Loop the first N items on a board
     mondo item list --board 42 --max-items 100 -q '[].id' -o json
 
+    # Project to a smaller dict shape (faster to write than --query)
+    mondo item list --board 42 --fields id,name,state
+
+    # Find items by column value (sugar over --filter)
+    mondo item find --board 42 --column status --value Done
+
+    # Create + get back the URL in one call
+    mondo item create --board 42 --name "Test" --with-url
+
+    # Wait for an async state change instead of a bash until/sleep loop
+    mondo item get --id 987 \
+        --poll-until 'column_values[?id==`status`].text | [0] == `Done`' \
+        --poll-interval 2s --poll-timeout 60s
+
     # Preview a mutation before sending it
     mondo --dry-run item create --board 42 --name "Test" --column status=Done
 

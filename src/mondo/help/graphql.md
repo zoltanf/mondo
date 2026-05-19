@@ -20,6 +20,13 @@ when you need to:
     # From stdin (note the trailing `-`)
     cat mutation.graphql | mondo graphql -
 
+> **Common trap — don't pass your query via `-q`.** `-q` is the global
+> JMESPath projection. If you type `mondo graphql -q 'query { … }'`,
+> Click consumes the GraphQL string as the JMESPath and leaves the
+> positional empty. `mondo` detects this case and emits a targeted hint
+> pointing at the correct invocation (positional argument). Pass the
+> query positionally instead.
+
 ## Variables
 
     mondo graphql 'query ($ids:[ID!]!){ items(ids:$ids){ id name } }' \

@@ -64,15 +64,19 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 ## Operating norms (every command obeys these)
 
 - **Output format:** auto-JSON when stdout isn't a TTY. Don't set `-o json` in scripts; mondo detects it. Force with `-o json|yaml|tsv|csv`.
-- **Project before format** with `-q JMESPATH` (applied before the formatter). Server-side `--filter col=val` (repeatable, AND'ed) beats client-side filtering on large boards.
+- **Project before format** with `-q JMESPATH` (applied before the formatter). For the "give me id, name, status" case, `--fields KEY1,KEY2,...` (CSV of keys; dotted paths walk nested dicts) is shorter than the equivalent `-q` projection. Both are global flags surfaced in the "Output / Query" help panel.
+- **Filter server-side** with `--filter col=val` (repeatable, AND'ed) instead of paging then JMESPath-filtering. On `item list` specifically, `--group <id>` and `--parent <item-id>` are first-class shortcuts (no need to reach for `--filter group=…` or switch to `subitem list`).
 - **JSON error envelope** on stderr (non-TTY): `{"error": "...", "code": "...", "exit_code": N, "request_id": "...", "retry_in_seconds": N, "suggestion": "..."}`. Branch on `exit_code`, never parse stderr text.
 - **Stable exit codes:** 0 ok · 2 usage · 3 auth · 4 rate/complexity (retry after 60s) · 5 validation · 6 not-found · 7 network.
 - **Dry-run writes first:** every mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar.
 - **Batch:** `--batch <file.json>` on bulk operations (`item create`, `column set`, `import board`). Returns a per-row envelope; partial failure → exit 1, full success → exit 0.
-- **URLs:** pass `--with-url` on get commands so you can return a clickable monday.com link to the user.
+- **URLs:** pass `--with-url` on `board get`, `board list`, `item get`, `item create` (NEW — single-call create + URL retrieval), `subitem get`, `doc get`, `doc list` to return a clickable monday.com link to the user.
+- **Wait for async state changes** with `--poll-until '<jmespath>'` + `--poll-interval` + `--poll-timeout` on `item list`, `item get`, `board get` — replaces hand-rolled bash `until/sleep` loops.
+- **Find items by column value** with `mondo item find --board X --column COL --value VAL` (sugar over `item list --filter`, with the same codec dispatch).
+- **Inspect a single column's metadata** with `mondo column get-meta --board X --column COL` (returns one column with `settings_str` preserved; `column list` strips it).
 - **Cleanup:** delete commands soft-archive by default; pass `--hard` for true delete.
-- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps.
-- **Cache notice:** read commands may emit `cache: hit (entity=…, age=…)` to stderr. Suppress with `MONDO_NO_CACHE_NOTICE=1`. Force refresh with `--no-cache` or `--refresh-cache`.
+- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. **Pass the query as a positional**, not via `-q` (`-q` is the global JMESPath; mondo will hint if you confuse the two).
+- **Cache notice:** read commands may emit `cache: hit (entity=…, age=…)` to stderr. Suppress with `MONDO_NO_CACHE_NOTICE=1`. Force refresh with `--no-cache` or `--refresh-cache` (accepted on every `list` for parity; on `item list` they're currently no-ops since items aren't cached).
 
 ## When references aren't enough
 

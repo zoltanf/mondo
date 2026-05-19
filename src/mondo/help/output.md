@@ -1,10 +1,12 @@
 # Output formatting
 
-Every `mondo` command emits structured data to stdout. Two global flags
-control how it's shaped and how it's serialized.
+Every `mondo` command emits structured data to stdout. Three global flags
+control how it's shaped and how it's serialized — all three live together
+in the "Output / Query" panel of every `--help` page:
 
-    --query, -q  JMESPATH    Project / filter the payload before formatting.
-    --output, -o FORMAT      Serialize as table | json | jsonc | yaml | tsv | csv | none.
+    --query, -q  JMESPATH      Project / filter the payload before formatting.
+    --fields     KEY1,KEY2,... CSV-style shorthand projection (dotted paths OK).
+    --output, -o FORMAT        Serialize as table | json | jsonc | yaml | tsv | csv | none.
 
 ## Defaults
 
@@ -28,6 +30,26 @@ payload into a table-friendly form and still get a rendered table:
     # Filter client-side (server has no name filter on `boards`):
     mondo graphql 'query { boards(limit:200) { id name } }' \
         -q "data.boards[?contains(name,'Pager')]" -o table
+
+## CSV-style field projection (`--fields`)
+
+For the most common projection — "give me id, name, status" — `--fields`
+is shorter than the equivalent `-q '[].{...}'` JMESPath. Dotted paths
+walk nested dicts:
+
+    # Project a list of dicts to a smaller shape
+    mondo item list --board 42 --fields id,name,state
+
+    # Dotted paths drill into nested objects
+    mondo item list --board 42 --fields id,name,creator.name
+
+    # Works on single-dict responses too
+    mondo item get --id 987 --fields id,name,url --with-url
+
+Pipeline order: `-q` runs first (envelope extraction), then `--fields`
+(row-shape narrowing). Both compose freely. Reach for `-q` when you
+need filtering / aggregation / re-shaping; reach for `--fields` when you
+just want a smaller dict per row.
 
 ## Format notes
 

@@ -31,9 +31,18 @@ Pass `--raw-columns` (or `--raw` on `column set`) to skip the codec and send
 | `checkbox`      | `true` / `false` / `clear`      | `{"checked":"true"}` / `null`                    |
 | `rating`        | `4`                             | `{"rating":4}`                                   |
 | `tags`          | `urgent,blocked`                | `{"tag_ids":[…]}` (names resolved via `create_or_get_tag`) |
-| `board_relation`| `12345,23456`                   | `{"item_ids":[…]}`                               |
-| `dependency`    | `12345,23456`                   | `{"item_ids":[…]}`                               |
+| `board_relation`| `12345,23456` or `{"item_ids":[…]}` | `{"item_ids":[…]}`                           |
+| `dependency`    | `12345,23456` or `{"item_ids":[…]}` | `{"item_ids":[…]}`                           |
 | `world_clock`   | `Europe/London`                 | `{"timezone":"Europe/London"}`                   |
+
+The `board_relation` / `dependency` codecs also accept the GraphQL-native
+shape directly — handy when you've copied a value from a monday API
+response:
+
+    mondo column set --item 1 --column related --value '{"item_ids":[12345,67890]}'
+
+Bad inputs (wrong keys, non-list `item_ids`, non-int IDs) are rejected
+with an error that lists every accepted shape.
 
 ## Escape hatches
 

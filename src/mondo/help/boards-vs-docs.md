@@ -35,11 +35,15 @@ board portion of the URL is discarded — the pulse id is globally unique.
 
 ## Get a URL back out of a payload
 
-Pass `--with-url` on `board get`, `item get`, or `subitem get` to include
-a canonical monday URL in the emitted payload:
+Pass `--with-url` on `board get`, `item get`, `subitem get`, or
+`item create` to include a canonical monday URL in the emitted payload:
 
     $ mondo item get 12345 --with-url -q url -o none
     https://<tenant>.monday.com/boards/42/pulses/12345
+
+    # Combined create + URL retrieval (no follow-up GET needed):
+    $ mondo item create --board 42 --name "New" --with-url -q url -o none
+    https://<tenant>.monday.com/boards/42/pulses/99
 
 `mondo doc get` always includes `url` (monday's `docs()` endpoint returns
 it); `--with-url` there is accepted but has no effect.
@@ -54,7 +58,8 @@ Pass `--with-url` on either to get URLs back.
 2. If `board get` surfaces `type == "document"`, re-issue as
    `doc get --object-id <id>` to get the doc's block tree.
 3. Pass `--with-url` whenever you need to hand a human (or another tool)
-   a link back to the monday UI.
+   a link back to the monday UI — including on `item create`, so the
+   create response carries the URL directly (no second round-trip).
 
 ## `board list` / `doc list`
 

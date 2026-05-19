@@ -265,17 +265,21 @@ so retry logic can branch on the code rather than scraping stderr.
 
 Bundled topics:
 
-| Topic             | What's inside                                           |
-|-------------------|---------------------------------------------------------|
-| `agent-workflow`  | Short onboarding for AI agents and CI pipelines         |
-| `auth`            | Token resolution chain + `mondo auth login`/`logout`    |
-| `codecs`          | `--column COL=VAL` parsing table for every column type  |
-| `complexity`      | monday's per-minute budget, retry guidance, debug logs  |
-| `exit-codes`      | Exit codes 0–7 with retry/retry-not guidance            |
-| `filters`         | Server-side `--filter` + client-side JMESPath recipes   |
-| `graphql`         | Using `mondo graphql` as the escape hatch               |
-| `output`          | `--output` / `--query` formatting + projection          |
-| `profiles`        | Multi-account `config.yaml` + env-var interpolation     |
+| Topic                      | What's inside                                                       |
+|----------------------------|---------------------------------------------------------------------|
+| `agent-workflow`           | Short onboarding for AI agents and CI pipelines                     |
+| `agent-tips`               | Schema introspection, `--with-*` flags, error envelope, polling     |
+| `auth`                     | Token resolution chain + `mondo auth login`/`logout`                |
+| `batch-operations`         | `--batch` envelopes + title-based selectors for bulk work           |
+| `boards-vs-docs`           | Reading monday URLs, workdoc detection, and `--with-url`            |
+| `codecs`                   | `--column COL=VAL` parsing table for every column type              |
+| `complexity`               | monday's per-minute budget, retry guidance, debug logs              |
+| `duplicate-and-customize`  | End-to-end workflow: `board duplicate` → rename → reseed            |
+| `exit-codes`               | Exit codes 0–7 with retry/retry-not guidance                        |
+| `filters`                  | Server-side `--filter` (+ `--group`/`--parent` shortcuts) + JMESPath |
+| `graphql`                  | Using `mondo graphql` as the escape hatch                           |
+| `output`                   | `--output` / `--query` / `--fields` formatting + projection         |
+| `profiles`                 | Multi-account `config.yaml` + env-var interpolation                 |
 
 ---
 
@@ -663,9 +667,16 @@ remaining group on a board with `DeleteLastGroupException`.
 
 ```bash
 mondo item list   --board 1234567890 [--max-items 50] [--filter status=Done] [--order-by date4,desc]
-mondo item get    --id 987 [--include-updates] [--include-subitems]
+mondo item list   --board 1234567890 --group backlog              # first-class group shortcut
+mondo item list   --parent 9876543210                             # subitems of a parent
+mondo item list   --board 1234567890 --poll-until 'length(@) > `0`' \
+                  --poll-interval 2s --poll-timeout 30s           # wait for async state
+mondo item find   --board 1234567890 --column status --value Done # sugar over --filter
+mondo item get    --id 987 [--include-updates] [--include-subitems] [--with-url]
+mondo item get    --id 987 --poll-until 'state == `active`' --poll-timeout 60s
 mondo item create --board 1234567890 --name "Fix CI" \
-                  --column status=Working --column owner=42 --column due=2026-04-25
+                  --column status=Working --column owner=42 --column due=2026-04-25 \
+                  [--with-url]                                    # returns URL in same call
 mondo item rename    --id 987 --board 1234567890 --name "New title"
 mondo item archive   --id 987                            # reversible (30-day monday recovery)
 mondo item delete    --id 987 --hard --yes               # permanent
@@ -681,15 +692,21 @@ SRC=DST` (repeatable) when the source and target boards have different
 column IDs; unmapped source columns are dropped. `--subitem-column-mapping`
 does the same for the moved item's subitems.
 
+Polling flags (`--poll-until`, `--poll-interval`, `--poll-timeout`) are
+also available on `board get` for waiting on duplicate-board / async
+mutations — they replace hand-rolled `until/sleep` bash loops.
+
 ### Columns
 
 ```bash
 # Read & write values
 mondo column list     --board 1234567890
+mondo column get-meta --board 1234567890 --column status # one column's full metadata (settings_str preserved)
 mondo column get      --item 987 --column status         # codec-rendered display
 mondo column get      --item 987 --column status --raw   # {id, type, value, text}
 mondo column set      --item 987 --column status --value Done
 mondo column set      --item 987 --column tags   --value urgent,blocked   # names auto-resolve
+mondo column set      --item 987 --column related --value '{"item_ids":[12345,67890]}'  # board_relation: JSON-native shape OK
 mondo column set-many --item 987 --values '{"text":"Hi","due":{"date":"2026-04-25"}}'
 mondo column clear    --item 987 --column status
 
@@ -767,8 +784,13 @@ cat mutation.graphql | mondo graphql -
 
 ```
 --output,-o {table|json|jsonc|yaml|tsv|csv|none}   # default: table on TTY, json otherwise
---query,-q <jmespath>                              # applied *before* formatting
+--query,-q  <jmespath>                             # applied *before* formatting
+--fields    KEY1,KEY2,...                          # CSV-style projection; dotted paths walk nested dicts
 ```
+
+All three live in the "Output / Query" panel of every `--help` page.
+Pipeline: `-q` first (envelope extraction / filtering), then `--fields`
+(row-shape narrowing), then `-o` (serialize).
 
 Global flags are accepted **anywhere on the command line** (az-style):
 
@@ -780,6 +802,9 @@ mondo -o table -q '[].{id:id,name:name}' item list --board 42   # also works
 Practical recipes:
 
 ```bash
+# Project to id + name + status — shorter than the equivalent -q
+mondo item list --board 42 --fields id,name,status
+
 # Find boards by name (server has no name filter; JMESPath handles it):
 mondo graphql 'query { boards(limit:200) { id name items_count } }' \
     -q "data.boards[?contains(name,'Pager')]" -o table
@@ -788,7 +813,7 @@ mondo graphql 'query { boards(limit:200) { id name items_count } }' \
 count=$(mondo item list --board 42 -q "length(@)" -o none)
 
 # Export as CSV:
-mondo item list --board 42 -q '[].{id:id,name:name,state:state}' -o csv > items.csv
+mondo item list --board 42 --fields id,name,state -o csv > items.csv
 ```
 
 ---
@@ -841,11 +866,15 @@ all four list commands now that the directory is resident. Full contract:
 ## Global flags
 
 ```
+# Output / Query panel (data-shaping flags)
+--output,-o {table|json|jsonc|yaml|tsv|csv|none}   Output format (default: table on TTY, json otherwise)
+--query,-q  <jmespath>                             JMESPath projection before formatting
+--fields    KEY1,KEY2,...                          CSV-style projection (dotted paths walk nested dicts)
+
+# Global Options panel
 --profile NAME / MONDO_PROFILE              Select config profile
 --api-token TOKEN / MONDAY_API_TOKEN        Override API token (flag wins over env)
 --api-version YYYY-MM / MONDAY_API_VERSION  Pin API version (default: 2026-01)
---output,-o {table|json|jsonc|yaml|tsv|csv|none}
---query,-q <jmespath>                       JMESPath projection before formatting
 --verbose,-v                                INFO-level logging to stderr
 --debug                                     Full request/response to stderr (token redacted)
 --yes,-y                                    Skip confirmation prompts

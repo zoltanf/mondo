@@ -30,6 +30,32 @@ For richer predicates (OR, nested groups, per-column operators),
 `mondo aggregate board` and `mondo item list` both accept a raw
 `--filter '<json>'` with the full monday `QueryParams` shape.
 
+## First-class shortcuts on `item list`
+
+Two common filter shapes have dedicated flags:
+
+    # Items in a single group (sugar over --filter group=<id>):
+    mondo item list --board 42 --group backlog
+
+    # Subitems of a parent item (switches to the SUBITEMS_LIST query):
+    mondo item list --parent 9876543210
+
+`--group` composes with `--filter` (both rules are sent). `--parent`
+makes `--board` optional and returns the exact same shape as
+`mondo subitem list --parent <id>` — pick whichever fits your mental
+model.
+
+## Find items by column value (shortcut)
+
+For the "single column equals one or more values" case, `mondo item
+find` is shorter than the equivalent `item list --filter`:
+
+    mondo item find --board 42 --column status --value Done
+    mondo item find --board 42 --column status --value 'Done,Working on it'
+
+Same codec dispatch as `--filter` (so status labels, dates, etc. work),
+same response shape as `item list`.
+
 ## Sorting
 
     mondo item list --board 42 --order-by date4           # asc by default

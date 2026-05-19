@@ -6,6 +6,9 @@ Items are rows on a board. Subitems are rows on a board's auto-generated subitem
 
 ```bash
 mondo item create --board 5094861043 --group backlog --name "Refactor auth middleware"
+
+# Get the new item's monday URL back without a follow-up GET:
+mondo item create --board 5094861043 --name "Fix CI" --with-url
 ```
 
 ```json
@@ -13,6 +16,8 @@ mondo item create --board 5094861043 --group backlog --name "Refactor auth middl
 ```
 
 *Gotcha:* `--group <id>` is the group's id (e.g. `topics`, `group_42`), not its title. List groups first if you only know the title: `mondo group list --board <id>`.
+
+*New flag:* `--with-url` (also available on `item get`, `board get`, etc.) appends the canonical `https://<tenant>.monday.com/boards/<bid>/pulses/<iid>` URL to the response — avoids the "create → get URL" two-step.
 
 ## Create an item with column values
 
@@ -59,6 +64,8 @@ mondo item get --id 9876543210 --with-url
 ```bash
 mondo item list --board 5094861043 -o json
 mondo item list --board 5094861043 --filter status=Done -o json   # server-side filter
+mondo item list --board 5094861043 --group backlog -o json        # first-class group shortcut
+mondo item list --parent 9876543210 -o json                       # subitems of a parent
 ```
 
 ```json
@@ -69,6 +76,37 @@ mondo item list --board 5094861043 --filter status=Done -o json   # server-side 
 ```
 
 *Gotcha:* `--filter col=val` is server-side and **AND'ed** when repeated; far cheaper than client-side JMESPath on big boards. For text contains-style search, monday's API doesn't support it — list and filter client-side with `-q "[?contains(name, 'auth')]"`.
+
+*Shortcuts (first-class flags, not aliases of `--filter`):*
+
+- `--group <id>` — sugar over `--filter group=<id>`. Composes with `--filter`.
+- `--parent <item-id>` — switches to the subitems query for that parent. When set, `--board` becomes optional. Equivalent to `mondo subitem list --parent <id>` (same shape).
+- `--refresh-cache` / `--no-cache` — accepted for parity with other list commands. **Currently no-ops on `item list`** (items aren't cached); the flags exist so you don't get rejected.
+
+## Find items by column value
+
+```bash
+mondo item find --board 5094861043 --column e2e_status --value Done -o json
+mondo item find --board 5094861043 --column e2e_status --value 'Done,Working on it'  # any-of
+mondo item find --board 5094861043 --column e2e_status --value Done -q 'length(@)' -o none
+```
+
+*Gotcha:* `mondo item find` is sugar over `item list --filter COL=VAL`, returns the same shape, and inherits the same codec dispatch (so `--value` accepts status labels, dates, etc.) plus the `mondo column labels` pointer on unknown labels.
+
+## Wait for an async state change
+
+```bash
+# Wait up to 30s for at least one item to appear (e.g. after a board duplicate)
+mondo item list --board 5094861043 \
+  --poll-until 'length(@) > `0`' --poll-interval 2s --poll-timeout 30s
+
+# Wait for a specific item to flip to Done
+mondo item get --id 9876543210 \
+  --poll-until 'column_values[?id==`e2e_status`].text | [0] == `Done`' \
+  --poll-interval 2s --poll-timeout 60s
+```
+
+*Gotcha:* available on `item list`, `item get`, `board get`. Durations accept compact strings (`500ms`, `2s`, `5m`, `1h`). On timeout the command exits non-zero with `WaitTimeoutError` in the error envelope. Replaces hand-rolled `until/sleep` loops in bash.
 
 ## Move an item between groups
 
