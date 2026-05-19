@@ -374,6 +374,20 @@ def list_cmd(
         help="Total deadline for polling. Default 60s.",
         rich_help_panel="Polling",
     ),
+    refresh_cache: bool = typer.Option(  # noqa: ARG001
+        False,
+        "--refresh-cache",
+        help="Accepted for parity with other list commands. Items are "
+        "fetched live; this flag is currently a no-op.",
+        rich_help_panel="Cache",
+    ),
+    no_cache: bool = typer.Option(  # noqa: ARG001
+        False,
+        "--no-cache",
+        help="Accepted for parity with other list commands. Items are "
+        "fetched live; this flag is currently a no-op.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List items on a board (cursor pagination).
 

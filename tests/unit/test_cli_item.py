@@ -234,6 +234,33 @@ class TestItemList:
         assert result.exit_code == 2
         assert len(httpx_mock.get_requests()) == 0
 
+    def test_refresh_cache_accepted_as_no_op(self, httpx_mock: HTTPXMock) -> None:
+        """Friction report A2: --refresh-cache works on board/group/user/folder
+        list but not item list — agents reach for it and get rejected. Accept
+        the flag for parity (items aren't cached so it's a no-op)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"boards": [{"items_page": {"cursor": None, "items": [{"id": "1"}]}}]}
+            ),
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--refresh-cache"]
+        )
+        assert result.exit_code == 0, (result.stdout or "") + (result.stderr or "")
+
+    def test_no_cache_accepted_as_no_op(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"items_page": {"cursor": None, "items": []}}]}),
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", "42", "--no-cache"]
+        )
+        assert result.exit_code == 0, (result.stdout or "") + (result.stderr or "")
+
 
 def _columns_response(columns: list[dict[str, object]]) -> dict[str, object]:
     """Build a COLUMNS_ON_BOARD response with the given column defs."""

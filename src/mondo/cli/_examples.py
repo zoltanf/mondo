@@ -264,6 +264,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo item list --board 1234567890 --filter status!=Stuck "
             "--order-by date4,desc -o json -q '[].{id:id,name:name}'",
         ),
+        Example(
+            "--refresh-cache / --no-cache: accepted for parity (no-op; items aren't cached)",
+            "mondo item list --board 1234567890 --refresh-cache",
+        ),
     ],
     "item find": [
         Example(
