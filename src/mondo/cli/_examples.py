@@ -276,6 +276,11 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo item find --board 1234567890 --column status "
             "--value 'Done,Working on it'",
         ),
+        Example(
+            "Count matches",
+            "mondo item find --board 1234567890 --column status --value Done "
+            "-q 'length(@)' -o none",
+        ),
     ],
     "item get": [
         Example("Fetch one item", "mondo item get --id 987"),
@@ -391,6 +396,19 @@ EXAMPLES: dict[str, list[Example]] = {
             "Just the subitem names",
             "mondo subitem list --parent 1234567890 -q '[].name'",
         ),
+        Example(
+            "Count subitems",
+            "mondo subitem list --parent 1234567890 -q 'length(@)' -o none",
+        ),
+        Example(
+            "Project to id + status text",
+            "mondo subitem list --parent 1234567890 "
+            "-q '[].{id:id,status:column_values[?id==`status`].text|[0]}'",
+        ),
+        Example(
+            "Equivalent via `item list --parent`",
+            "mondo item list --parent 1234567890",
+        ),
     ],
     "subitem get": [
         Example("Fetch one subitem", "mondo subitem get --id 9876543210"),
@@ -471,6 +489,14 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Send raw HTML verbatim (e.g. to preserve <mention> tags)",
             'mondo update create --item 1234567890 --body "<p>Hi <mention user=42>Sam</mention></p>" --html',
+        ),
+        Example(
+            "Capture the new update's id for later use",
+            'mondo update create --item 1234567890 --body "auto" -q id -o none',
+        ),
+        Example(
+            "Reply to an update instead (see `update reply`)",
+            'mondo update reply --parent 555 --body "thanks"',
         ),
     ],
     "update reply": [
@@ -973,6 +999,14 @@ EXAMPLES: dict[str, list[Example]] = {
             "Just the text label from the raw payload",
             "mondo column get --item 987 --column status --raw -q text -o none",
         ),
+        Example(
+            "Read a date column (returns ISO date string)",
+            "mondo column get --item 987 --column due_date",
+        ),
+        Example(
+            "List known labels first if --filter / --value rejects yours",
+            "mondo column labels --board 1234567890 --column status",
+        ),
     ],
     "column set": [
         Example(
@@ -980,12 +1014,24 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo column set --item 987 --column status --value Done",
         ),
         Example(
+            "Status by integer index (escape hatch when labels collide)",
+            "mondo column set --item 987 --column status --value '#3'",
+        ),
+        Example(
             "Tags by name (auto-resolves via create_or_get_tag)",
             "mondo column set --item 987 --column tags --value urgent,blocked",
         ),
         Example(
+            "Date column with ISO date",
+            "mondo column set --item 987 --column due_date --value 2026-06-30",
+        ),
+        Example(
             "Raw JSON escape hatch",
             "mondo column set --item 987 --column status --value '{\"index\":3}' --raw",
+        ),
+        Example(
+            "Discover the legal labels for a status column",
+            "mondo column labels --board 1234567890 --column status",
         ),
     ],
     "column set-many": [
