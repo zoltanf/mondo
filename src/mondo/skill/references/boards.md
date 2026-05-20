@@ -42,7 +42,7 @@ mondo board list --workspace 592446 --workspace 699169 -o json     # multiple wo
 ]
 ```
 
-*Gotcha:* default omits archived boards. `--no-cache` bypasses the local cache when you need fresh state right after a write; otherwise leave the cache on (8h TTL for boards). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
+*Gotcha:* default omits archived boards. `--no-cache` bypasses the local cache when you need fresh state right after a write; otherwise leave the cache on (boards directory: 8h TTL; per-board `board_details/<id>.json` from `mondo board get`: 15m TTL, with a live `items_count` merge on hit when your projection references it). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Create a board
 

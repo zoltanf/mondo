@@ -81,7 +81,7 @@ mondo item list --parent 9876543210 -o json                       # subitems of 
 
 - `--group <id>` — sugar over `--filter group=<id>`. Composes with `--filter`.
 - `--parent <item-id>` — switches to the subitems query for that parent. When set, `--board` becomes optional. Equivalent to `mondo subitem list --parent <id>` (same shape).
-- `--refresh-cache` / `--no-cache` — accepted for parity with other list commands. **Currently no-ops on `item list`** (items aren't cached); the flags exist so you don't get rejected.
+- `--refresh-cache` / `--no-cache` — load-bearing on `item list --parent <id>` (per-parent `subitems/<id>.json` cache, 60s TTL — see below) and on the per-item `item get` cache (`items/<id>.json`, 60s). On board-scope `item list` without `--parent`, the flags are accepted for parity but no-op — board-scope listings are too volatile to cache safely.
 
 ## Find items by column value
 

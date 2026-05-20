@@ -92,9 +92,14 @@ For verbose detail (cache path, ttl, exact fetched-at), pass
 
     cache: hit (entity=boards, count=143, age=2m, ttl=86400s, fetched_at=2026-04-30T11:22:33+00:00, path=/Users/.../mondo/cache/boards.json)
 
-`--explain-cache` is supported on `board list`, `folder list/tree`,
-`workspace list`, `user list`, `team list`, `doc list`. To force a
-fresh fetch use `--no-cache` or `--refresh-cache`.
+`--explain-cache` is supported on every cached read: directory
+listings (`board / workspace / user / team / doc / folder / tag list`,
+`folder tree`, `webhook list`), the single-entity gets that short-
+circuit through the directory cache (`workspace / folder / team get`,
+`tag get`), and the per-board / per-item / per-doc caches (`board get`,
+`item get`, `subitem list/get`, `update list --item`, `doc get`). To
+force a fresh fetch use `--no-cache` or `--refresh-cache` on the same
+command. See `docs/caching.md` for the per-entity TTL table.
 
 ## Structured error envelope (`-o json|jsonc|yaml`)
 

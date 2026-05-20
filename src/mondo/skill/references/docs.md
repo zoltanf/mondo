@@ -27,7 +27,7 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 ]
 ```
 
-*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the UUID-style doc id used in URLs (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the doc cache TTL is 24h. Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
+*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the UUID-style doc id used in URLs (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Get a doc — JSON or Markdown
 
