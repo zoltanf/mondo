@@ -279,6 +279,10 @@ def set_cmd(
                 if not doc_id:
                     raise MondoError("create_doc returned no id")
                 create_blocks(client, int(doc_id), blocks)
+                from mondo.cli._cache_invalidate import invalidate_entity
+
+                invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+                invalidate_entity(opts, "items", scope=str(item_id))
                 opts.emit(
                     {
                         "doc_id": doc_id,
@@ -304,6 +308,9 @@ def set_cmd(
                 )
                 raise typer.Exit(0)
             create_blocks(client, int(doc_id), blocks, after_block_id=_last_block_id(doc))
+            from mondo.cli._cache_invalidate import invalidate_entity
+
+            invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
             opts.emit(
                 {
                     "doc_id": doc_id,
@@ -364,6 +371,9 @@ def append_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
     opts.emit({"doc_id": doc.get("id"), "blocks_created": len(blocks)})
 
 
@@ -409,6 +419,9 @@ def clear_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("change_column_value") or {})
 
 

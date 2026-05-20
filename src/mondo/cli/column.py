@@ -26,6 +26,7 @@ from mondo.api.queries import (
     COLUMN_RENAME,
 )
 from mondo.cli._cache_flags import reject_mutually_exclusive
+from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
@@ -429,6 +430,7 @@ def set_cmd(
         # `create_labels_if_missing=True` may have minted a new status/dropdown
         # label inside the column's settings_str — drop the cached copy.
         invalidate_columns_cache(opts, board_id)
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("change_column_value") or {})
 
 
@@ -494,6 +496,7 @@ def set_many_cmd(
     if create_labels_if_missing:
         # May have minted a label in a status/dropdown column's settings_str.
         invalidate_columns_cache(opts, board_id)
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("change_multiple_column_values") or {})
 
 
@@ -552,6 +555,7 @@ def clear_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("change_column_value") or {})
 
 
@@ -637,6 +641,7 @@ def create_cmd(
     }
     data = execute(opts, COLUMN_CREATE, variables)
     invalidate_columns_cache(opts, board_id)
+    invalidate_entity(opts, "board_details", scope=str(board_id))
     opts.emit(data.get("create_column") or {})
 
 
@@ -722,6 +727,7 @@ def rename_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     invalidate_columns_cache(opts, board_id)
+    invalidate_entity(opts, "board_details", scope=str(board_id))
     opts.emit(data.get("change_column_title") or {})
 
 
@@ -748,6 +754,7 @@ def change_metadata_cmd(
     }
     data = execute(opts, COLUMN_CHANGE_METADATA, variables)
     invalidate_columns_cache(opts, board_id)
+    invalidate_entity(opts, "board_details", scope=str(board_id))
     opts.emit(data.get("change_column_metadata") or {})
 
 
@@ -763,4 +770,5 @@ def delete_cmd(
     variables = {"board": board_id, "col": column_id}
     data = execute(opts, COLUMN_DELETE, variables)
     invalidate_columns_cache(opts, board_id)
+    invalidate_entity(opts, "board_details", scope=str(board_id))
     opts.emit(data.get("delete_column") or {})

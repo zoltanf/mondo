@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
     CREATE_DOC_BLOCK,
@@ -43,6 +43,7 @@ from mondo.api.queries import (
     UPDATE_DOC_BLOCK,
     UPDATE_DOC_NAME,
 )
+from mondo.cli._cache_invalidate import invalidate_all_scopes, invalidate_entity
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
     client_or_exit,
@@ -545,12 +546,38 @@ def get_cmd(
         "--with-url",
         help="(No-op for docs — `url` is always present in the payload.)",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the per-doc blocks cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the per-doc blocks cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """Fetch a single doc by id or object_id, with its full block tree."""
+    """Fetch a single doc by id or object_id, with its full block tree.
+
+    Served from `docs_blocks/<doc_id>.json` (default TTL 5m — set via
+    `MONDO_CACHE_TTL_DOCS_BLOCKS`). `--object-id` callers resolve to
+    `doc_id` via the existing docs directory cache so both paths share
+    one on-disk cache key.
+    """
+    from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
     from mondo.cli._normalize import normalize_doc_entry
     from mondo.docs import blocks_to_markdown
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
@@ -579,14 +606,45 @@ def get_cmd(
 
     if opts.dry_run:
         dry_run_and_exit(opts, query, variables)
+    cfg = opts.resolve_cache_config()
+    use_cache = cfg.enabled and not no_cache
+
     client = client_or_exit(opts)
+    doc: dict[str, Any] | None
     try:
         with client:
-            doc = (
-                _fetch_doc_by_id_all_blocks(client, doc_id)
-                if doc_id is not None
-                else _fetch_doc_by_object_id_all_blocks(client, object_id or 0)
-            )
+            if use_cache:
+                resolved_doc_id = doc_id if doc_id is not None else _resolve_doc_id_from_object_id(
+                    opts, client, object_id or 0
+                )
+            else:
+                resolved_doc_id = None
+
+            if use_cache and resolved_doc_id is not None:
+                from mondo.cache.directory import get_doc_blocks
+
+                store = opts.build_cache_store(
+                    "docs_blocks", scope=str(resolved_doc_id)
+                )
+                try:
+                    cached = get_doc_blocks(
+                        client,
+                        store=store,
+                        doc_id=resolved_doc_id,
+                        refresh=refresh_cache,
+                    )
+                    emit_cache_provenance(
+                        opts, cached, store=store, explain=explain_cache
+                    )
+                    doc = cached.entries[0] if cached.entries else None
+                except NotFoundError:
+                    doc = None
+            else:
+                doc = (
+                    _fetch_doc_by_id_all_blocks(client, doc_id)
+                    if doc_id is not None
+                    else _fetch_doc_by_object_id_all_blocks(client, object_id or 0)
+                )
             if doc is None:
                 _emit_doc_not_found(client, doc_id=doc_id, object_id=object_id)
                 raise typer.Exit(code=6)
@@ -599,6 +657,31 @@ def get_cmd(
         return
     doc = normalize_doc_entry(doc)
     opts.emit(doc)
+
+
+def _resolve_doc_id_from_object_id(
+    opts: GlobalOpts, client: MondayClient, object_id: int
+) -> int | None:
+    """Map a URL-visible `object_id` to its internal `doc_id` via the docs
+    directory cache (auto-populated on miss). Returns None when the
+    object_id isn't visible — the caller falls back to a live fetch.
+    """
+    from mondo.cache.directory import get_docs as _cache_get_docs
+
+    target = str(object_id)
+    store = opts.build_cache_store("docs")
+    try:
+        cached = _cache_get_docs(client, store=store, refresh=False)
+    except MondoError:
+        return None
+    for entry in cached.entries:
+        if str(entry.get("object_id")) == target:
+            raw = entry.get("id")
+            try:
+                return int(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 def _emit_doc_not_found(
@@ -718,6 +801,8 @@ def add_block_cmd(
             )
     except MondoError as e:
         handle_mondo_error_or_exit(e)
+
+    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
     opts.emit(data.get("create_doc_block") or {})
 
 
@@ -772,6 +857,8 @@ def add_content_cmd(
             created = create_blocks(client, doc_id, blocks, after_block_id=prev_id)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
+
+    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
     opts.emit(created)
 
 
@@ -785,10 +872,12 @@ def add_markdown_cmd(
     after: str | None = typer.Option(None, "--after", help="Insert after this block ID."),
 ) -> None:
     """Append markdown using monday's server-side markdown parser."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     md = _load_markdown(markdown, from_file, from_stdin)
     variables = {"doc": doc_id, "md": md, "after": after}
     data = execute(opts, ADD_CONTENT_TO_DOC_FROM_MARKDOWN, variables)
+    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
     opts.emit(data.get("add_content_to_doc_from_markdown") or {})
 
 
@@ -809,6 +898,7 @@ def import_html_cmd(
     ),
 ) -> None:
     """Create a new doc by importing HTML content."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     rendered_html = _load_html(html, from_file, from_stdin)
     variables = {
@@ -819,6 +909,9 @@ def import_html_cmd(
         "kind": kind.value if kind else None,
     }
     data = execute(opts, IMPORT_DOC_FROM_HTML, variables)
+    # New doc is created — drop the docs directory so subsequent `doc list`
+    # picks it up. No per-doc-blocks cache to drop (new id).
+    invalidate_entity(opts, "docs")
     opts.emit(data.get("import_doc_from_html") or {})
 
 
@@ -829,8 +922,11 @@ def rename_cmd(
     name: str = typer.Option(..., "--name", help="New document title."),
 ) -> None:
     """Rename a doc."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = execute(opts, UPDATE_DOC_NAME, {"doc": doc_id, "name": name})
+    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+    invalidate_entity(opts, "docs")
     opts.emit(data.get("update_doc_name"))
 
 
@@ -892,8 +988,11 @@ def delete_cmd(
     doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
 ) -> None:
     """Delete a doc."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = execute(opts, DELETE_DOC, {"doc": doc_id})
+    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+    invalidate_entity(opts, "docs")
     opts.emit(data.get("delete_doc"))
 
 
@@ -985,6 +1084,8 @@ def update_block_cmd(
     # what create_doc_block does). We validated the JSON above; now re-stringify.
     variables = {"block": block_id, "content": json.dumps(parsed_content)}
     data = execute(opts, UPDATE_DOC_BLOCK, variables)
+    # Block mutation only carries block_id, not doc_id — wildcard drop.
+    invalidate_all_scopes(opts, "docs_blocks")
     opts.emit(data.get("update_doc_block") or {})
 
 
@@ -999,4 +1100,5 @@ def delete_block_cmd(
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     variables = {"block": block_id}
     data = execute(opts, DELETE_DOC_BLOCK, variables)
+    invalidate_all_scopes(opts, "docs_blocks")
     opts.emit(data.get("delete_doc_block") or {})

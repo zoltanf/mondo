@@ -14,7 +14,7 @@ from typing import Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE
 from mondo.api.queries import (
     BOARD_ARCHIVE,
@@ -541,30 +541,93 @@ def get_cmd(
     poll_until: PollUntilOpt = None,
     poll_interval: PollIntervalOpt = "2s",
     poll_timeout: PollTimeoutOpt = "60s",
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the per-board details cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the per-board details cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """Fetch a single board by ID with columns, groups, and subscribers."""
+    """Fetch a single board by ID with columns, groups, and subscribers.
+
+    Served from the per-board details cache (TTL configurable via
+    `MONDO_CACHE_TTL_BOARD_DETAILS`). `items_count` is always fetched live
+    from a one-field `BOARD_ITEMS_COUNT` query and merged back so the cache
+    doesn't have to be invalidated on every item write. `--with-views` and
+    `--poll-until` bypass the cache entirely.
+    """
     from mondo.api.queries import BOARD_GET_WITH_VIEWS
+    from mondo.cache.directory import get_board_details
+    from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
+    from mondo.cli._field_sets import board_get_fields
     from mondo.cli._normalize import normalize_board_entry
     from mondo.cli._url import board_url, get_tenant_slug, warn_cross_type
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     query = BOARD_GET_WITH_VIEWS if with_views else BOARD_GET
+
+    # Bypass the cache for `--with-views` (different selection) and
+    # `--poll-until` (caller wants live observation), plus any user-driven
+    # `--no-cache`. Cache disabled in config also lands here.
+    cfg = opts.resolve_cache_config()
+    bypass_cache = (
+        not cfg.enabled or no_cache or with_views or poll_until is not None
+    )
 
     def _fetch_once() -> dict | None:
         data = execute(opts, query, {"id": board_id})
         boards = data.get("boards") or []
         return boards[0] if boards else None
 
-    if poll_until is not None:
-        board = poll_or_exit(
-            _fetch_once,
-            expression=poll_until,
-            interval=poll_interval,
-            timeout=poll_timeout,
-        )
+    board: dict | None
+    if bypass_cache:
+        if poll_until is not None:
+            board = poll_or_exit(
+                _fetch_once,
+                expression=poll_until,
+                interval=poll_interval,
+                timeout=poll_timeout,
+            )
+        else:
+            board = _fetch_once()
     else:
-        board = _fetch_once()
+        if opts.dry_run:
+            opts.emit({"query": query, "variables": {"id": board_id}})
+            raise typer.Exit(0)
+
+        client = client_or_exit(opts)
+        store = opts.build_cache_store("board_details", scope=str(board_id))
+        try:
+            with client:
+                cached = get_board_details(
+                    client, store=store, board_id=board_id, refresh=refresh_cache
+                )
+                emit_cache_provenance(
+                    opts, cached, store=store, explain=explain_cache
+                )
+                board = cached.entries[0] if cached.entries else None
+                if board is not None and _projection_wants_items_count(opts):
+                    items_count = _fetch_items_count(client, board_id)
+                    board = {**board, "items_count": items_count}
+        except NotFoundError:
+            board = None
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+
     if board is None:
         typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
@@ -574,9 +637,44 @@ def get_cmd(
         with client:
             board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
     board = normalize_board_entry(board)
-    from mondo.cli._field_sets import board_get_fields
-
     opts.emit(board, selected_fields=board_get_fields(with_views=with_views))
+
+
+def _projection_wants_items_count(opts: GlobalOpts) -> bool:
+    """Skip the live `items_count` merge when the caller's projection won't
+    surface it. Default behavior (no `-q`/`--fields`) returns True so the
+    field stays in the emitted payload as it did pre-cache; with an explicit
+    projection we only pay the round-trip if `items_count` actually appears.
+
+    The check is intentionally lenient (substring): a JMESPath expression
+    or comma-separated field list that mentions `items_count` keeps the
+    merge; anything else skips it. False negatives just mean the cached
+    `items_count: null` flows through — accurate per the cache contract.
+    """
+    needle = "items_count"
+    if opts.query and needle in opts.query:
+        return True
+    if opts.fields and needle in opts.fields:
+        return True
+    return opts.query is None and opts.fields is None
+
+
+def _fetch_items_count(client: Any, board_id: int) -> int | None:
+    """One-field live fetch for the volatile items_count field. Used to merge
+    a fresh count onto a `board_details` cache hit so the cache file stays
+    invalidation-free of item writes. Returns None on any unexpected shape."""
+    from mondo.api.queries import BOARD_ITEMS_COUNT
+    from mondo.cli._exec import exec_or_exit
+
+    data = exec_or_exit(client, BOARD_ITEMS_COUNT, {"ids": [board_id]})
+    boards = data.get("boards") or []
+    if not boards:
+        return None
+    raw = boards[0].get("items_count")
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ----- write commands -----
@@ -647,7 +745,7 @@ def update_cmd(
     value: str = typer.Option(..., "--value", help="New value for the attribute."),
 ) -> None:
     """Update a single board attribute."""
-    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._cache_invalidate import invalidate_board_caches
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
@@ -656,7 +754,7 @@ def update_cmd(
         BOARD_UPDATE,
         {"board": board_id, "attribute": attribute.value, "value": value},
     )
-    invalidate_entity(opts, "boards")
+    invalidate_board_caches(opts, board_id)
     opts.emit(_decode_json_string_payload(data.get("update_board")))
 
 
@@ -673,9 +771,12 @@ def set_permission_cmd(
     ),
 ) -> None:
     """Set the board's default permissions/role."""
+    from mondo.cli._cache_invalidate import invalidate_board_caches
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     data = execute(opts, BOARD_SET_PERMISSION, {"board": board_id, "role": role.value})
+    invalidate_board_caches(opts, board_id)
     opts.emit(data.get("set_board_permission") or {})
 
 
@@ -697,7 +798,7 @@ def move_cmd(
     ),
 ) -> None:
     """Move a board by updating its workspace, folder, product, or position."""
-    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._cache_invalidate import invalidate_board_caches
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
@@ -721,7 +822,7 @@ def move_cmd(
         )
         raise typer.Exit(code=2)
     data = execute(opts, BOARD_UPDATE_HIERARCHY, {"board": board_id, "attributes": attributes})
-    invalidate_entity(opts, "boards")
+    invalidate_board_caches(opts, board_id)
     opts.emit(data.get("update_board_hierarchy") or {})
 
 
@@ -732,14 +833,14 @@ def archive_cmd(
     id_flag: int | None = typer.Option(None, "--id", "--board", help="Board ID (flag form)."),
 ) -> None:
     """Archive a board (reversible via monday UI within 30 days)."""
-    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._cache_invalidate import invalidate_board_caches
     from mondo.cli._confirm import confirm_or_abort as _confirm
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")
     _confirm(opts, f"Archive board {board_id}?")
     data = execute(opts, BOARD_ARCHIVE, {"board": board_id})
-    invalidate_entity(opts, "boards")
+    invalidate_board_caches(opts, board_id)
     opts.emit(data.get("archive_board") or {})
 
 
@@ -753,7 +854,7 @@ def delete_cmd(
     ),
 ) -> None:
     """Delete a board (permanent — prefer `archive` unless --hard is passed)."""
-    from mondo.cli._cache_invalidate import invalidate_entity
+    from mondo.cli._cache_invalidate import invalidate_board_caches
     from mondo.cli._confirm import confirm_or_abort as _confirm
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -768,7 +869,7 @@ def delete_cmd(
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete board {board_id}?")
     data = execute(opts, BOARD_DELETE, {"board": board_id})
-    invalidate_entity(opts, "boards")
+    invalidate_board_caches(opts, board_id)
     opts.emit(data.get("delete_board") or {})
 
 

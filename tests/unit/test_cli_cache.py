@@ -50,7 +50,9 @@ class TestCacheStatus:
         result = runner.invoke(app, ["cache", "status", ])
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
-        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs", "folders"}
+        assert {r["type"] for r in rows} == {
+            "boards", "workspaces", "users", "teams", "docs", "folders", "tags",
+        }
         assert all(r["fresh"] is False for r in rows)
         assert all(r["entries"] is None for r in rows)
 
@@ -283,7 +285,9 @@ class TestCacheColumns:
         result = runner.invoke(app, ["cache", "status"])
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
-        assert {r["type"] for r in rows} == {"boards", "workspaces", "users", "teams", "docs", "folders"}
+        assert {r["type"] for r in rows} == {
+            "boards", "workspaces", "users", "teams", "docs", "folders", "tags",
+        }
 
     def test_status_columns_only_empty_dir(self) -> None:
         result = runner.invoke(app, ["cache", "status", "columns"])

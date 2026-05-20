@@ -12,7 +12,7 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -27,9 +27,17 @@ from mondo.api.queries import (
     TEAMS_LIST,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -168,17 +176,55 @@ def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Team ID (positional)."),
     id_flag: int | None = typer.Option(None, "--id", "--team", help="Team ID (flag form)."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the local teams cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local teams cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """Fetch a single team by ID."""
+    from mondo.cache.directory import get_teams as cache_get_teams
+    from mondo.cli._dir_lookup import lookup_entity_in_directory
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     team_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="team")
-    variables = {"ids": [team_id]}
-    data = execute(opts, TEAMS_LIST, variables)
-    teams = data.get("teams") or []
-    if not teams:
+
+    if opts.dry_run:
+        opts.emit({"query": TEAMS_LIST, "variables": {"ids": [team_id]}})
+        raise typer.Exit(0)
+
+    def _fetch_live(client: MondayClient) -> dict | None:
+        data = exec_or_exit(client, TEAMS_LIST, {"ids": [team_id]})
+        teams = data.get("teams") or []
+        return teams[0] if teams else None
+
+    entry = lookup_entity_in_directory(
+        opts,
+        entity_type="teams",
+        target_id=team_id,
+        no_cache=no_cache,
+        refresh=refresh_cache,
+        fetcher=cache_get_teams,
+        fetch_live=_fetch_live,
+        explain_cache=explain_cache,
+    )
+    if entry is None:
         typer.secho(f"team {team_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(teams[0])
+    opts.emit(entry)
 
 
 # ----- write commands -----

@@ -19,13 +19,20 @@ from mondo.cache.paths import DEFAULT_PROFILE_NAME, cache_dir
 from mondo.cache.store import EntityType
 from mondo.config.schema import (
     DEFAULT_CACHE_FUZZY_THRESHOLD,
+    DEFAULT_CACHE_TTL_BOARD_DETAILS,
     DEFAULT_CACHE_TTL_BOARDS,
     DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_DOCS,
+    DEFAULT_CACHE_TTL_DOCS_BLOCKS,
     DEFAULT_CACHE_TTL_FOLDERS,
     DEFAULT_CACHE_TTL_GROUPS,
+    DEFAULT_CACHE_TTL_ITEMS,
+    DEFAULT_CACHE_TTL_SUBITEMS,
+    DEFAULT_CACHE_TTL_TAGS,
     DEFAULT_CACHE_TTL_TEAMS,
+    DEFAULT_CACHE_TTL_UPDATES,
     DEFAULT_CACHE_TTL_USERS,
+    DEFAULT_CACHE_TTL_WEBHOOKS,
     DEFAULT_CACHE_TTL_WORKSPACES,
     CacheConfig,
     Config,
@@ -49,6 +56,13 @@ class ResolvedCacheConfig:
     ttl_groups: int
     ttl_docs: int
     ttl_folders: int
+    ttl_tags: int
+    ttl_webhooks: int
+    ttl_board_details: int
+    ttl_items: int
+    ttl_subitems: int
+    ttl_updates: int
+    ttl_docs_blocks: int
     fuzzy_threshold: int
 
     def ttl_for(self, entity_type: EntityType) -> int:
@@ -69,6 +83,20 @@ class ResolvedCacheConfig:
                 return self.ttl_docs
             case "folders":
                 return self.ttl_folders
+            case "tags":
+                return self.ttl_tags
+            case "webhooks":
+                return self.ttl_webhooks
+            case "board_details":
+                return self.ttl_board_details
+            case "items":
+                return self.ttl_items
+            case "subitems":
+                return self.ttl_subitems
+            case "updates":
+                return self.ttl_updates
+            case "docs_blocks":
+                return self.ttl_docs_blocks
             case _:
                 raise ValueError(f"unknown entity_type: {entity_type!r}")
 
@@ -161,6 +189,62 @@ def resolve_cache_config(
         profile_cfg=profile_cache,
         env=environ,
     )
+    ttl_tags = _resolve_ttl(
+        "tags",
+        default=DEFAULT_CACHE_TTL_TAGS,
+        env_key="MONDO_CACHE_TTL_TAGS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
+    ttl_webhooks = _resolve_ttl(
+        "webhooks",
+        default=DEFAULT_CACHE_TTL_WEBHOOKS,
+        env_key="MONDO_CACHE_TTL_WEBHOOKS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
+    ttl_board_details = _resolve_ttl(
+        "board_details",
+        default=DEFAULT_CACHE_TTL_BOARD_DETAILS,
+        env_key="MONDO_CACHE_TTL_BOARD_DETAILS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
+    ttl_items = _resolve_ttl(
+        "items",
+        default=DEFAULT_CACHE_TTL_ITEMS,
+        env_key="MONDO_CACHE_TTL_ITEMS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
+    ttl_subitems = _resolve_ttl(
+        "subitems",
+        default=DEFAULT_CACHE_TTL_SUBITEMS,
+        env_key="MONDO_CACHE_TTL_SUBITEMS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
+    ttl_updates = _resolve_ttl(
+        "updates",
+        default=DEFAULT_CACHE_TTL_UPDATES,
+        env_key="MONDO_CACHE_TTL_UPDATES",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
+    ttl_docs_blocks = _resolve_ttl(
+        "docs_blocks",
+        default=DEFAULT_CACHE_TTL_DOCS_BLOCKS,
+        env_key="MONDO_CACHE_TTL_DOCS_BLOCKS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
     fuzzy_threshold = _resolve_fuzzy_threshold(config.cache, profile_cache, environ)
 
     return ResolvedCacheConfig(
@@ -174,6 +258,13 @@ def resolve_cache_config(
         ttl_groups=ttl_groups,
         ttl_docs=ttl_docs,
         ttl_folders=ttl_folders,
+        ttl_tags=ttl_tags,
+        ttl_webhooks=ttl_webhooks,
+        ttl_board_details=ttl_board_details,
+        ttl_items=ttl_items,
+        ttl_subitems=ttl_subitems,
+        ttl_updates=ttl_updates,
+        ttl_docs_blocks=ttl_docs_blocks,
         fuzzy_threshold=fuzzy_threshold,
     )
 

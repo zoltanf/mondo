@@ -17,6 +17,13 @@ DEFAULT_CACHE_TTL_COLUMNS = 3600  # 1h — per-board column definitions
 DEFAULT_CACHE_TTL_GROUPS = 3600  # 1h — per-board group definitions
 DEFAULT_CACHE_TTL_DOCS = 28800  # 8h — same as boards; docs are low-churn
 DEFAULT_CACHE_TTL_FOLDERS = 28800  # 8h
+DEFAULT_CACHE_TTL_TAGS = 86400  # 24h — account-level tags are low-churn
+DEFAULT_CACHE_TTL_WEBHOOKS = 600  # 10m — per-board webhook subscriptions
+DEFAULT_CACHE_TTL_BOARD_DETAILS = 900  # 15m — BOARD_GET payload (minus items_count)
+DEFAULT_CACHE_TTL_ITEMS = 60  # 1m — per-item ITEM_GET payload (volatile)
+DEFAULT_CACHE_TTL_SUBITEMS = 60  # 1m — per-parent subitems list (volatile)
+DEFAULT_CACHE_TTL_UPDATES = 300  # 5m — per-item updates list
+DEFAULT_CACHE_TTL_DOCS_BLOCKS = 300  # 5m — per-doc full block tree
 DEFAULT_CACHE_FUZZY_THRESHOLD = 70
 
 
@@ -31,6 +38,13 @@ class CacheTTLConfig(BaseModel):
     groups: int | None = None
     docs: int | None = None
     folders: int | None = None
+    tags: int | None = None
+    webhooks: int | None = None
+    board_details: int | None = None
+    items: int | None = None
+    subitems: int | None = None
+    updates: int | None = None
+    docs_blocks: int | None = None
 
 
 class CacheFuzzyConfig(BaseModel):

@@ -30,6 +30,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    # Isolate the cache dir so a sibling test's warm `subitems/111.json`
+    # doesn't short-circuit the second invocation in the same-query check.
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
 
 
 def _stub_subitems(httpx_mock: HTTPXMock, subitems: list[dict]) -> None:

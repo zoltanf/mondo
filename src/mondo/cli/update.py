@@ -30,6 +30,7 @@ from mondo.api.queries import (
     UPDATES_FOR_ITEM,
     UPDATES_LIST_PAGE,
 )
+from mondo.cli._cache_invalidate import invalidate_all_scopes, invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, exec_or_exit, execute, handle_mondo_error_or_exit
@@ -122,11 +123,83 @@ def list_cmd(
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many updates total."
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the per-item updates cache (only honored with --item).",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the per-item updates cache (only honored with --item).",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """List updates — account-wide or scoped to a single item."""
+    """List updates — account-wide or scoped to a single item.
+
+    With `--item <id>`, served from `updates/<id>.json` (default TTL 5m —
+    set via `MONDO_CACHE_TTL_UPDATES`). Account-wide listings stay live.
+    """
+    from mondo.api.errors import NotFoundError as _NotFoundError
+    from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
 
     if item_id is not None:
+        cfg = opts.resolve_cache_config()
+        use_cache = (
+            cfg.enabled
+            and not no_cache
+            and max_items is None
+            and limit == MAX_UPDATES_PAGE_SIZE
+        )
+        if use_cache:
+            if opts.dry_run:
+                opts.emit(
+                    {
+                        "query": UPDATES_FOR_ITEM,
+                        "variables": {
+                            "id": item_id,
+                            "limit": MAX_UPDATES_PAGE_SIZE,
+                            "page": "<1..N>",
+                        },
+                    }
+                )
+                raise typer.Exit(0)
+            from mondo.cache.directory import get_updates_for_item
+
+            client = client_or_exit(opts)
+            store = opts.build_cache_store("updates", scope=str(item_id))
+            try:
+                with client:
+                    cached = get_updates_for_item(
+                        client,
+                        store=store,
+                        item_id=item_id,
+                        refresh=refresh_cache,
+                    )
+            except _NotFoundError:
+                typer.secho(
+                    f"item {item_id} not found.",
+                    fg=typer.colors.RED,
+                    err=True,
+                )
+                raise typer.Exit(code=6) from None
+            except MondoError as e:
+                handle_mondo_error_or_exit(e)
+            emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
+            from mondo.cli._field_sets import update_list_fields
+
+            opts.emit(list(cached.entries), selected_fields=update_list_fields())
+            return
         # Single-item path — nested query, single request per page.
         page = 1
         collected: list[dict[str, Any]] = []
@@ -259,11 +332,13 @@ def create_cmd(
     ),
 ) -> None:
     """Post a new update (comment) on an item."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     html_only = _resolve_body_format(markdown=markdown, html=html)
     payload = _load_body(body, from_file, from_stdin, html_only=html_only)
     variables = {"item": item_id, "parent": None, "body": payload}
     data = execute(opts, UPDATE_CREATE, variables)
+    invalidate_entity(opts, "updates", scope=str(item_id))
     opts.emit(data.get("create_update") or {})
 
 
@@ -298,6 +373,9 @@ def reply_cmd(
     payload = _load_body(body, from_file, from_stdin, html_only=html_only)
     variables = {"item": None, "parent": parent_id, "body": payload}
     data = execute(opts, UPDATE_CREATE, variables)
+    # Reply only knows the parent update id, not the item id. Wildcard-drop
+    # so the next `update list --item <id>` re-fetches.
+    invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("create_update") or {})
 
 
@@ -334,6 +412,7 @@ def edit_cmd(
     payload = _load_body(body, from_file, from_stdin, html_only=html_only)
     variables = {"id": update_id, "body": payload}
     data = execute(opts, UPDATE_EDIT, variables)
+    invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("edit_update") or {})
 
 
@@ -349,6 +428,7 @@ def delete_cmd(
     _confirm(opts, f"Delete update {update_id}?")
     variables = {"id": update_id}
     data = execute(opts, UPDATE_DELETE, variables)
+    invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("delete_update") or {})
 
 
@@ -363,6 +443,7 @@ def like_cmd(
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
     data = execute(opts, UPDATE_LIKE, variables)
+    invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("like_update") or {})
 
 
@@ -377,6 +458,7 @@ def unlike_cmd(
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"id": update_id}
     data = execute(opts, UPDATE_UNLIKE, variables)
+    invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("unlike_update") or {})
 
 
@@ -386,10 +468,12 @@ def clear_cmd(
     item_id: int = typer.Option(..., "--item", help="Item whose updates will be cleared."),
 ) -> None:
     """Delete ALL updates on an item."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _confirm(opts, f"Clear ALL updates on item {item_id}?")
     variables = {"item": item_id}
     data = execute(opts, UPDATE_CLEAR_ITEM, variables)
+    invalidate_entity(opts, "updates", scope=str(item_id))
     opts.emit(data.get("clear_item_updates") or {})
 
 
@@ -403,10 +487,15 @@ def pin_cmd(
     ),
 ) -> None:
     """Pin an update to the top of its item's feed."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"item": item_id, "update": update_id}
     data = execute(opts, UPDATE_PIN, variables)
+    if item_id is not None:
+        invalidate_entity(opts, "updates", scope=str(item_id))
+    else:
+        invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("pin_to_top") or {})
 
 
@@ -420,8 +509,13 @@ def unpin_cmd(
     ),
 ) -> None:
     """Unpin an update."""
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     update_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="update")
     variables = {"item": item_id, "update": update_id}
     data = execute(opts, UPDATE_UNPIN, variables)
+    if item_id is not None:
+        invalidate_entity(opts, "updates", scope=str(item_id))
+    else:
+        invalidate_all_scopes(opts, "updates")
     opts.emit(data.get("unpin_from_top") or {})

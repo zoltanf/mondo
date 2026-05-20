@@ -16,20 +16,36 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 
 from mondo.version import __version__
 
-# Bumped to 5: board directory queries now include the nested
-# `workspace { id name }` object alongside `workspace_id`, matching the
-# shape of `BOARD_GET` so JMESPath projections like `[*].workspace.name`
-# work uniformly across `board get` and `board list`. Older caches that
-# only have the scalar `workspace_id` are silently refreshed.
+# SCHEMA_VERSION = 5 since the v5 bump (boards directory gained nested
+# `workspace { id name }`). Adding new entity types — `tags`, `webhooks`,
+# and any future per-entity caches — does NOT bump the schema, since the
+# shape of existing envelopes is unchanged. Only bump when an existing
+# entity's serialized shape changes.
 SCHEMA_VERSION = 5
 
-EntityType = str  # "boards" | "workspaces" | "users" | "teams" | "columns" | "groups" | "docs" | "folders"
+EntityType = Literal[
+    "boards",
+    "workspaces",
+    "users",
+    "teams",
+    "columns",
+    "groups",
+    "docs",
+    "folders",
+    "tags",
+    "webhooks",
+    "board_details",
+    "items",
+    "subitems",
+    "updates",
+    "docs_blocks",
+]
 
 
 @dataclass

@@ -11,7 +11,7 @@ Per monday-api.md §14:
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -23,10 +23,18 @@ from mondo.api.queries import (
     FOLDER_UPDATE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -340,21 +348,58 @@ def get_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Folder ID (positional)."),
     id_flag: int | None = typer.Option(None, "--id", "--folder", help="Folder ID (flag form)."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the local folders cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local folders cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """Fetch a single folder by ID."""
+    from mondo.cache.directory import get_folders as cache_get_folders
+    from mondo.cli._dir_lookup import lookup_entity_in_directory
+    from mondo.cli._field_sets import folder_get_fields
     from mondo.cli._normalize import normalize_folder_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")
-    variables = {"ids": [folder_id]}
-    data = execute(opts, FOLDER_GET, variables)
-    folders = data.get("folders") or []
-    if not folders:
+
+    if opts.dry_run:
+        opts.emit({"query": FOLDER_GET, "variables": {"ids": [folder_id]}})
+        raise typer.Exit(0)
+
+    def _fetch_live(client: MondayClient) -> dict | None:
+        data = exec_or_exit(client, FOLDER_GET, {"ids": [folder_id]})
+        folders = data.get("folders") or []
+        return normalize_folder_entry(folders[0]) if folders else None
+
+    entry = lookup_entity_in_directory(
+        opts,
+        entity_type="folders",
+        target_id=folder_id,
+        no_cache=no_cache,
+        refresh=refresh_cache,
+        fetcher=cache_get_folders,
+        fetch_live=_fetch_live,
+        explain_cache=explain_cache,
+    )
+    if entry is None:
         typer.secho(f"folder {folder_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    from mondo.cli._field_sets import folder_get_fields
 
-    opts.emit(normalize_folder_entry(folders[0]), selected_fields=folder_get_fields())
+    opts.emit(entry, selected_fields=folder_get_fields())
 
 
 # ----- write commands -----

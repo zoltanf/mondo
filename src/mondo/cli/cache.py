@@ -1,5 +1,6 @@
 """`mondo cache` command group: inspect, refresh, and clear the local
-directory cache for boards/workspaces/users/teams/docs/folders/columns/groups."""
+directory cache for boards/workspaces/users/teams/docs/folders/columns/groups/
+tags/webhooks."""
 
 from __future__ import annotations
 
@@ -12,13 +13,16 @@ import typer
 
 from mondo.api.errors import MondoError
 from mondo.cache.directory import (
+    get_board_details,
     get_boards,
     get_columns,
     get_docs,
     get_folders,
     get_groups,
+    get_tags,
     get_teams,
     get_users,
+    get_webhooks,
     get_workspaces,
 )
 from mondo.cache.store import CacheStore
@@ -41,11 +45,31 @@ class CacheType(StrEnum):
     folders = "folders"
     columns = "columns"
     groups = "groups"
+    tags = "tags"
+    webhooks = "webhooks"
+    board_details = "board_details"
+    items = "items"
+    subitems = "subitems"
+    updates = "updates"
+    docs_blocks = "docs_blocks"
     all = "all"
 
 
-_SINGLE_FILE_TYPES: tuple[str, ...] = ("boards", "workspaces", "users", "teams", "docs", "folders")
-_SCOPED_TYPES: tuple[str, ...] = ("columns", "groups")
+_SINGLE_FILE_TYPES: tuple[str, ...] = (
+    "boards", "workspaces", "users", "teams", "docs", "folders", "tags",
+)
+# Per-board scoped types accept `--board` for explicit refresh/clear.
+_BOARD_SCOPED_TYPES: tuple[str, ...] = (
+    "columns", "groups", "webhooks", "board_details",
+)
+# Per-item / per-doc scoped types: status and clear work over the cache
+# directory; refresh requires re-reading via the CLI command itself, since
+# only the calling site knows the right item / doc id.
+_ITEM_SCOPED_TYPES: tuple[str, ...] = ("items", "subitems", "updates")
+_DOC_SCOPED_TYPES: tuple[str, ...] = ("docs_blocks",)
+_SCOPED_TYPES: tuple[str, ...] = (
+    *_BOARD_SCOPED_TYPES, *_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES,
+)
 _ALL_TYPES: tuple[str, ...] = (*_SINGLE_FILE_TYPES, *_SCOPED_TYPES)
 
 _REFRESH_DISPATCH = {
@@ -55,6 +79,7 @@ _REFRESH_DISPATCH = {
     "teams": get_teams,
     "docs": get_docs,
     "folders": get_folders,
+    "tags": get_tags,
 }
 
 
@@ -180,7 +205,7 @@ def refresh_cmd(
         [],
         "--board",
         help=(
-            "Board id(s) to refresh (columns/groups only; repeatable). "
+            "Board id(s) to refresh (columns/groups/webhooks only; repeatable). "
             "Omit to refresh every board already present in the selected scoped cache."
         ),
     ),
@@ -193,14 +218,32 @@ def refresh_cmd(
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     types = _resolve_types(cache_type)
+    refreshable_scoped = set(_BOARD_SCOPED_TYPES)
 
-    if boards and not any(t in _SCOPED_TYPES for t in types):
+    if boards and not any(t in refreshable_scoped for t in types):
         typer.secho(
-            "error: --board only applies when refreshing `columns` or `groups`.",
+            "error: --board only applies when refreshing "
+            "`columns`, `groups`, `webhooks`, or `board_details`.",
             fg=typer.colors.RED,
             err=True,
         )
         raise typer.Exit(code=2)
+
+    # `cache refresh` for per-item / per-doc caches isn't supported here —
+    # use the read command's `--refresh-cache` flag instead, since only the
+    # calling site knows the right item / doc id. Silently skip them when
+    # `all` was selected; raise on an explicit ask.
+    unsupported = [t for t in types if t in (*_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES)]
+    if unsupported and cache_type is not CacheType.all:
+        typer.secho(
+            f"error: `cache refresh {cache_type.value}` isn't supported. "
+            "Use the read command's --refresh-cache flag for items/subitems/"
+            "updates/docs_blocks (each needs a specific id).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    types = [t for t in types if t not in (*_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES)]
 
     if opts.dry_run:
         dry: list[dict[str, Any]] = []
@@ -259,6 +302,8 @@ def _for_each_board_scope(
 _SCOPED_REFRESH_DISPATCH = {
     "columns": get_columns,
     "groups": get_groups,
+    "webhooks": get_webhooks,
+    "board_details": get_board_details,
 }
 
 
@@ -290,7 +335,7 @@ def clear_cmd(
         [],
         "--board",
         help=(
-            "Board id(s) to clear (columns/groups only; repeatable). "
+            "Board id(s) to clear (columns/groups/webhooks only; repeatable). "
             "Omit to clear every per-board scoped cache for the selected types."
         ),
     ),
@@ -303,9 +348,10 @@ def clear_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     types = _resolve_types(cache_type)
 
-    if boards and not any(t in _SCOPED_TYPES for t in types):
+    if boards and not any(t in _BOARD_SCOPED_TYPES for t in types):
         typer.secho(
-            "error: --board only applies when clearing `columns` or `groups`.",
+            "error: --board only applies when clearing `columns`, `groups`, "
+            "`webhooks`, or `board_details`.",
             fg=typer.colors.RED,
             err=True,
         )

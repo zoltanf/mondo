@@ -18,14 +18,17 @@ from typing import Any
 
 import typer
 
+from mondo.api.errors import MondoError
 from mondo.api.queries import (
     WEBHOOK_CREATE,
     WEBHOOK_DELETE,
     WEBHOOKS_LIST,
 )
+from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
+from mondo.cli._cache_invalidate import invalidate_all_scopes, invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import execute
+from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -51,10 +54,64 @@ def list_cmd(
         "--app-only",
         help="Restrict to webhooks created by the calling app (vs. all webhooks).",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the local webhooks cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local webhooks cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """List webhooks on a board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
+
+    if opts.dry_run:
+        opts.emit(
+            {
+                "query": WEBHOOKS_LIST,
+                "variables": {"board": board_id, "appOnly": True if app_only else None},
+            }
+        )
+        raise typer.Exit(0)
+
+    cfg = opts.resolve_cache_config()
+    use_cache = cfg.enabled and not no_cache
+    # `--app-only` is applied client-side on cached reads. We cannot
+    # cheaply tell whether a webhook was created by the calling app from
+    # the unscoped response, so when `--app-only` is set we bypass the
+    # cache to preserve correctness over performance.
+    if use_cache and app_only:
+        use_cache = False
+
+    if use_cache:
+        from mondo.cache.directory import get_webhooks as cache_get_webhooks
+
+        store = opts.build_cache_store("webhooks", scope=str(board_id))
+        client = client_or_exit(opts)
+        try:
+            with client:
+                cached = cache_get_webhooks(
+                    client, store=store, board_id=board_id, refresh=refresh_cache
+                )
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+        emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
+        opts.emit(list(cached.entries))
+        return
+
     variables = {"board": board_id, "appOnly": True if app_only else None}
     data = execute(opts, WEBHOOKS_LIST, variables)
     opts.emit(data.get("webhooks") or [])
@@ -101,6 +158,7 @@ def create_cmd(
         "config": parsed_config,
     }
     data = execute(opts, WEBHOOK_CREATE, variables)
+    invalidate_entity(opts, "webhooks", scope=str(board_id))
     opts.emit(data.get("create_webhook") or {})
 
 
@@ -116,4 +174,8 @@ def delete_cmd(
     _confirm(opts, f"Delete webhook {webhook_id}?")
     variables = {"id": webhook_id}
     data = execute(opts, WEBHOOK_DELETE, variables)
+    # `webhook delete` only carries the webhook id, not its board id —
+    # wildcard-drop every per-board webhooks cache. Webhooks change rarely
+    # so re-warming costs ~one round-trip per board next time.
+    invalidate_all_scopes(opts, "webhooks")
     opts.emit(data.get("delete_webhook") or {})

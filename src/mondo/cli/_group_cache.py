@@ -22,13 +22,17 @@ if TYPE_CHECKING:
 def invalidate_groups_cache(opts: GlobalOpts, board_id: int) -> None:
     """Drop the per-board groups cache file after a successful mutation.
 
-    Best-effort — cache is a perf optimization, never fail a mutation because
-    of it. Skipped on `--dry-run` since no state changed.
+    Also drops the per-board `board_details/<board_id>` cache because
+    `BOARD_GET` projects nested `groups { id title color position archived }`
+    — any group create/update/reorder/delete changes that array. Best-effort;
+    never fails a mutation. Skipped on `--dry-run`.
     """
     if opts.dry_run:
         return
     with contextlib.suppress(Exception):
         opts.build_cache_store("groups", scope=str(board_id)).invalidate()
+    with contextlib.suppress(Exception):
+        opts.build_cache_store("board_details", scope=str(board_id)).invalidate()
 
 
 def fetch_board_groups(

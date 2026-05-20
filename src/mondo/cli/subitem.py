@@ -112,9 +112,68 @@ def _build_column_values(
 def list_cmd(
     ctx: typer.Context,
     parent_id: int = typer.Option(..., "--parent", help="Parent item ID."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the per-parent subitems cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the per-parent subitems cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """List all subitems of a parent item."""
+    """List all subitems of a parent item.
+
+    Served from `subitems/<parent_id>.json` (default TTL 60s — set via
+    `MONDO_CACHE_TTL_SUBITEMS`).
+    """
+    from mondo.api.errors import NotFoundError as _NotFoundError
+    from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    cfg = opts.resolve_cache_config()
+    use_cache = cfg.enabled and not no_cache
+
+    if opts.dry_run:
+        opts.emit({"query": SUBITEMS_LIST, "variables": {"parent": parent_id}})
+        raise typer.Exit(0)
+
+    if use_cache:
+        from mondo.cache.directory import get_subitems
+
+        client = client_or_exit(opts)
+        store = opts.build_cache_store("subitems", scope=str(parent_id))
+        try:
+            with client:
+                cached = get_subitems(
+                    client,
+                    store=store,
+                    parent_item_id=parent_id,
+                    refresh=refresh_cache,
+                )
+        except _NotFoundError:
+            typer.secho(
+                f"parent item {parent_id} not found.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=6) from None
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+        emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
+        opts.emit(list(cached.entries))
+        return
+
     variables = {"parent": parent_id}
     data = execute(opts, SUBITEMS_LIST, variables)
     items = data.get("items") or []
@@ -145,17 +204,72 @@ def get_cmd(
         "--with-url",
         help="Include the subitem's canonical monday.com URL in the emitted payload.",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the per-item cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the per-item cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """Fetch a single subitem by ID (same shape as `item get`)."""
+    """Fetch a single subitem by ID (same shape as `item get`).
+
+    Reuses the `items/<id>.json` cache because monday's `ITEM_GET` returns
+    the same shape for items and subitems.
+    """
+    from mondo.api.errors import NotFoundError as _NotFoundError
+    from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"id": subitem_id}
-    data = execute(opts, ITEM_GET, variables)
-    items = data.get("items") or []
-    if not items:
+
+    if opts.dry_run:
+        opts.emit({"query": ITEM_GET, "variables": variables})
+        raise typer.Exit(0)
+
+    cfg = opts.resolve_cache_config()
+    use_cache = cfg.enabled and not no_cache
+
+    item: dict | None
+    if use_cache:
+        from mondo.cache.directory import get_item
+
+        client = client_or_exit(opts)
+        store = opts.build_cache_store("items", scope=str(subitem_id))
+        try:
+            with client:
+                cached = get_item(
+                    client, store=store, item_id=subitem_id, refresh=refresh_cache
+                )
+                emit_cache_provenance(
+                    opts, cached, store=store, explain=explain_cache
+                )
+                item = cached.entries[0] if cached.entries else None
+        except _NotFoundError:
+            item = None
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+    else:
+        data = execute(opts, ITEM_GET, variables)
+        items = data.get("items") or []
+        item = items[0] if items else None
+
+    if item is None:
         typer.secho(f"subitem {subitem_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    item = items[0]
     if not with_url:
         item.pop("url", None)
     opts.emit(item)
@@ -230,6 +344,9 @@ def create_cmd(
     if create_labels_if_missing and subitems_board is not None:
         # May have minted a status/dropdown label on the subitems board.
         invalidate_columns_cache(opts, subitems_board)
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "subitems", scope=str(parent_id))
     opts.emit(data.get("create_subitem") or {})
 
 
@@ -242,10 +359,13 @@ def rename_cmd(
     name: str = typer.Option(..., "--name", help="New title."),
 ) -> None:
     """Rename a subitem (writes the `name` column via change_simple_column_value)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"board": board_id, "id": subitem_id, "name": name}
     data = execute(opts, ITEM_RENAME, variables)
+    invalidate_entity(opts, "items", scope=str(subitem_id))
     opts.emit(data.get("change_simple_column_value") or {})
 
 
@@ -264,10 +384,13 @@ def move_cmd(
     ),
 ) -> None:
     """Move a subitem to a different subitems group."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     variables = {"id": subitem_id, "group": group_id}
     data = execute(opts, ITEM_MOVE_GROUP, variables)
+    invalidate_entity(opts, "items", scope=str(subitem_id))
     opts.emit(data.get("move_item_to_group") or {})
 
 
@@ -278,11 +401,14 @@ def archive_cmd(
     id_flag: int | None = typer.Option(None, "--id", "--subitem", help="Subitem ID (flag form)."),
 ) -> None:
     """Archive a subitem (reversible)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     subitem_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="subitem")
     _confirm(opts, f"Archive subitem {subitem_id}?")
     variables = {"id": subitem_id}
     data = execute(opts, ITEM_ARCHIVE, variables)
+    invalidate_entity(opts, "items", scope=str(subitem_id))
     opts.emit(data.get("archive_item") or {})
 
 
@@ -307,4 +433,7 @@ def delete_cmd(
     _confirm(opts, f"PERMANENTLY delete subitem {subitem_id}?")
     variables = {"id": subitem_id}
     data = execute(opts, ITEM_DELETE, variables)
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "items", scope=str(subitem_id))
     opts.emit(data.get("delete_item") or {})

@@ -35,6 +35,10 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("MONDAY_API_VERSION", raising=False)
     monkeypatch.setenv("MONDO_CONFIG", str(tmp_path / "nope.yaml"))
     monkeypatch.setenv("MONDAY_API_TOKEN", "env-token-abcdef-long-enough")
+    # Isolate the cache dir per-test so a stale cache from another test
+    # never short-circuits a contract assertion that depends on the live
+    # HTTP path being exercised.
+    monkeypatch.setenv("MONDO_CACHE_DIR", str(tmp_path / "cache"))
 
 
 def _ok(data: dict) -> dict:

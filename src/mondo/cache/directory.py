@@ -14,15 +14,32 @@ from mondo.api.client import MondayClient
 from mondo.api.errors import NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
 from mondo.api.queries import (
+    BOARD_GET,
     COLUMNS_ON_BOARD,
+    DOC_GET_BY_ID_BLOCKS_PAGE,
     GROUPS_LIST,
+    ITEM_GET,
+    SUBITEMS_LIST,
+    TAGS_LIST,
     TEAMS_LIST,
+    UPDATES_FOR_ITEM,
     USERS_LIST_PAGE,
+    WEBHOOKS_LIST,
     WORKSPACES_LIST_PAGE,
     build_boards_list_query,
     build_docs_list_query,
     build_folders_list_query,
 )
+
+# Block-fetch page size for `get_doc_blocks` — picked to match the existing
+# CLI default in `mondo/cli/doc.py`. Doc bodies can be hundreds of blocks;
+# 50/page keeps any one round-trip well under monday's complexity cap.
+_DOC_BLOCKS_PAGE_SIZE = 50
+
+# Updates-fetch page size for `get_updates_for_item` — mirrors the CLI's
+# `MAX_UPDATES_PAGE_SIZE` (25). Updates change less than items but pages
+# are smaller server-side.
+_UPDATES_PAGE_SIZE = 25
 from mondo.cache.store import CachedDirectory, CacheStore
 from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
 
@@ -316,3 +333,256 @@ def _fetch_board_groups(client: MondayClient, board_id: int) -> list[dict[str, A
     if not isinstance(groups, list):
         return []
     return groups
+
+
+def get_tags(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return account-level public tags. `TAGS_LIST` is unpaginated."""
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_all_tags(client)
+    return store.write(entries)
+
+
+def _fetch_all_tags(client: MondayClient) -> list[dict[str, Any]]:
+    result = client.execute(TAGS_LIST, {"ids": None})
+    data = result.get("data") or {}
+    tags = data.get("tags") or []
+    if not isinstance(tags, list):
+        return []
+    return tags
+
+
+def get_webhooks(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    board_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return webhooks subscribed on `board_id`, cached per-board.
+
+    Always fetches the unscoped set (no `app_only` filter) so the cache is
+    reusable for both `webhook list` and `webhook list --app-only`; the
+    `--app-only` filter is applied client-side on read.
+    """
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_board_webhooks(client, board_id)
+    return store.write(entries)
+
+
+def _fetch_board_webhooks(
+    client: MondayClient, board_id: int
+) -> list[dict[str, Any]]:
+    result = client.execute(WEBHOOKS_LIST, {"board": board_id, "appOnly": None})
+    data = result.get("data") or {}
+    webhooks = data.get("webhooks") or []
+    if not isinstance(webhooks, list):
+        return []
+    return webhooks
+
+
+def get_board_details(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    board_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the cached `BOARD_GET` payload for `board_id`.
+
+    The cached envelope's `entries` list always has exactly one item — the
+    board record. `items_count` is stripped before write so this cache
+    doesn't have to be invalidated on every item mutation; callers that
+    project `items_count` merge it back from a live `BOARD_ITEMS_COUNT`
+    one-field query.
+
+    Raises NotFoundError when the board isn't visible.
+    """
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    record = _fetch_board_details(client, board_id)
+    return store.write([record])
+
+
+def _fetch_board_details(
+    client: MondayClient, board_id: int
+) -> dict[str, Any]:
+    result = client.execute(BOARD_GET, {"id": board_id})
+    data = result.get("data") or {}
+    boards = data.get("boards") or []
+    if not boards:
+        raise NotFoundError(f"board {board_id} not found")
+    record = dict(boards[0])
+    # `items_count` lives on a separate live query (BOARD_ITEMS_COUNT) so the
+    # cache file is not invalidated on every item write. Strip it here to
+    # keep the on-disk shape consistent regardless of what the API returned.
+    record.pop("items_count", None)
+    return record
+
+
+def get_item(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    item_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the cached `ITEM_GET` payload for `item_id`.
+
+    The cached envelope holds exactly one entry. Subitems share this cache
+    because monday's `ITEM_GET` returns the same shape for items and
+    subitems. Short-TTL by default (60s) — `--refresh-cache` always
+    reaches the wire.
+    """
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    record = _fetch_item(client, item_id)
+    return store.write([record])
+
+
+def _fetch_item(client: MondayClient, item_id: int) -> dict[str, Any]:
+    result = client.execute(ITEM_GET, {"id": item_id})
+    data = result.get("data") or {}
+    items = data.get("items") or []
+    if not items:
+        raise NotFoundError(f"item {item_id} not found")
+    return dict(items[0])
+
+
+def get_subitems(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    parent_item_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the cached subitems list for `parent_item_id`."""
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_subitems(client, parent_item_id)
+    return store.write(entries)
+
+
+def _fetch_subitems(
+    client: MondayClient, parent_item_id: int
+) -> list[dict[str, Any]]:
+    result = client.execute(SUBITEMS_LIST, {"parent": parent_item_id})
+    data = result.get("data") or {}
+    items = data.get("items") or []
+    if not items:
+        raise NotFoundError(f"parent item {parent_item_id} not found")
+    subitems = items[0].get("subitems") or []
+    if not isinstance(subitems, list):
+        return []
+    return subitems
+
+
+def get_updates_for_item(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    item_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the cached updates list for `item_id`."""
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    entries = _fetch_updates_for_item(client, item_id)
+    return store.write(entries)
+
+
+def _fetch_updates_for_item(
+    client: MondayClient, item_id: int
+) -> list[dict[str, Any]]:
+    page = 1
+    collected: list[dict[str, Any]] = []
+    while True:
+        result = client.execute(
+            UPDATES_FOR_ITEM,
+            {"id": item_id, "limit": _UPDATES_PAGE_SIZE, "page": page},
+        )
+        data = result.get("data") or {}
+        items = data.get("items") or []
+        if not items:
+            if page == 1:
+                raise NotFoundError(f"item {item_id} not found")
+            break
+        updates = items[0].get("updates") or []
+        if not updates:
+            break
+        collected.extend(updates)
+        if len(updates) < _UPDATES_PAGE_SIZE:
+            break
+        page += 1
+    return collected
+
+
+def get_doc_blocks(
+    client: MondayClient,
+    *,
+    store: CacheStore,
+    doc_id: int,
+    refresh: bool = False,
+) -> CachedDirectory:
+    """Return the cached doc payload (with merged block tree) for `doc_id`.
+
+    The cached envelope holds exactly one entry — the doc dict including a
+    `blocks: [...]` list spanning every paginated page. Cache key is always
+    the internal `doc_id`; callers using `--object-id` must resolve to a
+    `doc_id` first (e.g. via the `docs.json` directory cache).
+    """
+    if not refresh:
+        cached = store.read()
+        if cached is not None:
+            return cached
+    record = _fetch_doc_with_blocks_by_id(client, doc_id)
+    if record is None:
+        raise NotFoundError(f"doc {doc_id} not found")
+    return store.write([record])
+
+
+def _fetch_doc_with_blocks_by_id(
+    client: MondayClient, doc_id: int
+) -> dict[str, Any] | None:
+    page = 1
+    merged: dict[str, Any] | None = None
+    all_blocks: list[dict[str, Any]] = []
+    while True:
+        result = client.execute(
+            DOC_GET_BY_ID_BLOCKS_PAGE,
+            {"ids": [doc_id], "limit": _DOC_BLOCKS_PAGE_SIZE, "page": page},
+        )
+        data = result.get("data") or {}
+        docs = data.get("docs") or []
+        if not docs:
+            return None
+        doc = docs[0]
+        page_blocks = doc.get("blocks") or []
+        if merged is None:
+            merged = {k: v for k, v in doc.items() if k != "blocks"}
+        if isinstance(page_blocks, list):
+            all_blocks.extend(page_blocks)
+        if len(page_blocks) < _DOC_BLOCKS_PAGE_SIZE:
+            break
+        page += 1
+    assert merged is not None
+    merged["blocks"] = all_blocks
+    return merged

@@ -39,9 +39,12 @@ monday's [complexity counters](https://developer.monday.com/api-reference/docs/c
 feeding a session-local meter (`mondo complexity status`) so you never blow
 through the per-minute budget mid-script.
 
-**Local directory cache.** Boards, workspaces, users, and teams are cached on
-disk with per-entity TTLs. Repeat `list` calls and fuzzy name matches
-(`--name-fuzzy "prodct launc"`) don't re-walk the API.
+**Local on-disk cache.** Boards, workspaces, users, teams, docs, folders,
+columns, groups, tags, webhooks, per-board details, and short-TTL per-item /
+per-doc payloads are cached with per-entity TTLs. Repeat `list`/`get` calls
+and fuzzy name matches (`--name-fuzzy "prodct launc"`) don't re-walk the API;
+every read command exposes `--refresh-cache` and `--no-cache` for explicit
+control.
 
 **Multi-profile, keyring-backed auth.** Token can live in the OS keyring
 (macOS Keychain / Windows Credential Manager / libsecret), an env var, or
@@ -845,21 +848,24 @@ Pick a profile with `--profile work` or `MONDO_PROFILE=work`.
 
 ## Caching
 
-`mondo` caches the boards / workspaces / users / teams directory on disk so
-repeat `list` calls and name filters don't re-walk the monday API. The cache
-lives at `$XDG_CACHE_HOME/mondo/<profile>/` with per-entity TTLs (boards 8h,
-others 24h). Inspect or manage it:
+`mondo` caches reads on disk so repeat `list`/`get` calls and name filters
+don't re-walk the monday API. The cache lives at
+`$XDG_CACHE_HOME/mondo/<profile>/` with per-entity TTLs spanning long-lived
+directories (boards/workspaces/users/teams/docs/folders/tags) and short-TTL
+detail caches (per-board details, per-item, per-doc — 60 s to 15 m). Inspect
+or manage it:
 
 ```bash
-mondo cache status            # age, freshness, entry count per type
-mondo cache refresh boards    # force-refetch the boards directory
-mondo cache clear             # drop every cache file
+mondo cache status                   # age, freshness, entry count per type
+mondo cache refresh boards           # force-refetch the boards directory
+mondo cache refresh columns --board 42   # refresh one board's columns
+mondo cache clear items              # drop every per-item cache file
 ```
 
-Per-command escape hatches: `--no-cache` (skip) and `--refresh-cache` (force
-refetch). Fuzzy name matching (`--name-fuzzy "prodct launc"`) is available on
-all four list commands now that the directory is resident. Full contract:
-[`docs/caching.md`](docs/caching.md).
+Per-command escape hatches on every cached read: `--no-cache` (skip) and
+`--refresh-cache` (force refetch). Fuzzy name matching
+(`--name-fuzzy "prodct launc"`) is available on the list commands whose
+directory is resident. Full contract: [`docs/caching.md`](docs/caching.md).
 
 ---
 

@@ -260,9 +260,36 @@ def get_cmd(
     poll_until: PollUntilOpt = None,
     poll_interval: PollIntervalOpt = "2s",
     poll_timeout: PollTimeoutOpt = "60s",
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the per-item cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the per-item cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """Fetch a single item by ID or pulses URL."""
+    """Fetch a single item by ID or pulses URL.
+
+    Plain `item get` is served from a short-TTL per-item cache
+    (`items/<item_id>.json`, default TTL 60s — set via
+    `MONDO_CACHE_TTL_ITEMS`). `--include-updates`, `--include-subitems`,
+    and `--poll-until` bypass the cache (different shape / live observation).
+    """
+    from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     if include_updates and include_subitems:
         typer.secho(
@@ -278,20 +305,53 @@ def get_cmd(
     else:
         query = ITEM_GET
 
+    cfg = opts.resolve_cache_config()
+    bypass_cache = (
+        not cfg.enabled
+        or no_cache
+        or include_updates
+        or include_subitems
+        or poll_until is not None
+    )
+
     def _fetch_once() -> dict[str, Any] | None:
         data = execute(opts, query, {"id": item_id})
         items = data.get("items") or []
         return items[0] if items else None
 
-    if poll_until is not None:
-        item = poll_or_exit(
-            _fetch_once,
-            expression=poll_until,
-            interval=poll_interval,
-            timeout=poll_timeout,
-        )
+    item: dict[str, Any] | None
+    if bypass_cache:
+        if poll_until is not None:
+            item = poll_or_exit(
+                _fetch_once,
+                expression=poll_until,
+                interval=poll_interval,
+                timeout=poll_timeout,
+            )
+        else:
+            item = _fetch_once()
     else:
-        item = _fetch_once()
+        if opts.dry_run:
+            opts.emit({"query": query, "variables": {"id": item_id}})
+            raise typer.Exit(0)
+        from mondo.cache.directory import get_item
+
+        client = client_or_exit(opts)
+        store = opts.build_cache_store("items", scope=str(item_id))
+        try:
+            with client:
+                cached = get_item(
+                    client, store=store, item_id=item_id, refresh=refresh_cache
+                )
+                emit_cache_provenance(
+                    opts, cached, store=store, explain=explain_cache
+                )
+                item = cached.entries[0] if cached.entries else None
+        except NotFoundError:
+            item = None
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+
     if item is None:
         typer.secho(f"item {item_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
@@ -983,6 +1043,9 @@ def rename_cmd(
             data = exec_or_exit(client, ITEM_RENAME, variables)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "items", scope=str(resolved_item))
     opts.emit(data.get("change_simple_column_value") or {})
 
 
@@ -1014,10 +1077,13 @@ def archive_cmd(
     id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
 ) -> None:
     """Archive an item (reversible via monday UI within 30 days)."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     _confirm(opts, f"Archive item {item_id}?")
     data = execute(opts, ITEM_ARCHIVE, {"id": item_id})
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("archive_item") or {})
 
 
@@ -1043,6 +1109,9 @@ def delete_cmd(
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete item {item_id}?")
     data = execute(opts, ITEM_DELETE, {"id": item_id})
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("delete_item") or {})
 
 
@@ -1053,8 +1122,11 @@ def move_cmd(
     group_id: str = typer.Option(..., "--group", help="Target group ID within the same board."),
 ) -> None:
     """Move an item to a different group within the same board."""
+    from mondo.cli._cache_invalidate import invalidate_entity
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = execute(opts, ITEM_MOVE_GROUP, {"id": item_id, "group": group_id})
+    invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("move_item_to_group") or {})
 
 

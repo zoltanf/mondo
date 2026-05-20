@@ -7,7 +7,7 @@ Main Workspace cannot be deleted. Uses page-based pagination like boards.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -25,9 +25,18 @@ from mondo.api.queries import (
     WORKSPACES_LIST_PAGE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, execute_read, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    exec_or_exit,
+    execute,
+    execute_read,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -233,16 +242,51 @@ def get_cmd(
         None, metavar="[ID]", help="Workspace ID (positional)."
     ),
     id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Bypass the local workspaces cache; fetch live.",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="Force-refresh the local workspaces cache before serving.",
+        rich_help_panel="Cache",
+    ),
+    explain_cache: bool = typer.Option(
+        False,
+        "--explain-cache",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
     """Fetch a single workspace by ID."""
+    from mondo.cache.directory import get_workspaces as cache_get_workspaces
+    from mondo.cli._dir_lookup import lookup_entity_in_directory
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
-    data = execute_read(opts, WORKSPACE_GET, {"id": workspace_id})
-    workspaces = data.get("workspaces") or []
-    if not workspaces:
+
+    def _fetch_live(client: MondayClient) -> dict | None:
+        data = exec_or_exit(client, WORKSPACE_GET, {"id": workspace_id})
+        workspaces = data.get("workspaces") or []
+        return workspaces[0] if workspaces else None
+
+    entry = lookup_entity_in_directory(
+        opts,
+        entity_type="workspaces",
+        target_id=workspace_id,
+        no_cache=no_cache,
+        refresh=refresh_cache,
+        fetcher=cache_get_workspaces,
+        fetch_live=_fetch_live,
+        explain_cache=explain_cache,
+    )
+    if entry is None:
         typer.secho(f"workspace {workspace_id} not found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=6)
-    opts.emit(workspaces[0])
+    opts.emit(entry)
 
 
 # ----- write commands -----
