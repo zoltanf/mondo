@@ -363,12 +363,20 @@ def _root(
     ),
 ) -> None:
     """Global options available on every command."""
+    import os
+
     from mondo.cli._skill_freshness import warn_if_skill_outdated
     from mondo.cli.context import GlobalOpts
     from mondo.logging_ import configure_logging
 
     configure_logging(verbose=verbose, debug=debug)
-    warn_if_skill_outdated()
+    # Under pytest, the captured-stderr stream is merged into `result.output`
+    # by Click's CliRunner; the warning line then breaks every test that
+    # parses stdout as JSON. The freshness-check module itself remains
+    # callable from `tests/unit/test_cli_skill_freshness.py` (which exercises
+    # `warn_if_skill_outdated()` directly).
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        warn_if_skill_outdated()
     ctx.obj = GlobalOpts(
         profile_name=profile,
         flag_token=api_token,
