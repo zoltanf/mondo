@@ -36,9 +36,21 @@ Variables `.env` sets:
 - `MONDO_TEST_WORKSPACE_ID` / `MONDAY_TEST_WORKSPACE_ID` — same value,
   two names. The original fixture reads `MONDAY_TEST_WORKSPACE_ID`;
   newer code uses the `MONDO_`-prefixed form.
-- `MONDO_TEST_DOC_ID` / `MONDO_TEST_DOC_URL` — pre-prepared doc with
-  notice-box blocks (`5095668848`). Read-only doc tests skip unless
+- `MONDO_TEST_DOC_ID` / `MONDO_TEST_DOC_URL` — pre-prepared "Mondo Test
+  Doc" in workspace `592446`, exercising every block type the markdown
+  renderer cares about (notice box, check lists, bulleted lists, code,
+  divider, table cells, normal text). Read-only doc tests skip unless
   this is set.
+  - The value `5095668848` is the **URL-visible `object_id`** (the
+    last segment of `https://marktguru.monday.com/docs/5095668848`),
+    NOT the internal numeric id. The matching internal id is
+    `8519623`. When calling the CLI, route this env var through
+    `--object-id` (e.g. `mondo doc get --object-id $MONDO_TEST_DOC_ID`)
+    — passing it to `--id` returns `not found`. The existing
+    `live_test_doc_id` fixture in `tests/integration/conftest.py`
+    returns the env var unchanged; tests that consume it
+    (`test_live_writes.py::test_live_doc_read_with_notice_box`) pass
+    it via `--object-id`.
 
 The board lives in workspace `592446` ("monday.com Playground").
 
@@ -72,6 +84,14 @@ Live integration tests live under `tests/integration/`, split by feature:
 - `test_live_updates.py` — update create/reply/edit/pin/like/delete.
 - `test_live_files.py` — file upload to a file column + download
   round-trip.
+- `test_live_cache.py` — read/write/invalidate cycle for every cache
+  type (workspaces directory, tags, board_details, items, updates,
+  docs_blocks). Each test re-enables the cache on top of the default
+  `live_workspace_id` fixture (which disables it), warms the cache via
+  a read, asserts the expected file appears at `<cache_dir>/default/
+  <entity>/<scope>.json`, triggers the mutation, and verifies the
+  file is gone. The doc test creates a throwaway workspace doc rather
+  than depending on `MONDO_TEST_DOC_ID`.
 - `fixtures/doc_roundtrip/` — markdown inputs (`strict_input.md`,
   `rich_input.md`, `append_input.md`) and the golden output
   (`rich_expected_export.md`). Regenerate the golden with
