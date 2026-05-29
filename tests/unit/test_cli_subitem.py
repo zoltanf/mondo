@@ -305,6 +305,57 @@ class TestCreate:
         v = _last_body(httpx_mock)["variables"]
         assert json.loads(v["values"]) == {"status9": {"label": "Done"}}
 
+    def test_people_codec_on_bare_integer_id(self, httpx_mock: HTTPXMock) -> None:
+        """Same regression as TestItemCreate.test_people_codec_on_bare_integer_id,
+        for the subitem `_build_column_values` path."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "99",
+                            "name": "SubBoard",
+                            "columns": [
+                                {
+                                    "id": "person9",
+                                    "title": "Owner",
+                                    "type": "people",
+                                    "settings_str": "{}",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_subitem": {"id": "20"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "subitem",
+                "create",
+                "--parent",
+                "1",
+                "--name",
+                "Hi",
+                "--subitems-board",
+                "99",
+                "--column",
+                "person9=37251583",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert json.loads(v["values"]) == {
+            "person9": {"personsAndTeams": [{"id": 37251583, "kind": "person"}]}
+        }
+
 
 class TestMoveRenameArchive:
     def test_rename(self, httpx_mock: HTTPXMock) -> None:

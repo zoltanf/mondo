@@ -88,7 +88,10 @@ def _build_column_values(
     out: dict[str, Any] = {}
     for col_id, raw_value in parsed_pairs:
         definition = defs.get(col_id)
-        if definition is None or not isinstance(raw_value, str):
+        # dict/list/None: structured JSON the user crafted — pass through as raw.
+        # Bare scalars (int, float, bool) are valid codec shorthand and must be
+        # stringified so the codec sees them (mirror of item.py:_build_column_values).
+        if definition is None or isinstance(raw_value, (dict, list)) or raw_value is None:
             out[col_id] = raw_value
             continue
         col_type = definition.get("type")
@@ -96,8 +99,9 @@ def _build_column_values(
             out[col_id] = raw_value
             continue
         settings = _parse_settings(definition.get("settings_str"))
+        str_value = raw_value if isinstance(raw_value, str) else json.dumps(raw_value)
         try:
-            out[col_id] = parse_value(col_type, raw_value, settings, create_labels=create_labels)
+            out[col_id] = parse_value(col_type, str_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
             out[col_id] = raw_value
         except ValueError as e:

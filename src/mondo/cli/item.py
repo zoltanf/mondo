@@ -193,16 +193,20 @@ def _build_column_values(
     out: dict[str, Any] = {}
     for col_id, raw_value in parsed_pairs:
         definition = defs.get(col_id)
-        # Non-string values mean the user passed JSON — honor it as raw.
-        if definition is None or not isinstance(raw_value, str):
+        # dict/list/None mean the user passed a structured JSON payload (or an
+        # explicit "clear" signal) — honor it as raw. Bare scalars (int, float,
+        # bool) are valid codec shorthand (e.g. people: `42`, numbers: `5`) and
+        # must be stringified back so the codec sees them.
+        if definition is None or isinstance(raw_value, (dict, list)) or raw_value is None:
             out[col_id] = raw_value
             continue
         col_type = definition["type"]
         settings = parse_settings(definition.get("settings_str"))
+        str_value = raw_value if isinstance(raw_value, str) else json.dumps(raw_value)
         if col_type == "tags":
-            raw_value = resolve_tag_names_to_ids(client, board_id, raw_value, cache=tag_cache)
+            str_value = resolve_tag_names_to_ids(client, board_id, str_value, cache=tag_cache)
         try:
-            out[col_id] = parse_value(col_type, raw_value, settings, create_labels=create_labels)
+            out[col_id] = parse_value(col_type, str_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
             # Unfamiliar column type → don't translate, send raw
             out[col_id] = raw_value

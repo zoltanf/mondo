@@ -30,6 +30,7 @@ from ._helpers import (
     json_output,
     wait_for,
 )
+from .conftest import PmBoard
 
 runner = CliRunner()
 
@@ -471,6 +472,55 @@ def test_live_item_create_batch_partial_failure(
         f"batch ok item {ok_results[0]['name']}",
         "item", "delete", "--id", str(ok_results[0]["id"]), "--hard",
     )
+
+
+@pytest.mark.integration
+def test_live_item_create_with_people_column_shorthand(
+    pm_board_session: PmBoard, cleanup_plan: CleanupPlan
+) -> None:
+    """Regression: `--column <people_col>=<user_id>` must hit the people codec.
+
+    Before the fix, parse_column_kv JSON-decoded the bare id to int and the
+    codec dispatcher short-circuited, sending the integer raw — monday then
+    rejected with ColumnValueException. After the fix the value is expanded
+    to `{"personsAndTeams":[{"id":<user_id>,"kind":"person"}]}` and the
+    mutation succeeds. Closes #4.
+    """
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    item_name = f"E2E #4 person codec {suffix}"
+
+    created = invoke_json(
+        [
+            "item", "create",
+            "--board", str(pm.board_id),
+            "--name", item_name,
+            "--column", f"{pm.column_ids['person']}={pm.person_id}",
+        ]
+    )
+    item_id = int(created["id"])
+    cleanup_plan.add(
+        f"item #4 codec {item_id}",
+        "item", "delete", "--id", str(item_id), "--hard",
+    )
+
+    def _person_set() -> None:
+        raw = invoke_json(
+            [
+                "column", "get",
+                "--item", str(item_id),
+                "--column", pm.column_ids["person"],
+                "--raw",
+            ]
+        )
+        # --raw returns {id, type, value (JSON-string), text}; people-column
+        # `value` decodes to {"personsAndTeams":[{"id":<int>,"kind":"person",...}]}.
+        decoded = json.loads(raw["value"]) if raw.get("value") else {}
+        persons = decoded.get("personsAndTeams") or []
+        ids = {int(entry["id"]) for entry in persons if entry.get("kind") == "person"}
+        assert pm.person_id in ids, f"expected person {pm.person_id} on item {item_id}, got {raw!r}"
+
+    wait_for("person column populated via codec shorthand", _person_set)
 
 
 @pytest.mark.integration
