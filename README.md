@@ -148,6 +148,11 @@ brew uninstall mondo
 brew untap zoltanf/mondo   # optional
 ```
 
+> **Install troubles?** See [docs/troubleshooting-installation.md](docs/troubleshooting-installation.md)
+> — covers e.g. `brew install` failing with "arm64 architecture is required"
+> on an Apple Silicon Mac (almost always means Homebrew is running under
+> Rosetta), and other common install gotchas.
+
 ### Direct download (all platforms)
 
 Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
@@ -997,6 +1002,7 @@ fork:
 
 Additional docs live under [`docs/`](docs/):
 
+- [docs/troubleshooting-installation.md](docs/troubleshooting-installation.md) — install-time gotchas (Rosetta-Homebrew on Apple Silicon, Gatekeeper, etc).
 - [docs/plan.md](docs/plan.md) — full product roadmap and phase breakdown.
 - [docs/monday-api.md](docs/monday-api.md) — monday.com GraphQL API reference this CLI targets.
 - [docs/help-system.md](docs/help-system.md) — design notes for `mondo help`, per-command epilogs, and `--dump-spec`.
