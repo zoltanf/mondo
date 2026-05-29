@@ -551,6 +551,58 @@ class TestItemCreate:
         # Status codec converts "Done" → {"label": "Done"}
         assert values == {"text": "Hello", "status": {"label": "Done"}}
 
+    def test_people_codec_on_bare_integer_id(self, httpx_mock: HTTPXMock) -> None:
+        """`--column person=37251583` must hit the people codec.
+
+        Regression: parse_column_kv JSON-decodes `37251583` to int, and the
+        codec dispatcher used to short-circuit on non-string values, sending
+        the bare int to monday (which rejects with ColumnValueException).
+        """
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "42",
+                            "name": "B",
+                            "columns": [
+                                {"id": "person", "type": "people", "settings_str": "{}"},
+                                {"id": "long_text", "type": "long_text", "settings_str": "{}"},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "99", "name": "New"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--name",
+                "New",
+                "--column",
+                "person=37251583",
+                "--column",
+                "long_text=Body text",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        values = json.loads(_last_body(httpx_mock)["variables"]["values"])
+        assert values == {
+            "person": {"personsAndTeams": [{"id": 37251583, "kind": "person"}]},
+            "long_text": {"text": "Body text"},
+        }
+
     def test_raw_columns_skips_codec(self, httpx_mock: HTTPXMock) -> None:
         # No preflight when --raw-columns
         httpx_mock.add_response(
