@@ -402,7 +402,15 @@ def main() -> None:
     """
     args = reorder_argv(sys.argv[1:])
     try:
-        app(args=args, standalone_mode=False)
+        rv = app(args=args, standalone_mode=False)
+        # Under standalone_mode=False, Click swallows `click.exceptions.Exit`
+        # (raised by `typer.Exit(code=N)`) and returns its exit_code as the
+        # function's return value. Without this, every `typer.Exit(code=N)`
+        # in command handlers — auth (3), validation (5), not-found (6), the
+        # graphql --dry-run refusal (2) — silently exits 0. Successful
+        # callbacks return None, so the isinstance guard is safe.
+        if isinstance(rv, int) and rv != 0:
+            sys.exit(rv)
     except click.exceptions.UsageError as e:
         from mondo.cli._errors import (
             emit_envelope,

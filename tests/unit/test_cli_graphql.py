@@ -108,3 +108,97 @@ def test_graphql_hint_only_when_q_looks_like_graphql() -> None:
     assert result.exit_code != 0
     combined = ((result.stdout or "") + (result.stderr or "")).lower()
     assert "passed to" not in combined
+
+
+def test_graphql_dry_run_refuses_mutation(httpx_mock: HTTPXMock) -> None:
+    """`mondo graphql --dry-run '<mutation>'` must NOT send the request.
+
+    Regression for issue #5: silent execution under --dry-run was deemed
+    more dangerous than refusing the flag. The raw passthrough can't
+    safely preview (mondo doesn't parse the query), so --dry-run is
+    rejected with exit 2.
+    """
+    result = runner.invoke(
+        app,
+        ["--dry-run", "graphql", "mutation { delete_item (item_id: 1) { id } }"],
+    )
+    assert result.exit_code == 2, result.stdout
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "--dry-run" in combined
+    assert "not supported" in combined
+    # And critically: no HTTP request was issued.
+    assert httpx_mock.get_requests() == []
+
+
+def test_graphql_dry_run_refuses_query_too(httpx_mock: HTTPXMock) -> None:
+    """Refusal is unconditional — not heuristic on mutation/query.
+
+    Sniffing the query text for `mutation` is fragile (whitespace,
+    aliases, multi-document). Since `--dry-run` on raw GraphQL has no
+    safe semantics, we refuse for any operation.
+    """
+    result = runner.invoke(
+        app,
+        ["--dry-run", "graphql", "query { me { id name } }"],
+    )
+    assert result.exit_code == 2, result.stdout
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "--dry-run" in combined
+    assert httpx_mock.get_requests() == []
+
+
+def test_graphql_dry_run_refused_before_file_load(tmp_path: Path) -> None:
+    """Dry-run check must run before `_load_query` slurps `@path`.
+
+    If the user passes `--dry-run` plus `@nonexistent.graphql`, they
+    should see the dry-run refusal — not a FileNotFoundError. Confirms
+    the flag is rejected before any side-effects.
+    """
+    nope = tmp_path / "does-not-exist.graphql"
+    result = runner.invoke(app, ["--dry-run", "graphql", f"@{nope}"])
+    assert result.exit_code == 2, result.stdout
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "--dry-run" in combined
+    # Specifically NOT a file-system error.
+    assert "no such file" not in combined
+    assert "filenotfounderror" not in combined
+
+
+def test_graphql_dry_run_refusal_propagates_exit_code_through_main(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`main()` must surface `typer.Exit(code=2)` as `sys.exit(2)`.
+
+    The `CliRunner.invoke` path uses `standalone_mode=True`, where Click
+    converts `Exit(N)` into `SystemExit(N)`. The console-script entry
+    point uses `standalone_mode=False`, where Click swallows `Exit` and
+    returns the code as `app()`'s return value. Without explicit
+    propagation in `main()`, the user-facing CLI exits 0 even when the
+    refusal fired — defeating the safety purpose of issue #5's fix.
+    """
+    from mondo.cli.main import main
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["mondo", "--dry-run", "graphql", "mutation { delete_item(item_id: 1) { id } }"],
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+    assert excinfo.value.code == 2
+
+
+def test_graphql_dry_run_refused_before_vars_parse() -> None:
+    """Dry-run check must run before `--vars` is parsed.
+
+    With `--dry-run` and malformed `--vars`, the user should see the
+    dry-run refusal — not the vars-parse error. Confirms ordering.
+    """
+    result = runner.invoke(
+        app,
+        ["--dry-run", "graphql", "mutation { noop }", "--vars", "not json"],
+    )
+    assert result.exit_code == 2, result.stdout
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "--dry-run" in combined
+    # Specifically NOT the JSON parse error from --vars.
+    assert "--variables" not in combined or "not supported" in combined

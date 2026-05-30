@@ -44,7 +44,11 @@ Unlike the typed subcommands, `mondo graphql` is a **raw passthrough**:
 - No codec dispatch — column values must already be in monday's expected
   JSON shape.
 - No pagination — cursor handling is your responsibility.
-- No dry-run — `--dry-run` is a no-op here.
+- No dry-run — passing `--dry-run` is **rejected with exit 2**. The raw
+  passthrough can't preview safely (mondo doesn't parse your query), so
+  rather than silently send the mutation anyway, the flag is refused.
+  Eyeball your query manually, then re-run without `--dry-run` — or use
+  a typed subcommand when one wraps your operation.
 
 All the *other* globals still apply: `--output`, `--query`, `--profile`,
 `--api-token`, `--debug`.
