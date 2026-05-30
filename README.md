@@ -895,7 +895,7 @@ directory is resident. Full contract: [`docs/caching.md`](docs/caching.md).
 --verbose,-v                                INFO-level logging to stderr
 --debug                                     Full request/response to stderr (token redacted)
 --yes,-y                                    Skip confirmation prompts
---dry-run                                   Print the GraphQL that would be sent, don't send
+--dry-run                                   On typed mutating commands: print the GraphQL that would be sent, don't send. Rejected with exit 2 on `mondo graphql`.
 --version,-V                                Show version and exit
 ```
 

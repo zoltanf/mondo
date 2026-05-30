@@ -208,7 +208,10 @@ _TOP_LEVEL_ENTRIES: tuple[_LazyEntry, ...] = (
         name="graphql",
         module="mondo.cli.graphql",
         attr="graphql_command",
-        help_text="Send a raw GraphQL query/mutation to monday.com.",
+        help_text=(
+            "Send a raw GraphQL query/mutation to monday.com. "
+            "Note: --dry-run is not supported here and is refused with exit 2."
+        ),
         epilog=epilog_for("graphql"),
         is_group=False,
     ),

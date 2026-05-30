@@ -321,7 +321,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `dynamic object`
   fields: `data?`, `errors?`, `extensions?`
   source: `client.execute(..., raw=True)`
-  notes: Raw GraphQL response envelope from monday; shape depends entirely on the submitted query.
+  notes: Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 — mondo can't safely preview a query it doesn't parse).
 
 ## group
 
