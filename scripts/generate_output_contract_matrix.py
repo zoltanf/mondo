@@ -412,7 +412,11 @@ MANUAL_ROWS: dict[str, Row] = {
         command="graphql",
         output_type="dynamic object",
         fields=["data?", "errors?", "extensions?"],
-        notes="Raw GraphQL response envelope from monday; shape depends entirely on the submitted query.",
+        notes=(
+            "Raw GraphQL response envelope from monday; shape depends entirely "
+            "on the submitted query. --dry-run is not supported (refused with "
+            "exit 2 — mondo can't safely preview a query it doesn't parse)."
+        ),
         source="client.execute(..., raw=True)",
     ),
     "help": Row(

@@ -142,6 +142,9 @@ When `mondo schema` shows the field you want isn't selected and no
 
 `mondo graphql` skips codecs, complexity injection, and pagination —
 you're talking to monday directly with the same auth and exit codes.
+`--dry-run` is also unsupported on this command: it's refused with
+exit 2 rather than silently sending, since mondo can't preview a
+query it doesn't parse. Eyeball your GraphQL before running.
 See `mondo help graphql` for the input forms (inline / `@file` /
 stdin) and variables.
 

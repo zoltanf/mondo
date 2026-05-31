@@ -48,8 +48,25 @@ def graphql_command(
         help="Variables as a JSON string. Use `@path` to read from a file.",
     ),
 ) -> None:
-    """Send a raw GraphQL query to monday.com and print the response."""
+    """Send a raw GraphQL query to monday.com and print the response.
+
+    Note: `--dry-run` is not supported on this command. Raw GraphQL can't
+    be safely previewed (mondo doesn't parse your query), so the flag is
+    rejected rather than silently ignored.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if opts.dry_run:
+        typer.secho(
+            "error: --dry-run is not supported with `mondo graphql`. The raw "
+            "passthrough can't preview safely (mondo doesn't parse your query, "
+            "and verifying success requires sending it). Review the GraphQL "
+            "manually and re-run without --dry-run, or use a typed subcommand "
+            "if one wraps your operation.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
 
     if query is None:
         # A4/A5 in the friction report: detect when the user passed their

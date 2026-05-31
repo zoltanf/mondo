@@ -68,7 +68,7 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 - **Filter server-side** with `--filter col=val` (repeatable, AND'ed) instead of paging then JMESPath-filtering. On `item list` specifically, `--group <id>` and `--parent <item-id>` are first-class shortcuts (no need to reach for `--filter group=…` or switch to `subitem list`).
 - **JSON error envelope** on stderr (non-TTY): `{"error": "...", "code": "...", "exit_code": N, "request_id": "...", "retry_in_seconds": N, "suggestion": "..."}`. Branch on `exit_code`, never parse stderr text.
 - **Stable exit codes:** 0 ok · 2 usage · 3 auth · 4 rate/complexity (retry after 60s) · 5 validation · 6 not-found · 7 network.
-- **Dry-run writes first:** every mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar.
+- **Dry-run writes first:** every typed mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar. Not supported on `mondo graphql` — the raw passthrough refuses `--dry-run` with exit 2 because mondo can't safely preview a query it doesn't parse.
 - **Batch:** `--batch <file.json>` on bulk operations (`item create`, `column set`, `import board`). Returns a per-row envelope; partial failure → exit 1, full success → exit 0.
 - **URLs:** pass `--with-url` on `board get`, `board list`, `item get`, `item create` (NEW — single-call create + URL retrieval), `subitem get`, `doc get`, `doc list` to return a clickable monday.com link to the user.
 - **Wait for async state changes** with `--poll-until '<jmespath>'` + `--poll-interval` + `--poll-timeout` on `item list`, `item get`, `board get` — replaces hand-rolled bash `until/sleep` loops.

@@ -786,6 +786,12 @@ mondo graphql @query.graphql
 cat mutation.graphql | mondo graphql -
 ```
 
+> **`--dry-run` is rejected on `mondo graphql`.** Unlike typed mutations,
+> the raw passthrough can't safely preview your query (mondo doesn't
+> parse it). Passing `--dry-run` exits 2 with an error instead of
+> silently executing. Review the GraphQL manually before running, or
+> reach for a typed subcommand when one exists.
+
 ---
 
 ## Output formatting
@@ -889,7 +895,7 @@ directory is resident. Full contract: [`docs/caching.md`](docs/caching.md).
 --verbose,-v                                INFO-level logging to stderr
 --debug                                     Full request/response to stderr (token redacted)
 --yes,-y                                    Skip confirmation prompts
---dry-run                                   Print the GraphQL that would be sent, don't send
+--dry-run                                   On typed mutating commands: print the GraphQL that would be sent, don't send. Rejected with exit 2 on `mondo graphql`.
 --version,-V                                Show version and exit
 ```
 
