@@ -126,6 +126,20 @@ mondo item create --board 5094861043 --group backlog \
 
 *Gotcha:* `--column k=v` uses the same codec layer as `column set` — same value formats apply. Quote values with spaces.
 
+## monday quirks: board automations can overwrite `people` columns on create
+
+A board may carry an **automation/recipe** like *"when an item is created, set <people column> to the creator"* (common on intake boards for a "Submitted by" or "Requester" column). When such a recipe exists, monday runs it **after** your `item create` mutation commits, so a value you passed via `--column <col>=<user_id>` is silently replaced with the **API caller's identity** (the user whose token mondo is using) — not an error, just a quiet overwrite.
+
+This is **board-specific automation behaviour, not a `create_item` API quirk**: a plain `people` column with no recipe obeys the value you pass, and the recipe isn't visible through the public API. If a people column won't keep the value you set at create time:
+
+```bash
+# Workaround: create first, then set the column in a second step (runs after the recipe).
+ITEM=$(mondo item create --board 5094861043 --name "New ticket" -q id -o none)
+mondo column set --item "$ITEM" --column submitted_by --value 12345
+```
+
+Note this is distinct from the `creation_log` column type, which auto-records the creator by design and **rejects** any write (mondo's read-only codec blocks it; monday errors on raw attempts) — it never silently overwrites a passed value.
+
 ## `board_relation` / `dependency`: three accepted input shapes
 
 For columns that take a list of item IDs (`board_relation`, `dependency`), the codec accepts any of:
