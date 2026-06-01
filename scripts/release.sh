@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release driver: bump version, commit, tag, push.
 # The push of the `v<version>` tag triggers .github/workflows/release.yml,
-# which builds all five platform binaries, creates the GitHub Release,
+# which builds all four platform binaries, creates the GitHub Release,
 # and updates the Homebrew tap at zoltanf/homebrew-mondo.
 #
 # Usage: scripts/release.sh <version> [--skip-tests]

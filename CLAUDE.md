@@ -66,7 +66,7 @@ Cut releases with `scripts/release.sh <version>` (e.g.
 `pyproject.toml`, refreshes `uv.lock`, runs the non-integration test
 suite, commits `chore(release): v<version>`, tags `v<version>`, and
 pushes `main` + the tag. The tag push triggers
-`.github/workflows/release.yml`, which builds the five platform
+`.github/workflows/release.yml`, which builds the four platform
 binaries, creates the GitHub Release, and updates the Homebrew tap at
 `zoltanf/homebrew-mondo`. Pass `--skip-tests` only in emergencies.
 
