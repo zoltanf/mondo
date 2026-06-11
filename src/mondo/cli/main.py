@@ -378,7 +378,13 @@ def _root(
     # parses stdout as JSON. The freshness-check module itself remains
     # callable from `tests/unit/test_cli_skill_freshness.py` (which exercises
     # `warn_if_skill_outdated()` directly).
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
+    # `benign_notices_enabled` (#25): the warning is benign noise to a
+    # pipeline — emit it only when a human is plausibly watching stderr.
+    from mondo.cli._notices import benign_notices_enabled
+
+    if not os.environ.get("PYTEST_CURRENT_TEST") and benign_notices_enabled(
+        verbose=verbose
+    ):
         warn_if_skill_outdated()
     ctx.obj = GlobalOpts(
         profile_name=profile,
@@ -419,6 +425,7 @@ def main() -> None:
             emit_envelope,
             error_envelope,
             is_machine_output_argv,
+            mirror_envelope_to_stdout,
             suggest_for_no_such_option,
         )
 
@@ -427,9 +434,12 @@ def main() -> None:
         # see the same shape regardless of which error source fired.
         e.show()
         if is_machine_output_argv(args):
-            emit_envelope(
-                error_envelope(e, suggestion=suggest_for_no_such_option(e))
-            )
+            envelope = error_envelope(e, suggestion=suggest_for_no_such_option(e))
+            emit_envelope(envelope)
+            # Parsing failed before any command ran, so stdout is
+            # guaranteed empty; `-o none` never reaches this branch
+            # (classified as human output by is_machine_output_argv).
+            mirror_envelope_to_stdout(None, envelope)
         sys.exit(e.exit_code or 2)
     except click.exceptions.Abort:
         click.echo("Aborted!", err=True)

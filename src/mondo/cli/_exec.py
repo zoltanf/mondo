@@ -18,8 +18,13 @@ from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 import click
 import typer
 
-from mondo.api.errors import MondoError
-from mondo.cli._errors import emit_envelope, error_envelope, is_machine_output
+from mondo.api.errors import MondoError, UsageError
+from mondo.cli._errors import (
+    emit_envelope,
+    error_envelope,
+    is_machine_output,
+    mirror_envelope_to_stdout,
+)
 from mondo.cli.context import GlobalOpts as _GlobalOpts
 
 if TYPE_CHECKING:
@@ -47,7 +52,9 @@ def _emit_error(exc: BaseException, *, human_suffix: str | None = None) -> None:
     ctx = click.get_current_context(silent=True)
     opts = ctx.ensure_object(_GlobalOpts) if ctx is not None else None
     if is_machine_output(opts):
-        emit_envelope(error_envelope(exc))
+        envelope = error_envelope(exc)
+        emit_envelope(envelope)
+        mirror_envelope_to_stdout(opts, envelope)
 
 
 def handle_mondo_error_or_exit(
@@ -61,6 +68,24 @@ def handle_mondo_error_or_exit(
     """
     _emit_error(exc, human_suffix=human_suffix)
     raise typer.Exit(code=int(exc.exit_code)) from exc
+
+
+def usage_error_or_exit(message: str) -> NoReturn:
+    """Uniform exit for command-level usage errors.
+
+    Red `error:` line on stderr plus, in machine mode, the JSON envelope
+    on stderr and the stdout mirror (#25). Replaces the bare
+    `typer.secho(...) + typer.Exit(2)` pattern, which left suppressed-stderr
+    pipelines with empty stdout and no clue.
+    """
+    typer.secho(f"error: {message}", fg=typer.colors.RED, err=True)
+    ctx = click.get_current_context(silent=True)
+    opts = ctx.ensure_object(_GlobalOpts) if ctx is not None else None
+    if is_machine_output(opts):
+        envelope = error_envelope(UsageError(message))
+        emit_envelope(envelope)
+        mirror_envelope_to_stdout(opts, envelope)
+    raise typer.Exit(code=2)
 
 
 def client_or_exit(opts: GlobalOpts) -> MondayClient:

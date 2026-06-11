@@ -60,6 +60,30 @@ just want a smaller dict per row.
 - `tsv` / `csv` — flattens nested records using dotted paths. Header row first.
 - `none` — prints the raw scalar when `--query` collapses the payload to one.
 
+## Errors and stderr
+
+Errors stay on **stderr**: a human-readable `error:` line plus, in machine
+output mode (`-o json|jsonc|yaml`, or no `-o` with a non-TTY stdout), a
+one-line JSON envelope `{"error", "code", "exit_code", "request_id",
+"retry_in_seconds", "suggestion"}`.
+
+Two behaviors keep failures visible in pipelines:
+
+- **Fatal errors mirror the JSON envelope to stdout** in machine mode when
+  the command dies before writing anything to stdout. A pipeline that
+  suppressed stderr still receives a parseable `{"error": ..., "exit_code": N}`
+  instead of empty input. The mirror never corrupts a partial-success
+  stream (it only fires when stdout is still empty), `-o none` keeps
+  stdout silent, and exit codes are unchanged.
+- **Benign notices are suppressed when no human is watching**: the
+  `cache: hit (...)` provenance line and the skill-freshness warning only
+  appear when stderr is a TTY (or with `--verbose` / `MONDO_VERBOSE=1`;
+  `--explain-cache` always wins). Non-interactive runs get a clean stderr
+  that carries errors only.
+
+Don't `2>/dev/null` a mondo call — errors and recovery hints live on
+stderr. Use `2>&1` or leave stderr attached; branch on the exit code.
+
 ## Global flags are position-free
 
 az/gh/gam-style: global flags work anywhere on the command line.
