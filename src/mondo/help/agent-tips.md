@@ -5,6 +5,47 @@ flag aliases). This topic covers how to discover what fields you can
 project, why `-q` sometimes returns `null`, and how to parse errors
 into a retry decision.
 
+## Narrow server-side — the cost model
+
+On boards beyond a few hundred items a full `item list` costs ~10s per
+500 items, and the full `column_values` selection is ~3x the bare item
+fields. Narrow on the server, not in `-q`:
+
+    # Server-side: group + filter + cap
+    mondo item list --board 123 --group g1 --filter status=Done --max-items 50
+
+    # Canonical cheap id-lookup (auto-drops column_values -> ~3x faster)
+    mondo item list --board 123 --group g1 --fields id,name
+
+    # Only the column values you need, server-side
+    mondo item list --board 123 --columns status,person
+
+    # Lookup by column value
+    mondo item find --board 123 --column status --value Done
+
+Reach for `-q` to *project* fields, not to *filter* rows — a client-side
+`[?group.id=='...']` still pays for every item on the board. Repeat
+listings of the same board within 60s are served from the board-items
+cache (bare `--board` / `--group` variants only).
+
+Name-search over the directories (`board / doc / folder list
+--name-contains`) is served from an 8h cache; the first cold search of
+the day pays the full directory fetch (parallelized, but still the
+expensive step). Don't add `--no-cache` to name searches out of caution
+— the cache IS the fast path.
+
+## Never suppress stderr
+
+Don't append `2>/dev/null` to mondo calls. Errors, recovery hints, and
+the structured error envelope live on stderr — suppressed, a failure is
+just empty stdout + a nonzero exit code, followed by confusing
+downstream breakage (`json.load` on empty input). Benign notices (cache
+hits, skill-freshness warnings) are already withheld in non-TTY runs, so
+stderr is errors-only in pipelines. Use `2>&1` or leave stderr attached,
+and branch on the exit code. As a backstop, fatal errors in machine mode
+also mirror the JSON envelope to stdout when nothing else has been
+written there.
+
 ## Discover the selection set with `mondo schema`
 
 Every `mondo X get` / `mondo X list` runs a fixed GraphQL selection
