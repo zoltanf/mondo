@@ -12,7 +12,7 @@ from typing import Any
 
 from mondo.api.client import MondayClient
 from mondo.api.errors import NotFoundError
-from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, iter_boards_page
+from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, fetch_pages_concurrent
 from mondo.api.queries import (
     BOARD_GET,
     COLUMNS_ON_BOARD,
@@ -177,7 +177,7 @@ def _fetch_all_boards(client: MondayClient) -> list[dict[str, Any]]:
     query, variables = build_boards_list_query(state="all")
     return [
         normalize_board_entry(entry)
-        for entry in iter_boards_page(
+        for entry in fetch_pages_concurrent(
             client,
             query=query,
             variables=variables,
@@ -188,14 +188,12 @@ def _fetch_all_boards(client: MondayClient) -> list[dict[str, Any]]:
 
 
 def _fetch_all_workspaces(client: MondayClient) -> list[dict[str, Any]]:
-    return list(
-        iter_boards_page(
-            client,
-            query=WORKSPACES_LIST_PAGE,
-            variables={"state": "all"},
-            collection_key="workspaces",
-            limit=MAX_BOARDS_PAGE_SIZE,
-        )
+    return fetch_pages_concurrent(
+        client,
+        query=WORKSPACES_LIST_PAGE,
+        variables={"state": "all"},
+        collection_key="workspaces",
+        limit=MAX_BOARDS_PAGE_SIZE,
     )
 
 
@@ -203,23 +201,19 @@ def _fetch_all_users(client: MondayClient) -> list[dict[str, Any]]:
     # monday's `non_active` is either/or: true returns ONLY disabled users,
     # false returns ONLY active. To cover both, we run both queries and merge
     # (dedup by id — shouldn't collide, but be defensive).
-    active = list(
-        iter_boards_page(
-            client,
-            query=USERS_LIST_PAGE,
-            variables={"nonActive": False},
-            collection_key="users",
-            limit=MAX_BOARDS_PAGE_SIZE,
-        )
+    active = fetch_pages_concurrent(
+        client,
+        query=USERS_LIST_PAGE,
+        variables={"nonActive": False},
+        collection_key="users",
+        limit=MAX_BOARDS_PAGE_SIZE,
     )
-    disabled = list(
-        iter_boards_page(
-            client,
-            query=USERS_LIST_PAGE,
-            variables={"nonActive": True},
-            collection_key="users",
-            limit=MAX_BOARDS_PAGE_SIZE,
-        )
+    disabled = fetch_pages_concurrent(
+        client,
+        query=USERS_LIST_PAGE,
+        variables={"nonActive": True},
+        collection_key="users",
+        limit=MAX_BOARDS_PAGE_SIZE,
     )
     return _dedup_by_id(active + disabled)
 
@@ -238,7 +232,7 @@ def _fetch_all_folders(client: MondayClient) -> list[dict[str, Any]]:
     query, variables = build_folders_list_query()
     return [
         normalize_folder_entry(entry)
-        for entry in iter_boards_page(
+        for entry in fetch_pages_concurrent(
             client,
             query=query,
             variables=variables,
@@ -251,22 +245,46 @@ def _fetch_all_folders(client: MondayClient) -> list[dict[str, Any]]:
 def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
     # Monday's `docs(...)` without `workspace_ids` silently undercounts —
     # recent docs in particular go missing. Fan out one scoped query per
-    # workspace and dedupe on merge (defensive; ids are globally unique).
-    def _iter_all() -> Iterable[dict[str, Any]]:
-        for ws in _fetch_all_workspaces(client):
-            try:
-                ws_id = int(ws.get("id"))  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                continue
-            query, variables = build_docs_list_query(workspace_ids=[ws_id])
-            for entry in iter_boards_page(
+    # workspace (a small worker pool — most workspaces hold a handful of
+    # docs, so the serial walk was dominated by per-workspace round-trips)
+    # and dedupe on merge (defensive; ids are globally unique).
+    from mondo.api.pagination import _directory_fetch_concurrency
+
+    ws_ids: list[int] = []
+    for ws in _fetch_all_workspaces(client):
+        try:
+            ws_ids.append(int(ws.get("id")))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+
+    def _fetch_workspace_docs(ws_id: int) -> list[dict[str, Any]]:
+        query, variables = build_docs_list_query(workspace_ids=[ws_id])
+        return [
+            normalize_doc_entry(entry)
+            for entry in fetch_pages_concurrent(
                 client,
                 query=query,
                 variables=variables,
                 collection_key="docs",
                 limit=MAX_BOARDS_PAGE_SIZE,
-            ):
-                yield normalize_doc_entry(entry)
+                # The outer pool already provides the parallelism; nested
+                # waves would multiply in-flight requests.
+                concurrency=1,
+            )
+        ]
+
+    workers = _directory_fetch_concurrency()
+    if workers <= 1 or len(ws_ids) <= 1:
+        per_workspace = [_fetch_workspace_docs(ws_id) for ws_id in ws_ids]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            per_workspace = list(pool.map(_fetch_workspace_docs, ws_ids))
+
+    def _iter_all() -> Iterable[dict[str, Any]]:
+        for docs in per_workspace:
+            yield from docs
 
     return _dedup_by_id(_iter_all())
 
