@@ -137,6 +137,17 @@ class MondoCommand(typer.core.TyperCommand):
     def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         _format_help_with_globals(self, ctx, formatter, super().format_help)
 
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        """Accept hidden `--<entity>-id` aliases for canonical entity flags.
+
+        See `mondo.cli._alias` — rewrites e.g. `--item-id` to `--item`
+        when this command declares the canonical option, so az/gh-style
+        guesses don't cost a failed round-trip.
+        """
+        from mondo.cli._alias import rewrite_id_aliases
+
+        return super().parse_args(ctx, rewrite_id_aliases(self, args))
+
 
 def _assert_output_params_exist(root_cmd: click.Command) -> None:
     """Fail loudly if `_OUTPUT_PARAM_NAMES` drifts from the root's option names.

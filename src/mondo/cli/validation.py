@@ -15,7 +15,7 @@ import typer
 from mondo.api.queries import VALIDATIONS_LIST
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import execute
-from mondo.cli._resolve import coalesce_board_flag, resolve_required_id
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -43,13 +43,9 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    board_id_alias: int | None = typer.Option(
-        None, "--board-id", help="(hidden alias for --board)", hidden=True,
-    ),
 ) -> None:
     """List validation rules on a board (required columns + rules JSON)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     variables = {"id": board_id}
     data = execute(opts, VALIDATIONS_LIST, variables)
