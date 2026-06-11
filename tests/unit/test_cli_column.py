@@ -329,6 +329,51 @@ class TestColumnSet:
         body = json.loads(httpx_mock.get_requests()[-1].content)
         assert body["variables"]["value"] == json.dumps({"index": 7})
 
+    def test_name_pseudo_column_points_at_item_rename(self, httpx_mock: HTTPXMock) -> None:
+        """Issue #11: `--column name` is the item's title, not a settable
+        column. The error must contain the exact `mondo item rename`
+        invocation instead of the dead-end --raw suggestion."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "name", "title": "Name", "type": "name", "settings_str": "{}"}],
+                values=[{"id": "name", "type": "name", "text": "item", "value": None}],
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["column", "set", "--item", "1", "--column", "name", "--value", "New title"],
+        )
+        assert result.exit_code == 5, result.output
+        combined = (result.output or "") + (result.stderr or "")
+        assert "mondo item rename 1 --board 42 --name" in combined
+        assert "--raw" not in combined
+        # Only the context fetch went out — no mutation was attempted.
+        assert len(httpx_mock.get_requests()) == 1
+
+    def test_unknown_type_keeps_generic_no_codec_message(self, httpx_mock: HTTPXMock) -> None:
+        """The generic no-codec error (with the --raw suggestion) is
+        unchanged for genuinely unknown column types."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "weird", "title": "W", "type": "doc", "settings_str": "{}"}],
+                values=[{"id": "weird", "type": "doc", "text": "", "value": None}],
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["column", "set", "--item", "1", "--column", "weird", "--value", "x"],
+        )
+        assert result.exit_code == 5, result.output
+        combined = (result.output or "") + (result.stderr or "")
+        assert "no codec for column type 'doc'" in combined
+        assert "--raw" in combined
+
     def test_tag_names_resolved_to_ids(self, httpx_mock: HTTPXMock) -> None:
         # Context fetch
         httpx_mock.add_response(
