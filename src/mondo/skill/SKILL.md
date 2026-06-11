@@ -75,7 +75,7 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 - **Find items by column value** with `mondo item find --board X --column COL --value VAL` (sugar over `item list --filter`, with the same codec dispatch).
 - **Inspect a single column's metadata** with `mondo column get-meta --board X --column COL` (returns one column with `settings_str` preserved; `column list` strips it).
 - **Cleanup:** delete commands soft-archive by default; pass `--hard` for true delete.
-- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. **Pass the query as a positional**, not via `-q` (`-q` is the global JMESPath; mondo will hint if you confuse the two).
+- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. **Pass the query as a positional** — `-q/--query` is the global JMESPath projection, not the GraphQL query. If a GraphQL document lands in `--query` anyway, mondo runs it as the query (stderr note) but disables the projection for that call; pass it positionally to combine with `-q`.
 - **Cache notice:** read commands may emit `cache: hit (entity=…, age=…)` to stderr. Suppress with `MONDO_NO_CACHE_NOTICE=1`. Force refresh with `--no-cache` or `--refresh-cache` on any cached read (`<entity> list/get` directories plus per-board / per-item / per-doc caches — `item get`, `subitem list/get`, `update list --item`, `doc get`, `board get`, `webhook list`, `tag list/get`). Board-scope `item list` (no `--parent`), account-wide `update list`, and `mondo graphql` stay live. See `docs/caching.md` for the per-entity TTL table.
 
 ## When references aren't enough
