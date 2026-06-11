@@ -707,6 +707,11 @@ def create_cmd(
     empty: bool = typer.Option(
         False, "--empty", help="Create without the default group/column structure."
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include the new board's canonical monday.com URL in the emitted payload.",
+    ),
 ) -> None:
     """Create a new board."""
     from mondo.cli._cache_invalidate import invalidate_entity
@@ -728,7 +733,10 @@ def create_cmd(
     }
     data = execute(opts, BOARD_CREATE, variables)
     invalidate_entity(opts, "boards")
-    opts.emit(normalize_board_entry(data.get("create_board") or {}))
+    payload = data.get("create_board") or {}
+    if not with_url:
+        payload.pop("url", None)
+    opts.emit(normalize_board_entry(payload))
 
 
 @app.command("update", epilog=epilog_for("board update"))

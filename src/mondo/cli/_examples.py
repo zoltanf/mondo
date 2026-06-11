@@ -176,6 +176,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Create an empty board (no starter items/groups)",
             'mondo board create --name "Scratch" --kind public --empty',
         ),
+        Example(
+            "Create and get the board's URL in one call",
+            'mondo board create --name "Roadmap" --kind public --with-url -q url -o none',
+        ),
     ],
     "board update": [
         Example(

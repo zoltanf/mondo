@@ -688,3 +688,39 @@ def test_live_doc_create_add_blocks_delete(
         return blocks
 
     wait_for("doc blocks landed", _blocks_landed)
+
+
+@pytest.mark.integration
+def test_live_board_and_doc_create_with_url(
+    live_workspace_id: int, cleanup_plan: CleanupPlan
+) -> None:
+    """Issue #10: `board create --with-url` / `doc create --with-url` return
+    the new entity's monday.com URL in the single create call."""
+    suffix = uuid.uuid4().hex[:8]
+
+    board = invoke_json(
+        [
+            "board", "create",
+            "--workspace", str(live_workspace_id),
+            "--name", f"E2E WithUrl Board {suffix}",
+            "--kind", "private",
+            "--empty",
+            "--with-url",
+        ]
+    )
+    board_id = int(board["id"])
+    cleanup_plan.add("board", "board", "delete", "--id", str(board_id), "--hard")
+    assert board.get("url", "").startswith("https://")
+    assert f"/boards/{board_id}" in board["url"]
+
+    doc = invoke_json(
+        [
+            "doc", "create",
+            "--workspace", str(live_workspace_id),
+            "--name", f"E2E WithUrl Doc {suffix}",
+            "--with-url",
+        ]
+    )
+    doc_id = int(doc["id"])
+    cleanup_plan.add(f"doc E2E WithUrl Doc {suffix}", "doc", "delete", "--doc", str(doc_id))
+    assert doc.get("url", "").startswith("https://")

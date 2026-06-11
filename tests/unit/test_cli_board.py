@@ -667,6 +667,53 @@ class TestBoardCreate:
         assert parsed["variables"]["name"] == "X"
         assert httpx_mock.get_requests() == []
 
+    def test_with_url_emits_url_in_single_call(self, httpx_mock: HTTPXMock) -> None:
+        """Issue #10: `board create --with-url` returns the new board's URL
+        without a second API call (url is part of the mutation selection)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_board": {
+                        "id": "99",
+                        "name": "New",
+                        "board_kind": "public",
+                        "url": "https://acme.monday.com/boards/99",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "create", "--name", "New", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://acme.monday.com/boards/99"
+        # Single HTTP call — the create mutation itself carried the url.
+        assert len(httpx_mock.get_requests()) == 1
+
+    def test_without_with_url_strips_url(self, httpx_mock: HTTPXMock) -> None:
+        """Without the flag, output is unchanged: no `url` key even though
+        the mutation selection now includes it."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_board": {
+                        "id": "99",
+                        "name": "New",
+                        "board_kind": "public",
+                        "url": "https://acme.monday.com/boards/99",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "create", "--name", "New"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "url" not in parsed
+        assert len(httpx_mock.get_requests()) == 1
+
 
 # --- update ---
 
