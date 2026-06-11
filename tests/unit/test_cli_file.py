@@ -331,3 +331,98 @@ class TestDownload:
         # Only the metadata lookup — no downloads attempted.
         urls = [str(r.url) for r in httpx_mock.get_requests()]
         assert urls == [ENDPOINT]
+
+
+class TestUrl:
+    """Issue #12: `mondo file url` — print asset URLs without downloading."""
+
+    def test_single_asset_emits_list_without_downloading(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "assets": [
+                        {
+                            "id": "42",
+                            "name": "report.pdf",
+                            "file_extension": ".pdf",
+                            "file_size": 84321,
+                            "public_url": "https://s3.example.com/signed/report.pdf",
+                            "url": "https://acme.monday.com/protected_static/42/report.pdf",
+                            "url_thumbnail": "https://s3.example.com/thumb.png",
+                            "created_at": "2026-06-01T00:00:00Z",
+                            "uploaded_by": {"id": "1", "name": "Alice"},
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["file", "url", "--asset", "42"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed == [
+            {
+                "id": "42",
+                "name": "report.pdf",
+                "file_extension": ".pdf",
+                "file_size": 84321,
+                "public_url": "https://s3.example.com/signed/report.pdf",
+                "url": "https://acme.monday.com/protected_static/42/report.pdf",
+            }
+        ]
+        # Only the metadata lookup — no file bytes fetched, nothing written.
+        urls = [str(r.url) for r in httpx_mock.get_requests()]
+        assert urls == [ENDPOINT]
+
+    def test_projection_yields_bare_url(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "assets": [
+                        {
+                            "id": "42",
+                            "name": "report.pdf",
+                            "public_url": "https://s3.example.com/signed/report.pdf",
+                        }
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["-q", "[0].public_url", "file", "url", "--asset", "42"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == "https://s3.example.com/signed/report.pdf"
+
+    def test_multiple_assets_preserve_argument_order(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "assets": [
+                        {"id": "2", "name": "b.txt", "public_url": "https://x/b"},
+                        {"id": "1", "name": "a.txt", "public_url": "https://x/a"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["file", "url", "--asset", "1", "--asset", "2"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [a["id"] for a in parsed] == ["1", "2"]
+
+    def test_missing_asset_exits_6(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"assets": []}))
+        result = runner.invoke(app, ["file", "url", "--asset", "999"])
+        assert result.exit_code == 6
+        combined = (result.output or "") + (result.stderr or "")
+        assert "asset not found: 999" in combined
+
+    def test_dry_run_sends_nothing(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["--dry-run", "file", "url", "--asset", "42"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "assets" in parsed["query"]
+        assert httpx_mock.get_requests() == []

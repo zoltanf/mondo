@@ -735,6 +735,16 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo file download --asset 42 --out /tmp/x.pdf",
         ),
     ],
+    "file url": [
+        Example(
+            "Asset metadata incl. its download URLs",
+            "mondo file url --asset 42",
+        ),
+        Example(
+            "Just the pre-signed link (expires ~1h)",
+            "mondo file url --asset 42 -q '[0].public_url'",
+        ),
+    ],
     # --- folder ------------------------------------------------------------
     "folder list": [
         Example("Across every workspace", "mondo folder list"),
