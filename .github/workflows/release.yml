@@ -49,7 +49,7 @@ jobs:
       - name: Build binary (unix)
         if: runner.os != 'Windows'
         run: |
-          uv run pyinstaller --onefile --name mondo --paths src \
+          uv run pyinstaller --onedir --name mondo --paths src \
             --collect-data mondo.help --hidden-import mondo.help \
             --collect-data mondo.skill --hidden-import mondo.skill \
             --collect-submodules mondo.cli --collect-submodules mondo.output \
@@ -59,7 +59,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          uv run pyinstaller --onefile --name mondo --paths src `
+          uv run pyinstaller --onedir --name mondo --paths src `
             --collect-data mondo.help --hidden-import mondo.help `
             --collect-data mondo.skill --hidden-import mondo.skill `
             --collect-submodules mondo.cli --collect-submodules mondo.output `
@@ -68,26 +68,28 @@ jobs:
       - name: Smoke test (unix)
         if: runner.os != 'Windows'
         run: |
-          ./dist/mondo --version
-          ./dist/mondo --help > /dev/null
-          ./dist/mondo help codecs > /dev/null
-          ./dist/mondo skill install --global
+          ./dist/mondo/mondo --version
+          ./dist/mondo/mondo --help > /dev/null
+          ./dist/mondo/mondo help codecs > /dev/null
+          ./dist/mondo/mondo skill install --global
           test -f "$HOME/.claude/skills/mondo/SKILL.md"
 
       - name: Smoke test (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          .\dist\mondo.exe --version
-          .\dist\mondo.exe --help | Out-Null
-          .\dist\mondo.exe help codecs | Out-Null
-          .\dist\mondo.exe skill install --global | Out-Null
+          .\dist\mondo\mondo.exe --version
+          .\dist\mondo\mondo.exe --help | Out-Null
+          .\dist\mondo\mondo.exe help codecs | Out-Null
+          .\dist\mondo\mondo.exe skill install --global | Out-Null
           if (-not (Test-Path "$HOME/.claude/skills/mondo/SKILL.md")) { throw "SKILL.md missing" }
 
       - name: Archive (unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
+          # dist/mondo is the onedir bundle (mondo executable + _internal/);
+          # the tarball carries the whole directory as its single top-level entry.
           archive="mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz"
           tar -czf "$archive" -C dist mondo
           echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
@@ -97,7 +99,7 @@ jobs:
         shell: pwsh
         run: |
           $archive = "mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.zip"
-          Compress-Archive -Path dist\mondo.exe -DestinationPath $archive
+          Compress-Archive -Path dist\mondo -DestinationPath $archive
           "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - uses: actions/upload-artifact@v7
@@ -126,10 +128,15 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             prerelease_flag="--prerelease"
           fi
+          notes="**Packaging note:** archives now contain a \`mondo/\` directory \
+          (PyInstaller onedir — ~6x faster startup than the previous single-file \
+          binaries). Extract it somewhere permanent and symlink or add \
+          \`mondo/mondo\` to your PATH; \`brew install\` handles this automatically."
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
+            --notes "$notes" \
             --verify-tag \
             $prerelease_flag \
             artifacts/mondo-*.tar.gz artifacts/mondo-*.zip
@@ -213,7 +220,13 @@ jobs:
             end
 
             def install
-              bin.install "mondo"
+              # The tarball's single top-level \`mondo/\` directory is stripped
+              # by Homebrew's unpack, leaving the onedir contents (the
+              # \`mondo\` executable + \`_internal/\`) at the stage root.
+              # Guard for both layouts in case the archive shape changes.
+              stage = File.exist?("mondo/_internal") ? "mondo/*" : "*"
+              libexec.install Dir[stage]
+              bin.install_symlink libexec/"mondo"
             end
 
             test do

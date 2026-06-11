@@ -151,4 +151,5 @@ automatically and does not trip this.
 
 The fix is covered in detail in the README:
 [macOS: working around Gatekeeper](../README.md#macos-working-around-gatekeeper-unidentified-developer).
-Short version: `xattr -d com.apple.quarantine ./mondo`.
+Short version: `xattr -dr com.apple.quarantine ./mondo` (recursive — the
+release archive extracts to a `mondo/` directory).
