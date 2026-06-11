@@ -697,6 +697,8 @@ class TestGet:
 
     def test_missing_exits_6(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        # Object-id probe on the --id miss (the #24 guardrail) — misses too.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
         result = runner.invoke(app, ["doc", "get", "--id", "999"])
         assert result.exit_code == 6
 
@@ -779,10 +781,16 @@ class TestGet:
         self, httpx_mock: HTTPXMock
     ) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        # Object-id probe on the --id miss (the #24 guardrail) — misses too.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
         result = runner.invoke(app, ["doc", "get", "--id", "999"])
         assert result.exit_code == 6
-        # Only one HTTP call — no BOARD_GET probe on --id path.
-        assert len(httpx_mock.get_requests()) == 1
+        # Two HTTP calls: the fetch and the object-id probe — but no
+        # BOARD_GET probe on the --id path.
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+        assert "object_ids" in json.loads(requests[-1].content)["query"]
+        assert "boards" not in json.loads(requests[-1].content)["query"]
 
 
 # --- create ---
@@ -1273,6 +1281,8 @@ class TestDocNewOps:
             method="POST",
             json=_ok({"duplicate_doc": {"success": False, "error": "Unknown error"}}),
         )
+        # Object-id probe on the success=False failure (the #24 guardrail).
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
         result = runner.invoke(
             app,
             [
@@ -1320,6 +1330,8 @@ class TestDocNewOps:
                 }
             ),
         )
+        # Object-id probe on the success=False failure (the #24 guardrail).
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
         result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
         assert result.exit_code == 5
 

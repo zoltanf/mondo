@@ -634,6 +634,32 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
 
 
 @pytest.mark.integration
+def test_live_doc_export_markdown_object_id(live_test_doc_id: int) -> None:
+    """Read-only #24 coverage: `export-markdown --object-id` works directly,
+    and the same id passed as `--doc` fails with the targeted retry hint
+    instead of an opaque server 500."""
+    md_result = invoke(["doc", "export-markdown", "--object-id", str(live_test_doc_id)])
+    assert md_result.stdout.strip(), "export-markdown --object-id produced no output"
+
+    wrong = invoke(
+        ["doc", "export-markdown", "--doc", str(live_test_doc_id)],
+        expect_exit=None,
+    )
+    assert wrong.exit_code != 0, format_failure(["doc", "export-markdown"], wrong)
+    assert f"--object-id {live_test_doc_id}" in wrong.stderr, wrong.stderr
+
+    both = invoke(
+        [
+            "doc", "export-markdown",
+            "--doc", str(live_test_doc_id),
+            "--object-id", str(live_test_doc_id),
+        ],
+        expect_exit=2,
+    )
+    assert "exactly one of" in both.stderr
+
+
+@pytest.mark.integration
 def test_live_doc_create_add_blocks_delete(
     live_workspace_id: int, cleanup_plan: CleanupPlan
 ) -> None:

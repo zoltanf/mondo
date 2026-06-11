@@ -38,7 +38,8 @@ mondo doc get --id 5095668848 --format json -o json
 # Or address by object_id (the URL form):
 mondo doc get --object-id abcd1234 --format json -o json
 
-# Render to Markdown:
+# Render to Markdown (--object-id for the URL-visible id, --doc for the internal id):
+mondo doc export-markdown --object-id abcd1234
 mondo doc export-markdown --doc 5095668848
 ```
 
@@ -54,7 +55,7 @@ mondo doc export-markdown --doc 5095668848
 }
 ```
 
-*Gotcha:* `--id` is the numeric, `--object-id` is the UUID. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
+*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. **Every** doc subcommand that targets a doc (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accepts `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
 
 ## Create a doc
 
