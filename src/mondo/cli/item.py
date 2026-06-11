@@ -489,15 +489,15 @@ def list_cmd(
     refresh_cache: bool = typer.Option(
         False,
         "--refresh-cache",
-        help="Refresh the cached column definitions used to resolve "
-        "`--filter` labels. Items themselves are always fetched live.",
+        help="Force-refresh the short-TTL board-items cache (and the cached "
+        "column definitions used to resolve `--filter` labels).",
         rich_help_panel="Cache",
     ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
-        help="Bypass the cached column definitions used to resolve "
-        "`--filter` labels. Items themselves are always fetched live.",
+        help="Bypass the short-TTL board-items cache and the cached column "
+        "definitions; fetch live.",
         rich_help_panel="Cache",
     ),
 ) -> None:
@@ -505,6 +505,11 @@ def list_cmd(
 
     Use --filter 'col=val' (repeatable) to narrow results server-side, and
     --order-by col[,asc|desc] to sort.
+
+    Bare `item list --board X` (and the `--group` variant) is served from a
+    short-TTL per-board cache (`board_items/<board_id>.json`, default TTL
+    60s — set via `MONDO_CACHE_TTL_BOARD_ITEMS`). Filtered / ordered /
+    column-narrowed variants always fetch live.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_flag = coalesce_board_flag(board_flag, board_id_alias)
@@ -572,6 +577,11 @@ def _list_items_impl(
 
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
+    # Cache eligibility (#21) keys off the *user's* filters; the --group
+    # sugar is served from the cached full-board list by filtering
+    # client-side, so it must not count as a filter here.
+    user_filters = bool(filter_expr)
+
     # --group <id> is sugar over --filter group=<id>; merge it in.
     if group_id is not None:
         filter_expr = [*(filter_expr or []), f"group={group_id}"]
@@ -591,6 +601,7 @@ def _list_items_impl(
     # otherwise drop column_values entirely when the projection provably
     # never reads them (`--fields id,name` and friends).
     extra_vars: dict[str, Any] | None = None
+    slimmed = False
     if columns_sel is not None:
         try:
             extra_vars = {"cols": _parse_columns_csv(columns_sel)}
@@ -599,9 +610,53 @@ def _list_items_impl(
             raise typer.Exit(code=2) from e
         query_initial, query_next = build_items_page_queries(columns=True)
     else:
+        slimmed = _can_slim_column_values(opts)
         query_initial, query_next = build_items_page_queries(
-            include_column_values=not _can_slim_column_values(opts)
+            include_column_values=not slimmed
         )
+
+    # --- board_items cache (#21): short-TTL (60s) cache of the bare
+    # full-board list. Only the bare `--board` (and `--board --group`,
+    # filtered client-side off the same file) variants are served from it;
+    # anything with filters / ordering / column narrowing stays live.
+    # Same stale-data contract as the per-item caches — see docs/caching.md.
+    cfg = opts.resolve_cache_config()
+    cache_readable = (
+        cfg.enabled
+        and not no_cache
+        and not opts.dry_run
+        and poll_until is None
+        and not user_filters
+        and order_by is None
+        and columns_sel is None
+    )
+    store = (
+        opts.build_cache_store("board_items", scope=str(board_id))
+        if cache_readable
+        else None
+    )
+    if store is not None and not refresh_cache:
+        cached = store.read()
+        if cached is not None:
+            from mondo.cli._cache_flags import emit_cache_provenance
+            from mondo.cli._field_sets import item_list_fields
+
+            emit_cache_provenance(opts, cached, store=store)
+            items = cached.entries
+            if group_id is not None:
+                items = [
+                    it for it in items if (it.get("group") or {}).get("id") == group_id
+                ]
+            if max_items is not None:
+                items = items[:max_items]
+            opts.emit(items, selected_fields=item_list_fields())
+            return
+    # Only the full-board, full-shape result may be written back — a group
+    # slice, a max-items prefix, or a slimmed selection would poison the
+    # cache for the next full reader.
+    cache_writable = (
+        store is not None and group_id is None and max_items is None and not slimmed
+    )
 
     try:
         client = opts.build_client()
@@ -656,6 +711,8 @@ def _list_items_impl(
                 )
             else:
                 items = _fetch_items_once()
+                if cache_writable and store is not None:
+                    store.write(items)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     except UsageError as e:
@@ -946,6 +1003,9 @@ def create_cmd(
         # May have minted a status/dropdown label in settings_str; drop the
         # cached column defs so the next read sees the new labels.
         invalidate_columns_cache(opts, board_id)
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     payload = data.get("create_item") or {}
     if not with_url:
         payload.pop("url", None)
@@ -1042,6 +1102,9 @@ def _run_batch(
 
     if create_labels_default or any(row.get("create_labels") for row in rows):
         invalidate_columns_cache(opts, board_id)
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "board_items", scope=str(board_id))
 
     if not with_url:
         for row in results:
@@ -1149,6 +1212,7 @@ def rename_cmd(
     from mondo.cli._cache_invalidate import invalidate_entity
 
     invalidate_entity(opts, "items", scope=str(resolved_item))
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     opts.emit(data.get("change_simple_column_value") or {})
 
 
@@ -1170,6 +1234,9 @@ def duplicate_cmd(
         ITEM_DUPLICATE,
         {"board": board_id, "id": item_id, "with_updates": with_updates},
     )
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     opts.emit(data.get("duplicate_item") or {})
 
 
@@ -1308,4 +1375,8 @@ def move_to_board_cmd(
         "subitemColumns": subitem_columns or None,
     }
     data = execute(opts, ITEM_MOVE_BOARD, variables)
+    from mondo.cli._cache_invalidate import invalidate_entity
+
+    # The source board isn't known in-process — its 60s TTL covers it.
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     opts.emit(data.get("move_item_to_board") or {})

@@ -431,6 +431,7 @@ def set_cmd(
         # label inside the column's settings_str — drop the cached copy.
         invalidate_columns_cache(opts, board_id)
     invalidate_entity(opts, "items", scope=str(item_id))
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     opts.emit(data.get("change_column_value") or {})
 
 
@@ -497,6 +498,7 @@ def set_many_cmd(
         # May have minted a label in a status/dropdown column's settings_str.
         invalidate_columns_cache(opts, board_id)
     invalidate_entity(opts, "items", scope=str(item_id))
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     opts.emit(data.get("change_multiple_column_values") or {})
 
 
@@ -556,6 +558,7 @@ def clear_cmd(
         handle_mondo_error_or_exit(e)
 
     invalidate_entity(opts, "items", scope=str(item_id))
+    invalidate_entity(opts, "board_items", scope=str(board_id))
     opts.emit(data.get("change_column_value") or {})
 
 

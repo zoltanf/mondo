@@ -49,6 +49,7 @@ class CacheType(StrEnum):
     webhooks = "webhooks"
     board_details = "board_details"
     items = "items"
+    board_items = "board_items"
     subitems = "subitems"
     updates = "updates"
     docs_blocks = "docs_blocks"
@@ -65,7 +66,7 @@ _BOARD_SCOPED_TYPES: tuple[str, ...] = (
 # Per-item / per-doc scoped types: status and clear work over the cache
 # directory; refresh requires re-reading via the CLI command itself, since
 # only the calling site knows the right item / doc id.
-_ITEM_SCOPED_TYPES: tuple[str, ...] = ("items", "subitems", "updates")
+_ITEM_SCOPED_TYPES: tuple[str, ...] = ("items", "board_items", "subitems", "updates")
 _DOC_SCOPED_TYPES: tuple[str, ...] = ("docs_blocks",)
 _SCOPED_TYPES: tuple[str, ...] = (
     *_BOARD_SCOPED_TYPES, *_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES,
@@ -237,8 +238,8 @@ def refresh_cmd(
     if unsupported and cache_type is not CacheType.all:
         typer.secho(
             f"error: `cache refresh {cache_type.value}` isn't supported. "
-            "Use the read command's --refresh-cache flag for items/subitems/"
-            "updates/docs_blocks (each needs a specific id).",
+            "Use the read command's --refresh-cache flag for items/board_items/"
+            "subitems/updates/docs_blocks (each needs a specific id).",
             fg=typer.colors.RED,
             err=True,
         )

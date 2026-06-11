@@ -20,6 +20,7 @@ from mondo.cache.store import EntityType
 from mondo.config.schema import (
     DEFAULT_CACHE_FUZZY_THRESHOLD,
     DEFAULT_CACHE_TTL_BOARD_DETAILS,
+    DEFAULT_CACHE_TTL_BOARD_ITEMS,
     DEFAULT_CACHE_TTL_BOARDS,
     DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_DOCS,
@@ -60,6 +61,7 @@ class ResolvedCacheConfig:
     ttl_webhooks: int
     ttl_board_details: int
     ttl_items: int
+    ttl_board_items: int
     ttl_subitems: int
     ttl_updates: int
     ttl_docs_blocks: int
@@ -91,6 +93,8 @@ class ResolvedCacheConfig:
                 return self.ttl_board_details
             case "items":
                 return self.ttl_items
+            case "board_items":
+                return self.ttl_board_items
             case "subitems":
                 return self.ttl_subitems
             case "updates":
@@ -221,6 +225,14 @@ def resolve_cache_config(
         profile_cfg=profile_cache,
         env=environ,
     )
+    ttl_board_items = _resolve_ttl(
+        "board_items",
+        default=DEFAULT_CACHE_TTL_BOARD_ITEMS,
+        env_key="MONDO_CACHE_TTL_BOARD_ITEMS",
+        global_cfg=config.cache,
+        profile_cfg=profile_cache,
+        env=environ,
+    )
     ttl_subitems = _resolve_ttl(
         "subitems",
         default=DEFAULT_CACHE_TTL_SUBITEMS,
@@ -262,6 +274,7 @@ def resolve_cache_config(
         ttl_webhooks=ttl_webhooks,
         ttl_board_details=ttl_board_details,
         ttl_items=ttl_items,
+        ttl_board_items=ttl_board_items,
         ttl_subitems=ttl_subitems,
         ttl_updates=ttl_updates,
         ttl_docs_blocks=ttl_docs_blocks,
