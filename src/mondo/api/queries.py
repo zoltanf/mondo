@@ -129,6 +129,82 @@ query ($cursor: String!, $limit: Int!) {
 """.strip()
 
 
+def build_items_page_queries(
+    *,
+    columns: bool = False,
+    include_column_values: bool = True,
+) -> tuple[str, str]:
+    """Return ``(initial, next)`` items_page queries with a custom
+    ``column_values`` selection.
+
+    On large boards the full ``column_values`` selection is ~3x the
+    per-page complexity of the bare item fields, so narrowing it
+    server-side is the main lever for `item list` performance:
+
+    - ``columns=True``: narrow to ``column_values(ids: $cols)``. Both
+      queries gain a ``$cols: [String!]!`` variable the caller must bind.
+    - ``include_column_values=False``: drop ``column_values`` entirely
+      (the ``--fields id,name`` auto-slim path).
+    - Defaults return the canonical module constants unchanged.
+    """
+    if columns:
+        cols_decl = ", $cols: [String!]!"
+        selection = "\n        column_values(ids: $cols) { id type text value }"
+    elif include_column_values:
+        return ITEMS_PAGE_INITIAL, ITEMS_PAGE_NEXT
+    else:
+        cols_decl = ""
+        selection = ""
+    initial = f"""
+query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery{cols_decl}) {{
+  boards(ids: $boards) {{
+    items_page(limit: $limit, query_params: $qp) {{
+      cursor
+      items {{
+        id
+        name
+        state
+        group {{ id title }}{selection}
+      }}
+    }}
+  }}
+}}
+""".strip()
+    next_q = f"""
+query ($cursor: String!, $limit: Int!{cols_decl}) {{
+  next_items_page(cursor: $cursor, limit: $limit) {{
+    cursor
+    items {{
+      id
+      name
+      state
+      group {{ id title }}{selection}
+    }}
+  }}
+}}
+""".strip()
+    return initial, next_q
+
+
+# Single-item variant of the server-side column narrowing above.
+ITEM_GET_WITH_COLUMNS = """
+query ($id: ID!, $cols: [String!]!) {
+  items(ids: [$id]) {
+    id
+    name
+    state
+    created_at
+    updated_at
+    url
+    creator { id name }
+    group { id title }
+    board { id name }
+    column_values(ids: $cols) { id type text value }
+  }
+}
+""".strip()
+
+
 # Export-oriented variants that also pull subitems (field selection costs
 # extra complexity; only use when --include-subitems is on).
 ITEMS_PAGE_INITIAL_WITH_SUBITEMS = """

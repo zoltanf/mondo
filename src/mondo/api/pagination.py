@@ -30,6 +30,7 @@ def iter_items_page(
     max_items: int | None = None,
     query_initial: str = ITEMS_PAGE_INITIAL,
     query_next: str = ITEMS_PAGE_NEXT,
+    extra_vars: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield items from a board, following `items_page` cursors.
 
@@ -37,7 +38,9 @@ def iter_items_page(
     Handles expired cursors by restarting from the initial page.
 
     `query_initial` / `query_next` let callers swap in field selections
-    (e.g. `ITEMS_PAGE_INITIAL_WITH_SUBITEMS` for export).
+    (e.g. `ITEMS_PAGE_INITIAL_WITH_SUBITEMS` for export). `extra_vars`
+    binds additional variables both queries declare (e.g. `$cols` from
+    `build_items_page_queries(columns=True)`).
     """
     yielded = 0
     page_size = min(limit, MAX_PAGE_SIZE)
@@ -45,6 +48,7 @@ def iter_items_page(
         "boards": [board_id],
         "limit": page_size,
         "qp": query_params,
+        **(extra_vars or {}),
     }
     page = _initial_page(client, query_initial, initial_vars)
     cursor = page["cursor"]
@@ -57,7 +61,7 @@ def iter_items_page(
 
     while cursor:
         try:
-            next_page = _fetch_next(client, query_next, cursor, page_size)
+            next_page = _fetch_next(client, query_next, cursor, page_size, extra_vars)
         except CursorExpiredError:
             # Restart from the initial page; the caller re-sees some items.
             page = _initial_page(client, query_initial, initial_vars)
@@ -85,8 +89,14 @@ def _initial_page(client: _ClientProtocol, query: str, variables: dict[str, Any]
     return boards[0].get("items_page") or {"cursor": None, "items": []}
 
 
-def _fetch_next(client: _ClientProtocol, query: str, cursor: str, limit: int) -> dict[str, Any]:
-    result = client.execute(query, {"cursor": cursor, "limit": limit})
+def _fetch_next(
+    client: _ClientProtocol,
+    query: str,
+    cursor: str,
+    limit: int,
+    extra_vars: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = client.execute(query, {"cursor": cursor, "limit": limit, **(extra_vars or {})})
     return (result.get("data") or {}).get("next_items_page") or {
         "cursor": None,
         "items": [],

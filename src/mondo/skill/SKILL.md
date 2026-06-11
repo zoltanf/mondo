@@ -1,7 +1,7 @@
 ---
 name: mondo
 description: Use when the user wants to do anything against monday.com via the `mondo` CLI — reading or writing workspaces, folders, boards, groups, items, subitems, columns, updates, docs, files, users, teams, webhooks, or when they paste a monday.com URL.
-version: "1.1.0"
+version: "1.1.1"
 ---
 
 # mondo
