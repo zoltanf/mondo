@@ -7,7 +7,9 @@ Per monday-api.md §11.5.23:
 
 `mondo file upload` writes a file to a `file`-typed column on an item
 (default) or attaches it to an update. `mondo file download` fetches an
-asset's URL via `assets(ids)` and streams the bytes to disk.
+asset's URL via `assets(ids)` and streams the bytes to disk. `mondo
+file url` prints the asset metadata (incl. the pre-signed, expiring
+`public_url`) without downloading anything.
 """
 
 from __future__ import annotations
@@ -26,7 +28,12 @@ from mondo.api.queries import (
     FILE_UPLOAD_UPDATE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -121,7 +128,23 @@ def upload_cmd(
     opts.emit(data.get(response_key) or {})
 
 
-# ----- download -----
+# ----- download / url -----
+
+
+def _assets_by_id(data: dict[str, Any], asset_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Key an `assets(ids)` payload by asset id; exit 6 listing missing ids."""
+    assets = data.get("assets") or []
+    found_ids = {int(a["id"]) for a in assets if a.get("id") is not None}
+    missing = [i for i in asset_ids if i not in found_ids]
+    if missing:
+        label = "asset" if len(missing) == 1 else "assets"
+        typer.secho(
+            f"{label} not found: {', '.join(str(i) for i in missing)}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=6)
+    return {int(a["id"]): a for a in assets}
 
 
 def _resolve_download_target(out: Path | None, asset: dict[str, Any], asset_id: int) -> Path:
@@ -172,20 +195,7 @@ def download_cmd(
     results: list[dict[str, Any]] = []
     try:
         with client:
-            result = client.execute(ASSETS_GET, variables=variables)
-            assets = ((result.get("data") or {}).get("assets")) or []
-            found_ids = {int(a["id"]) for a in assets if a.get("id") is not None}
-            missing = [i for i in asset_ids if i not in found_ids]
-            if missing:
-                label = "asset" if len(missing) == 1 else "assets"
-                typer.secho(
-                    f"{label} not found: {', '.join(str(i) for i in missing)}",
-                    fg=typer.colors.RED,
-                    err=True,
-                )
-                raise typer.Exit(code=6)
-
-            by_id = {int(a["id"]): a for a in assets}
+            by_id = _assets_by_id(exec_or_exit(client, ASSETS_GET, variables), asset_ids)
             for aid in asset_ids:
                 asset = by_id[aid]
                 # Prefer the pre-signed S3 `public_url` — monday's `url` is a
@@ -221,3 +231,36 @@ def download_cmd(
         handle_mondo_error_or_exit(e)
 
     opts.emit(results[0] if len(results) == 1 else results)
+
+
+@app.command("url", epilog=epilog_for("file url"))
+def url_cmd(
+    ctx: typer.Context,
+    asset_ids: list[int] = typer.Option(
+        ..., "--asset", help="Asset ID to look up. Repeatable to fetch multiple assets."
+    ),
+) -> None:
+    """Print asset metadata including the download URL, without downloading.
+
+    Emits a list of `{id, name, file_extension, file_size, public_url, url}`
+    objects through the standard formatter, so `-q '[0].public_url'` yields a
+    bare URL. Prefer `public_url` — it's a pre-signed S3 link that works from
+    any HTTP client but expires (monday documents a 1-hour validity; re-run
+    for a fresh link). `url` is monday's protected_static proxy, which only
+    works in a logged-in browser session.
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    by_id = _assets_by_id(execute(opts, ASSETS_GET, {"ids": asset_ids}), asset_ids)
+    opts.emit(
+        [
+            {
+                "id": asset.get("id"),
+                "name": asset.get("name"),
+                "file_extension": asset.get("file_extension"),
+                "file_size": asset.get("file_size"),
+                "public_url": asset.get("public_url"),
+                "url": asset.get("url"),
+            }
+            for asset in (by_id[aid] for aid in asset_ids)
+        ]
+    )

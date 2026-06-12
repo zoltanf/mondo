@@ -525,11 +525,14 @@ mondo file upload   --file report.pdf --item 1234567890 --column files
 mondo file upload   --file shot.png --target update --update 555
 mondo file download --asset 42                      # writes to ./<asset_name>
 mondo file download --asset 42 --out /tmp/x.pdf
+mondo file url      --asset 42 -q '[0].public_url'  # just the link, no download
 ```
 
 Uploads go to `/v2/file` as multipart (max 500 MB per file, monday's cap).
 Downloads resolve the asset's URL via `assets(ids)` then stream the bytes
-to disk — works for `file`, image, and video attachments.
+to disk — works for `file`, image, and video attachments. `file url`
+prints the asset metadata instead (the pre-signed `public_url` expires
+after ~1 hour; re-run for a fresh link).
 
 ### Webhooks
 

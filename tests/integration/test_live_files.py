@@ -76,6 +76,14 @@ def test_live_file_upload_to_column_and_download(
     asset_id = _extract_asset_id(upload_result)
     assert asset_id, f"could not extract asset id from upload payload: {upload_result}"
 
+    # `file url` returns the asset's links without writing anything (issue #12).
+    url_result = invoke_json(["file", "url", "--asset", str(asset_id)])
+    assert isinstance(url_result, list) and len(url_result) == 1
+    asset_meta = url_result[0]
+    assert int(asset_meta["id"]) == asset_id
+    assert asset_meta["name"] == src_file.name
+    assert (asset_meta["public_url"] or "").startswith("https://")
+
     download_path = tmp_path / "downloaded.bin"
     invoke(
         [
