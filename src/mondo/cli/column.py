@@ -39,7 +39,7 @@ from mondo.cli._exec import (
     handle_mondo_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import coalesce_board_flag, resolve_by_filters, resolve_required_id
+from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
@@ -122,9 +122,6 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    board_id_alias: int | None = typer.Option(
-        None, "--board-id", help="(hidden alias for --board)", hidden=True,
-    ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -140,7 +137,6 @@ def list_cmd(
 ) -> None:
     """List all columns on a board with id, title, type."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     reject_mutually_exclusive(no_cache, refresh_cache)
     client = client_or_exit(opts)
@@ -174,9 +170,6 @@ def get_meta_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    board_id_alias: int | None = typer.Option(
-        None, "--board-id", help="(hidden alias for --board)", hidden=True,
-    ),
     column_id: str = typer.Option(..., "--column", help="Column ID to inspect."),
     no_cache: bool = typer.Option(
         False,
@@ -199,7 +192,6 @@ def get_meta_cmd(
     `column list`, the full `settings_str` is preserved in the output.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     reject_mutually_exclusive(no_cache, refresh_cache)
     client = client_or_exit(opts)
@@ -231,9 +223,6 @@ def labels_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    board_id_alias: int | None = typer.Option(
-        None, "--board-id", help="(hidden alias for --board)", hidden=True,
-    ),
     column_id: str = typer.Option(..., "--column", help="Column ID (status or dropdown)."),
 ) -> None:
     """List the known labels for a status or dropdown column on a board.
@@ -243,7 +232,6 @@ def labels_cmd(
     error.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
     client = client_or_exit(opts)
     try:
