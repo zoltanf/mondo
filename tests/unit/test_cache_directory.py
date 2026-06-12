@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,32 @@ class FakeClient:
         if not self._responses:
             raise AssertionError("FakeClient: no more programmed responses")
         return self._responses.pop(0)
+
+
+class WorkspaceKeyedDocsClient:
+    """Fake for the docs fan-out: serves one workspaces page, then docs
+    responses keyed by the `workspaceIds` variable. Deterministic under the
+    worker pool, unlike FakeClient's pop-in-arrival-order responses."""
+
+    def __init__(
+        self,
+        workspaces: list[dict[str, Any]],
+        docs_by_ws: dict[int, list[dict[str, Any]]],
+    ) -> None:
+        self._workspaces = workspaces
+        self._docs_by_ws = docs_by_ws
+        self._lock = threading.Lock()
+        self.calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    def execute(
+        self, query: str, variables: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        with self._lock:
+            self.calls.append((query, variables))
+        if "docs(" in query:
+            ws_id = (variables or {})["workspaceIds"][0]
+            return {"data": {"docs": self._docs_by_ws.get(ws_id, [])}}
+        return {"data": {"workspaces": self._workspaces}}
 
 
 def _store(tmp_path: Path, entity: str) -> CacheStore:
@@ -227,16 +254,14 @@ def test_get_docs_primes_per_workspace_and_merges(tmp_path: Path) -> None:
     docs). Priming must enumerate workspaces and fan out one
     `docs(workspace_ids: [X])` query per workspace, merging the results."""
     store = _store(tmp_path, "docs")
-    client = FakeClient([
+    client = WorkspaceKeyedDocsClient(
         # workspaces list — single page (< page size stops pagination)
-        {"data": {"workspaces": [{"id": "10"}, {"id": "20"}]}},
-        # docs for workspace 10 — single page
-        {"data": {"docs": [{"id": "1", "object_id": "100", "name": "A",
-                            "workspace_id": "10"}]}},
-        # docs for workspace 20 — single page
-        {"data": {"docs": [{"id": "2", "object_id": "200", "name": "B",
-                            "workspace_id": "20"}]}},
-    ])
+        workspaces=[{"id": "10"}, {"id": "20"}],
+        docs_by_ws={
+            10: [{"id": "1", "object_id": "100", "name": "A", "workspace_id": "10"}],
+            20: [{"id": "2", "object_id": "200", "name": "B", "workspace_id": "20"}],
+        },
+    )
 
     result = get_docs(client, store=store)
 
@@ -253,11 +278,10 @@ def test_get_docs_dedupes_across_workspaces(tmp_path: Path) -> None:
     practice but monday has surprised us before), dedupe by id."""
     store = _store(tmp_path, "docs")
     duplicate = {"id": "7", "object_id": "77", "name": "Shared"}
-    client = FakeClient([
-        {"data": {"workspaces": [{"id": "10"}, {"id": "20"}]}},
-        {"data": {"docs": [duplicate]}},
-        {"data": {"docs": [duplicate]}},
-    ])
+    client = WorkspaceKeyedDocsClient(
+        workspaces=[{"id": "10"}, {"id": "20"}],
+        docs_by_ws={10: [duplicate], 20: [duplicate]},
+    )
 
     result = get_docs(client, store=store)
 

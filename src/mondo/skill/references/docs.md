@@ -22,12 +22,12 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 
 ```json
 [
-  {"id": 5095668848, "object_id": "abcd1234", "name": "Spec — login flow"},
-  {"id": 5095668849, "object_id": "abcd1235", "name": "Spec — auth middleware"}
+  {"id": 5095668848, "object_id": "5098297247", "name": "Spec — login flow"},
+  {"id": 5095668849, "object_id": "5098297248", "name": "Spec — auth middleware"}
 ]
 ```
 
-*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the UUID-style doc id used in URLs (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
+*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the (also numeric) URL-visible doc id (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Get a doc — JSON or Markdown
 
@@ -36,16 +36,17 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 mondo doc get --id 5095668848 --format json -o json
 
 # Or address by object_id (the URL form):
-mondo doc get --object-id abcd1234 --format json -o json
+mondo doc get --object-id 5098297247 --format json -o json
 
-# Render to Markdown:
+# Render to Markdown (--object-id for the URL-visible id, --doc for the internal id):
+mondo doc export-markdown --object-id 5098297247
 mondo doc export-markdown --doc 5095668848
 ```
 
 ```json
 {
   "id": 5095668848,
-  "object_id": "abcd1234",
+  "object_id": "5098297247",
   "name": "Spec — login flow",
   "blocks": [
     {"type": "large_title",  "content": {"deltaFormat": [{"insert": "Section A"}]}},
@@ -54,7 +55,7 @@ mondo doc export-markdown --doc 5095668848
 }
 ```
 
-*Gotcha:* `--id` is the numeric, `--object-id` is the UUID. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
+*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. **Every** doc subcommand that targets a doc (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accepts `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
 
 ## Create a doc
 
@@ -63,10 +64,10 @@ mondo doc create --workspace 592446 --name "Spec — Q3 launch"
 ```
 
 ```json
-{"id": 5095668850, "object_id": "abcd1239", "name": "Spec — Q3 launch", "blocks": []}
+{"id": 5095668850, "object_id": "5098297249", "name": "Spec — Q3 launch", "url": "https://acct.monday.com/docs/5098297249"}
 ```
 
-*Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`.
+*Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`. The create payload always carries `url` (`--with-url` is accepted for symmetry with `board create` / `item create` but is a no-op).
 
 ## Add markdown to a doc
 

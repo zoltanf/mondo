@@ -59,8 +59,9 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `BOARD_ARCHIVE.archive_board`
 - `board create`
   type: `object`
-  fields: `id`, `name`, `description`, `state`, `board_kind`, `workspace_id`, `board_folder_id`
+  fields: `id`, `name`, `description`, `state`, `board_kind`, `workspace_id`, `board_folder_id`, `url?`
   source: `BOARD_CREATE.create_board`
+  notes: url is present only when --with-url is passed (stripped otherwise).
 - `board delete`
   type: `object`
   fields: `id`, `name`, `state`
@@ -284,6 +285,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`, `url`, `uploaded_by`, `uploaded_at`
   source: `FILE_UPLOAD_ITEM.add_file_to_column | FILE_UPLOAD_UPDATE.add_file_to_update`
   notes: Both item-column and update upload paths return an Asset-like payload. Dry-run emits endpoint/query/variables/filename instead.
+- `file url`
+  type: `list[object]`
+  fields: `id`, `name`, `file_extension`, `file_size`, `public_url`, `url`
+  source: `file.url results`
+  notes: Always a list, even for a single --asset (no single-item unwrap). public_url is the pre-signed, expiring S3 link; url is monday's browser-only protected_static proxy.
 
 ## folder
 

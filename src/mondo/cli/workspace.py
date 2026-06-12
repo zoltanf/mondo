@@ -138,20 +138,18 @@ def list_cmd(
         )
         raise typer.Exit(0)
 
-    from mondo.api.pagination import iter_boards_page
+    from mondo.api.pagination import fetch_pages_concurrent
 
     client = client_or_exit(opts)
     try:
         with client:
-            items = list(
-                iter_boards_page(
-                    client,
-                    query=WORKSPACES_LIST_PAGE,
-                    variables=variables,
-                    collection_key="workspaces",
-                    limit=limit,
-                    max_items=None if name_fuzzy else max_items,
-                )
+            items = fetch_pages_concurrent(
+                client,
+                query=WORKSPACES_LIST_PAGE,
+                variables=variables,
+                collection_key="workspaces",
+                limit=limit,
+                max_items=None if name_fuzzy else max_items,
             )
     except MondoError as e:
         handle_mondo_error_or_exit(e)

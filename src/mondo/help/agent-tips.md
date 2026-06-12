@@ -57,12 +57,14 @@ graphql`:
 |-------------------|-----------------------------------------------------|
 | `board list`      | `--with-item-counts`, `--with-url`, `--with-tags`   |
 | `board get`       | `--with-url`, `--with-views`                        |
+| `board create`    | `--with-url` (returns the new board's URL without a follow-up GET) |
 | `item get`        | `--with-url`                                        |
 | `item create`     | `--with-url` (returns the new item's URL without a follow-up GET) |
 | `item duplicate`  | `--with-updates`                                    |
 | `subitem get`     | `--with-url`                                        |
 | `doc list`        | `--with-url`                                        |
 | `doc get`         | `--with-url`                                        |
+| `doc create`      | `--with-url` (no-op: the create payload always carries `url`; accepted for symmetry) |
 
 Some of these (e.g. `--with-item-counts`, `--with-tags`) bypass the
 local cache because the extra fields aren't cached — read each
@@ -79,13 +81,16 @@ shorter than the equivalent `-q '[].{id:id,name:name,status:status}'`.
 
 ## Cache provenance
 
-Read commands that hit the local directory cache emit one stderr
+Read commands that hit the local directory cache can emit one stderr
 line so you can tell cached results from live ones:
 
     cache: hit (entity=boards, age=2m, count=143)
 
-Suppress with `MONDO_NO_CACHE_NOTICE=1`. The line is also auto-
-suppressed in `-o table` mode (TTY humans don't usually want it).
+Since #25 the line is suppressed by default when stderr is not a TTY
+(the typical agent context) — re-enable it with `--verbose` or
+`MONDO_VERBOSE=1`. On a TTY, suppress it with `MONDO_NO_CACHE_NOTICE=1`;
+it is also auto-suppressed in `-o table` mode (TTY humans don't usually
+want it).
 
 For verbose detail (cache path, ttl, exact fetched-at), pass
 `--explain-cache` on the read command:

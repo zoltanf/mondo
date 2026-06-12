@@ -57,24 +57,26 @@ class TestBoardList:
         assert [b["id"] for b in parsed] == ["1", "2"]
 
     def test_paginates_until_short_page(self, httpx_mock: HTTPXMock) -> None:
-        # First page is full (limit=2) → fetcher goes for page 2.
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"boards": [{"id": "1"}, {"id": "2"}]}),
-        )
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"boards": [{"id": "3"}]}),
-        )
+        # First page is full (limit=2) → fetcher goes on to page 2+. Pages
+        # past page 1 are fetched concurrently (waves of 4), so serve by the
+        # requested page number instead of registration order.
+        import httpx
+
+        pages = {1: [{"id": "1"}, {"id": "2"}], 2: [{"id": "3"}]}
+
+        def _serve(request: httpx.Request) -> httpx.Response:
+            page = json.loads(request.content)["variables"]["page"]
+            return httpx.Response(200, json=_ok({"boards": pages.get(page, [])}))
+
+        httpx_mock.add_callback(_serve, is_reusable=True)
         result = runner.invoke(app, ["board", "list", "--limit", "2"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [b["id"] for b in parsed] == ["1", "2", "3"]
         bodies = _bodies(httpx_mock)
+        # Page 1 is always fetched first (serially); page 2 follows in the wave.
         assert bodies[0]["variables"]["page"] == 1
-        assert bodies[1]["variables"]["page"] == 2
+        assert {b["variables"]["page"] for b in bodies} >= {1, 2}
 
     def test_max_items_truncates(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -666,6 +668,55 @@ class TestBoardCreate:
         assert "create_board" in parsed["query"]
         assert parsed["variables"]["name"] == "X"
         assert httpx_mock.get_requests() == []
+
+    def test_with_url_emits_url_in_single_call(self, httpx_mock: HTTPXMock) -> None:
+        """Issue #10: `board create --with-url` returns the new board's URL
+        without a second API call (url is part of the mutation selection)."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_board": {
+                        "id": "99",
+                        "name": "New",
+                        "board_kind": "public",
+                        "url": "https://acme.monday.com/boards/99",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "create", "--name", "New", "--with-url"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://acme.monday.com/boards/99"
+        # Single HTTP call — the create mutation itself carried the url.
+        assert len(httpx_mock.get_requests()) == 1
+        # The outgoing mutation selection set must include url.
+        assert "url" in _last_body(httpx_mock)["query"]
+
+    def test_without_with_url_strips_url(self, httpx_mock: HTTPXMock) -> None:
+        """Without the flag, output is unchanged: no `url` key even though
+        the mutation selection now includes it."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_board": {
+                        "id": "99",
+                        "name": "New",
+                        "board_kind": "public",
+                        "url": "https://acme.monday.com/boards/99",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["board", "create", "--name", "New"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert "url" not in parsed
+        assert len(httpx_mock.get_requests()) == 1
 
 
 # --- update ---

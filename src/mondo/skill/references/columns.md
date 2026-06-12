@@ -111,6 +111,8 @@ mondo column set --item 9876543210 --column e2e_status --value Done --dry-run
 
 *Gotcha:* the `--value` syntax goes through monday's per-type codec (see `mondo help codecs`). For complex types (timeline, board_relation, dropdown with multiple labels) the codec may need JSON instead of a label — `mondo column set --help` shows examples per type. When in doubt, run with `--dry-run` first to inspect the payload.
 
+*Gotcha:* the `name` "column" (the item's title in monday's UI) is **not settable** via `change_column_value` — the mutation `column set` sends (including `--raw`). Rename items with `mondo item rename <item-id> --board <board-id> --name "<new name>"` instead (the error message points there too).
+
 ## Multi-column writes on `item create`
 
 Repeat `--column k=v` to set multiple columns at item creation time:

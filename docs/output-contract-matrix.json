@@ -112,9 +112,10 @@
       "state",
       "board_kind",
       "workspace_id",
-      "board_folder_id"
+      "board_folder_id",
+      "url?"
     ],
-    "notes": "",
+    "notes": "url is present only when --with-url is passed (stripped otherwise).",
     "source": "BOARD_CREATE.create_board"
   },
   {
@@ -648,6 +649,20 @@
     "source": "FILE_UPLOAD_ITEM.add_file_to_column | FILE_UPLOAD_UPDATE.add_file_to_update"
   },
   {
+    "command": "file url",
+    "output_type": "list[object]",
+    "fields": [
+      "id",
+      "name",
+      "file_extension",
+      "file_size",
+      "public_url",
+      "url"
+    ],
+    "notes": "Always a list, even for a single --asset (no single-item unwrap). public_url is the pre-signed, expiring S3 link; url is monday's browser-only protected_static proxy.",
+    "source": "file.url results"
+  },
+  {
     "command": "folder create",
     "output_type": "object",
     "fields": [
@@ -722,7 +737,7 @@
       "errors?",
       "extensions?"
     ],
-    "notes": "Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 — mondo can't safely preview a query it doesn't parse).",
+    "notes": "Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 \u2014 mondo can't safely preview a query it doesn't parse).",
     "source": "client.execute(..., raw=True)"
   },
   {

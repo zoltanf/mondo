@@ -35,8 +35,9 @@ board portion of the URL is discarded — the pulse id is globally unique.
 
 ## Get a URL back out of a payload
 
-Pass `--with-url` on `board get`, `item get`, `subitem get`, or
-`item create` to include a canonical monday URL in the emitted payload:
+Pass `--with-url` on `board get`, `board create`, `item get`,
+`subitem get`, or `item create` to include a canonical monday URL in
+the emitted payload:
 
     $ mondo item get 12345 --with-url -q url -o none
     https://<tenant>.monday.com/boards/42/pulses/12345
@@ -46,7 +47,9 @@ Pass `--with-url` on `board get`, `item get`, `subitem get`, or
     https://<tenant>.monday.com/boards/42/pulses/99
 
 `mondo doc get` always includes `url` (monday's `docs()` endpoint returns
-it); `--with-url` there is accepted but has no effect.
+it); `--with-url` there is accepted but has no effect. `mondo doc create`
+behaves the same way: its payload always includes `url`, so the flag is
+a no-op there too.
 
 On `board list` and `doc list`, `--with-url` is opt-in: the default output
 has no `url` / `relative_url` so the two commands emit the same core shape.

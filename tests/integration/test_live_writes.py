@@ -634,6 +634,32 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
 
 
 @pytest.mark.integration
+def test_live_doc_export_markdown_object_id(live_test_doc_id: int) -> None:
+    """Read-only #24 coverage: `export-markdown --object-id` works directly,
+    and the same id passed as `--doc` fails with the targeted retry hint
+    instead of an opaque server 500."""
+    md_result = invoke(["doc", "export-markdown", "--object-id", str(live_test_doc_id)])
+    assert md_result.stdout.strip(), "export-markdown --object-id produced no output"
+
+    wrong = invoke(
+        ["doc", "export-markdown", "--doc", str(live_test_doc_id)],
+        expect_exit=None,
+    )
+    assert wrong.exit_code != 0, format_failure(["doc", "export-markdown"], wrong)
+    assert f"--object-id {live_test_doc_id}" in wrong.stderr, wrong.stderr
+
+    both = invoke(
+        [
+            "doc", "export-markdown",
+            "--doc", str(live_test_doc_id),
+            "--object-id", str(live_test_doc_id),
+        ],
+        expect_exit=2,
+    )
+    assert "exactly one of" in both.stderr
+
+
+@pytest.mark.integration
 def test_live_doc_create_add_blocks_delete(
     live_workspace_id: int, cleanup_plan: CleanupPlan
 ) -> None:
@@ -688,3 +714,39 @@ def test_live_doc_create_add_blocks_delete(
         return blocks
 
     wait_for("doc blocks landed", _blocks_landed)
+
+
+@pytest.mark.integration
+def test_live_board_and_doc_create_with_url(
+    live_workspace_id: int, cleanup_plan: CleanupPlan
+) -> None:
+    """Issue #10: `board create --with-url` / `doc create --with-url` return
+    the new entity's monday.com URL in the single create call."""
+    suffix = uuid.uuid4().hex[:8]
+
+    board = invoke_json(
+        [
+            "board", "create",
+            "--workspace", str(live_workspace_id),
+            "--name", f"E2E WithUrl Board {suffix}",
+            "--kind", "private",
+            "--empty",
+            "--with-url",
+        ]
+    )
+    board_id = int(board["id"])
+    cleanup_plan.add("board", "board", "delete", "--id", str(board_id), "--hard")
+    assert board.get("url", "").startswith("https://")
+    assert f"/boards/{board_id}" in board["url"]
+
+    doc = invoke_json(
+        [
+            "doc", "create",
+            "--workspace", str(live_workspace_id),
+            "--name", f"E2E WithUrl Doc {suffix}",
+            "--with-url",
+        ]
+    )
+    doc_id = int(doc["id"])
+    cleanup_plan.add(f"doc E2E WithUrl Doc {suffix}", "doc", "delete", "--doc", str(doc_id))
+    assert doc.get("url", "").startswith("https://")

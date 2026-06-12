@@ -44,7 +44,7 @@ from mondo.cli._exec import (
     handle_mondo_error_or_exit,
     poll_or_exit,
 )
-from mondo.cli._resolve import coalesce_board_flag, resolve_by_filters, resolve_required_id
+from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
 from mondo.util.kvparse import parse_column_kv
@@ -423,9 +423,6 @@ def list_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    board_id_alias: int | None = typer.Option(
-        None, "--board-id", help="(hidden alias for --board)", hidden=True,
-    ),
     group_id: str | None = typer.Option(
         None,
         "--group",
@@ -496,7 +493,6 @@ def list_cmd(
     --order-by col[,asc|desc] to sort.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     _list_items_impl(
         opts,
         board_pos=board_pos,
@@ -666,9 +662,6 @@ def find_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    board_id_alias: int | None = typer.Option(
-        None, "--board-id", help="(hidden alias for --board)", hidden=True,
-    ),
     column_id: str = typer.Option(
         ..., "--column", help="Column ID to match on (e.g. 'status')."
     ),
@@ -684,7 +677,6 @@ def find_cmd(
     `mondo column labels` pointer on unknown labels are inherited.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    board_flag = coalesce_board_flag(board_flag, board_id_alias)
     _list_items_impl(
         opts,
         board_pos=board_pos,

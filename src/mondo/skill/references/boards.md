@@ -60,6 +60,13 @@ mondo board create \
 
 *Gotcha:* `--empty` creates a fresh board with **no** template columns/items. Drop it to use monday's default template (Item / Subitems / People / Status / Date columns auto-added). `--kind` is `public | private | share`. `--folder` is optional but typical.
 
+```bash
+# Create + clickable link in one call (no extra API request):
+mondo board create --workspace 592446 --name "Roadmap" --kind public --with-url -q url -o none
+```
+
+Without `--with-url` the output is unchanged (no `url` field).
+
 ## Duplicate a board
 
 Three modes:

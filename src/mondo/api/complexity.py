@@ -19,6 +19,7 @@ we leave it alone.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -66,8 +67,9 @@ class ComplexitySample:
 class ComplexityMeter:
     """Session-wide running tally of monday complexity drain.
 
-    Updated each time a response carries a `complexity` block. Safe to
-    mutate without locking — the client is single-threaded per Phase 1+2.
+    Updated each time a response carries a `complexity` block. `record()`
+    may run from worker threads (`fetch_pages_concurrent`), so it takes an
+    internal lock around the mutation block.
     """
 
     samples: int = 0
@@ -77,6 +79,7 @@ class ComplexityMeter:
     reset_in_seconds: int | None = None
     total_cost: int = 0
     history: list[ComplexitySample] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def record(self, response_data: dict[str, Any] | None) -> ComplexitySample | None:
         """Pull a complexity block out of a GraphQL response `data` payload
@@ -102,13 +105,14 @@ class ComplexityMeter:
             budget_after=values["after"],
             reset_in_seconds=values["reset_in_x_seconds"],
         )
-        self.samples += 1
-        self.total_cost += sample.query_cost
-        self.last_query_cost = sample.query_cost
-        self.budget_before = sample.budget_before
-        self.budget_after = sample.budget_after
-        self.reset_in_seconds = sample.reset_in_seconds
-        self.history.append(sample)
+        with self._lock:
+            self.samples += 1
+            self.total_cost += sample.query_cost
+            self.last_query_cost = sample.query_cost
+            self.budget_before = sample.budget_before
+            self.budget_after = sample.budget_after
+            self.reset_in_seconds = sample.reset_in_seconds
+            self.history.append(sample)
         return sample
 
     def to_dict(self) -> dict[str, Any]:

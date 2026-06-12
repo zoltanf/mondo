@@ -2,7 +2,7 @@
 
 Per monday-api.md §13:
 - `body` accepts **HTML**, not markdown. Mentions use `<mention>…</mention>`.
-- Page size max is 100 (since 2025-04). We paginate via `iter_boards_page`.
+- Page size max is 100 (since 2025-04). We paginate via `fetch_pages_concurrent`.
 - `create_update(parent_id:)` creates a **reply** instead of a top-level
   update; `mondo update reply` is a thin wrapper around the same mutation.
 """
@@ -16,7 +16,7 @@ from typing import Any
 import typer
 
 from mondo.api.errors import MondoError
-from mondo.api.pagination import iter_boards_page
+from mondo.api.pagination import fetch_pages_concurrent
 from mondo.api.queries import (
     UPDATE_CLEAR_ITEM,
     UPDATE_CREATE,
@@ -261,15 +261,13 @@ def list_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            items = list(
-                iter_boards_page(
-                    client,
-                    query=UPDATES_LIST_PAGE,
-                    variables={"ids": None},
-                    collection_key="updates",
-                    limit=limit,
-                    max_items=max_items,
-                )
+            items = fetch_pages_concurrent(
+                client,
+                query=UPDATES_LIST_PAGE,
+                variables={"ids": None},
+                collection_key="updates",
+                limit=limit,
+                max_items=max_items,
             )
     except MondoError as e:
         handle_mondo_error_or_exit(e)
