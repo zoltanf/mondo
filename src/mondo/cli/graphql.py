@@ -13,7 +13,7 @@ from pathlib import Path
 import typer
 
 from mondo.api.errors import MondoError
-from mondo.cli._exec import handle_mondo_error_or_exit
+from mondo.cli._exec import handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli.context import GlobalOpts
 
@@ -63,16 +63,13 @@ def graphql_command(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
     if opts.dry_run:
-        typer.secho(
-            "error: --dry-run is not supported with `mondo graphql`. The raw "
+        usage_error_or_exit(
+            "--dry-run is not supported with `mondo graphql`. The raw "
             "passthrough can't preview safely (mondo doesn't parse your query, "
             "and verifying success requires sending it). Review the GraphQL "
             "manually and re-run without --dry-run, or use a typed subcommand "
-            "if one wraps your operation.",
-            fg=typer.colors.RED,
-            err=True,
+            "if one wraps your operation."
         )
-        raise typer.Exit(code=2)
 
     if query is None:
         # Issue #13: `--query '<gql>'` is the #1 agent guess (gh-api style).
@@ -90,12 +87,7 @@ def graphql_command(
                 err=True,
             )
         else:
-            typer.secho(
-                "error: missing required argument 'QUERY'.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2)
+            usage_error_or_exit("missing required argument 'QUERY'.")
 
     query_text = _load_query(query)
     vars_dict: dict[str, object] = {}

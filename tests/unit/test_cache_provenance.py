@@ -44,6 +44,13 @@ class TestFormatAge:
 
 
 class TestEmitCacheProvenance:
+    @pytest.fixture(autouse=True)
+    def _human_watching(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Captured stderr is not a TTY, which would suppress the notice
+        # under the #25 gating. Force notices on; the gating itself is
+        # covered by TestBenignNoticeGating below.
+        monkeypatch.setenv("MONDO_VERBOSE", "1")
+
     def test_emits_when_from_cache(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -133,6 +140,54 @@ class TestEmitCacheProvenance:
         emit_cache_provenance(_opts(), _cached(from_cache=True, age_seconds=120))
         captured = capsys.readouterr()
         assert "age=2m" in captured.err
+
+
+class TestBenignNoticeGating:
+    """#25: cache notices are benign noise to a pipeline — suppressed when no
+    human is plausibly watching stderr, unless --verbose / MONDO_VERBOSE=1
+    (or --explain-cache, an explicit request)."""
+
+    @pytest.fixture(autouse=True)
+    def _non_tty_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("sys.stderr.isatty", lambda: False)
+        monkeypatch.delenv("MONDO_VERBOSE", raising=False)
+
+    def test_suppressed_when_stderr_not_a_tty(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        emit_cache_provenance(_opts(), _cached(from_cache=True))
+        assert capsys.readouterr().err == ""
+
+    def test_mondo_verbose_env_restores_notice(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("MONDO_VERBOSE", "1")
+        emit_cache_provenance(_opts(), _cached(from_cache=True))
+        assert "cache: hit" in capsys.readouterr().err
+
+    def test_verbose_flag_restores_notice(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        opts = _opts()
+        opts.verbose = True
+        emit_cache_provenance(opts, _cached(from_cache=True))
+        assert "cache: hit" in capsys.readouterr().err
+
+    def test_explain_overrides_non_tty(
+        self, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        store = CacheStore(
+            entity_type="boards",
+            cache_dir=tmp_path,
+            api_endpoint="https://api.monday.com/v2",
+            ttl_seconds=900,
+        )
+        emit_cache_provenance(
+            _opts(), _cached(from_cache=True), store=store, explain=True
+        )
+        assert "cache: hit" in capsys.readouterr().err
 
 
 class TestCacheStoreReadSetsFromCache:

@@ -39,6 +39,10 @@ class GlobalOpts:
     fields: str | None = None
     yes: bool = False
     dry_run: bool = False
+    # True once `emit()` has written to stdout. The fatal-error stdout
+    # mirror (#25) checks this so a partial-success stream is never
+    # corrupted by a trailing error envelope.
+    stdout_emitted: bool = field(default=False, init=False)
     _config: Config | None = field(default=None, init=False, repr=False)
     _cache_config: ResolvedCacheConfig | None = field(default=None, init=False, repr=False)
 
@@ -88,6 +92,8 @@ class GlobalOpts:
         ):
             self._warn_unselected_projection_fields(self.query, selected_fields)
         format_output(projected, fmt=fmt, stream=out, tty=is_tty)
+        if stream is None and fmt != "none":
+            self.stdout_emitted = True
 
     @staticmethod
     def _warn_unselected_projection_fields(

@@ -174,6 +174,10 @@ Or via environment variables (highest non-CLI precedence):
 - `MONDO_CACHE_FUZZY_THRESHOLD` — integer 0-100
 - `MONDO_NO_CACHE_NOTICE=1` — silence the `cache: hit (entity=…, age=…)`
   stderr provenance line on hits
+- `MONDO_VERBOSE=1` — show the provenance line even when stderr is not a
+  TTY (since #25, benign notices are suppressed by default in
+  non-interactive runs; `--verbose` and `--explain-cache` also restore
+  them)
 
 Precedence (lowest → highest): built-in defaults → global `cache:` → profile
 `cache:` → env vars → CLI flags (`--no-cache`, `--refresh-cache`,
