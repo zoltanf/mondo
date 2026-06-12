@@ -363,6 +363,20 @@
     "source": "COLUMN_CONTEXT.items[0].column_values[] | render_value"
   },
   {
+    "command": "column get-meta",
+    "output_type": "object",
+    "fields": [
+      "id",
+      "title",
+      "type",
+      "description",
+      "archived",
+      "settings_str"
+    ],
+    "notes": "Full column definition including settings_str. Unlike column list, settings_str is preserved.",
+    "source": "COLUMNS_ON_BOARD.boards[0].columns[?id==column_id]"
+  },
+  {
     "command": "column labels",
     "output_type": "list[object]",
     "fields": [
@@ -456,14 +470,10 @@
   },
   {
     "command": "doc add-markdown",
-    "output_type": "object",
-    "fields": [
-      "success",
-      "block_ids",
-      "error"
-    ],
-    "notes": "",
-    "source": "ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: result",
+    "source": "doc.py"
   },
   {
     "command": "doc create",
@@ -479,10 +489,10 @@
   },
   {
     "command": "doc delete",
-    "output_type": "list[object]",
+    "output_type": "manual-review",
     "fields": [],
-    "notes": "",
-    "source": "DELETE_DOC.delete_doc"
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"delete_doc\")",
+    "source": "doc.py"
   },
   {
     "command": "doc delete-block",
@@ -495,17 +505,22 @@
   },
   {
     "command": "doc duplicate",
-    "output_type": "list[object]",
-    "fields": [],
-    "notes": "",
-    "source": "DUPLICATE_DOC.duplicate_doc"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "object_id",
+      "name",
+      "url"
+    ],
+    "notes": "Emits a slim doc header for the newly created duplicate; fetched via DOC_HEAD_BY_OBJECT_ID.",
+    "source": "DOC_HEAD_BY_OBJECT_ID.docs[0]{id,object_id,name,url}"
   },
   {
     "command": "doc export-markdown",
     "output_type": "manual-review",
     "fields": [],
     "notes": "Could not auto-infer. Final emit expression: result",
-    "source": "EXPORT_MARKDOWN_FROM_DOC"
+    "source": "doc.py"
   },
   {
     "command": "doc get",
@@ -561,10 +576,10 @@
   },
   {
     "command": "doc rename",
-    "output_type": "list[object]",
+    "output_type": "manual-review",
     "fields": [],
-    "notes": "",
-    "source": "UPDATE_DOC_NAME.update_doc_name"
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"update_doc_name\")",
+    "source": "doc.py"
   },
   {
     "command": "doc update-block",
@@ -578,25 +593,17 @@
   },
   {
     "command": "doc version-diff",
-    "output_type": "object",
-    "fields": [
-      "doc_id",
-      "date",
-      "prev_date",
-      "blocks{id,type,content,summary,parent_block_id,changes{added,deleted,changed}}"
-    ],
-    "notes": "",
-    "source": "DOC_VERSION_DIFF.doc_version_diff"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"doc_version_diff\") or {}",
+    "source": "doc.py"
   },
   {
     "command": "doc version-history",
-    "output_type": "object",
-    "fields": [
-      "doc_id",
-      "restoring_points{date,user_ids,type}"
-    ],
-    "notes": "",
-    "source": "DOC_VERSION_HISTORY.doc_version_history"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"doc_version_history\") or {}",
+    "source": "doc.py"
   },
   {
     "command": "export board",
@@ -685,10 +692,20 @@
   },
   {
     "command": "folder get",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])",
-    "source": "FOLDER_GET"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "name",
+      "color",
+      "workspace_id",
+      "workspace_name",
+      "parent_id",
+      "parent_name",
+      "created_at",
+      "owner_id"
+    ],
+    "notes": "Same normalized flat shape as folder list rows. Served from directory cache or live FOLDER_GET.",
+    "source": "FOLDER_GET via normalize_folder_entry"
   },
   {
     "command": "folder list",
@@ -737,7 +754,7 @@
       "errors?",
       "extensions?"
     ],
-    "notes": "Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 \u2014 mondo can't safely preview a query it doesn't parse).",
+    "notes": "Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 — mondo can't safely preview a query it doesn't parse).",
     "source": "client.execute(..., raw=True)"
   },
   {
@@ -904,6 +921,19 @@
     "source": "ITEM_DUPLICATE.duplicate_item"
   },
   {
+    "command": "item find",
+    "output_type": "list[object]",
+    "fields": [
+      "id",
+      "name",
+      "state",
+      "group{id,title}",
+      "column_values{id,type,text,value}"
+    ],
+    "notes": "Sugar over `item list --filter COL=VAL`. Returns the same shape as `item list`.",
+    "source": "ITEMS_PAGE_INITIAL.items[] / ITEMS_PAGE_NEXT.items[]"
+  },
+  {
     "command": "item get",
     "output_type": "object",
     "fields": [
@@ -1001,6 +1031,13 @@
     ],
     "notes": "",
     "source": "CREATE_NOTIFICATION.create_notification"
+  },
+  {
+    "command": "skill install",
+    "output_type": "text-message",
+    "fields": [],
+    "notes": "No structured payload. Prints installed path and each written file.",
+    "source": "typer.echo"
   },
   {
     "command": "subitem archive",

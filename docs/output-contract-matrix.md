@@ -157,6 +157,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `type`, `text`, `value`
   source: `COLUMN_CONTEXT.items[0].column_values[] | render_value`
   notes: Default output is a rendered scalar/string. --raw emits the current column_values row.
+- `column get-meta`
+  type: `object`
+  fields: `id`, `title`, `type`, `description`, `archived`, `settings_str`
+  source: `COLUMNS_ON_BOARD.boards[0].columns[?id==column_id]`
+  notes: Full column definition including settings_str. Unlike column list, settings_str is preserved.
 - `column labels`
   type: `list[object]`
   fields: `index,label | id,name`
@@ -203,29 +208,32 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `CREATE_DOC_BLOCK.create_doc_block[]`
   notes: One emitted row per created block.
 - `doc add-markdown`
-  type: `object`
-  fields: `success`, `block_ids`, `error`
-  source: `ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown`
+  type: `manual-review`
+  fields: none
+  source: `doc.py`
+  notes: Could not auto-infer. Final emit expression: result
 - `doc create`
   type: `object`
   fields: `id`, `object_id`, `name`, `url`
   source: `CREATE_DOC_IN_WORKSPACE.create_doc`
 - `doc delete`
-  type: `list[object]`
+  type: `manual-review`
   fields: none
-  source: `DELETE_DOC.delete_doc`
+  source: `doc.py`
+  notes: Could not auto-infer. Final emit expression: data.get("delete_doc")
 - `doc delete-block`
   type: `object`
   fields: `id`
   source: `DELETE_DOC_BLOCK.delete_doc_block`
 - `doc duplicate`
-  type: `list[object]`
-  fields: none
-  source: `DUPLICATE_DOC.duplicate_doc`
+  type: `object`
+  fields: `id`, `object_id`, `name`, `url`
+  source: `DOC_HEAD_BY_OBJECT_ID.docs[0]{id,object_id,name,url}`
+  notes: Emits a slim doc header for the newly created duplicate; fetched via DOC_HEAD_BY_OBJECT_ID.
 - `doc export-markdown`
   type: `manual-review`
   fields: none
-  source: `EXPORT_MARKDOWN_FROM_DOC`
+  source: `doc.py`
   notes: Could not auto-infer. Final emit expression: result
 - `doc get`
   type: `object | string`
@@ -242,21 +250,24 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `build_docs_list_query + normalize_doc_entry + decorators`
   notes: Normalized: doc_kind -> kind, doc_folder_id -> folder_id. url/relative_url are removed unless --with-url is passed. _fuzzy_score is appended by --fuzzy-score. workspace_name is best-effort enrichment.
 - `doc rename`
-  type: `list[object]`
+  type: `manual-review`
   fields: none
-  source: `UPDATE_DOC_NAME.update_doc_name`
+  source: `doc.py`
+  notes: Could not auto-infer. Final emit expression: data.get("update_doc_name")
 - `doc update-block`
   type: `object`
   fields: `id`, `type`
   source: `UPDATE_DOC_BLOCK.update_doc_block`
 - `doc version-diff`
-  type: `object`
-  fields: `doc_id`, `date`, `prev_date`, `blocks{id,type,content,summary,parent_block_id,changes{added,deleted,changed}}`
-  source: `DOC_VERSION_DIFF.doc_version_diff`
+  type: `manual-review`
+  fields: none
+  source: `doc.py`
+  notes: Could not auto-infer. Final emit expression: data.get("doc_version_diff") or {}
 - `doc version-history`
-  type: `object`
-  fields: `doc_id`, `restoring_points{date,user_ids,type}`
-  source: `DOC_VERSION_HISTORY.doc_version_history`
+  type: `manual-review`
+  fields: none
+  source: `doc.py`
+  notes: Could not auto-infer. Final emit expression: data.get("doc_version_history") or {}
 
 ## export
 
@@ -302,10 +313,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`
   source: `FOLDER_DELETE.delete_folder`
 - `folder get`
-  type: `manual-review`
-  fields: none
-  source: `FOLDER_GET`
-  notes: Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])
+  type: `object`
+  fields: `id`, `name`, `color`, `workspace_id`, `workspace_name`, `parent_id`, `parent_name`, `created_at`, `owner_id`
+  source: `FOLDER_GET via normalize_folder_entry`
+  notes: Same normalized flat shape as folder list rows. Served from directory cache or live FOLDER_GET.
 - `folder list`
   type: `list[object]`
   fields: `id`, `name`, `color`, `workspace_id`, `workspace_name`, `parent_id`, `parent_name`, `created_at`, `owner_id`
@@ -399,6 +410,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `object`
   fields: `id`, `name`, `state`, `group{id,title}`
   source: `ITEM_DUPLICATE.duplicate_item`
+- `item find`
+  type: `list[object]`
+  fields: `id`, `name`, `state`, `group{id,title}`, `column_values{id,type,text,value}`
+  source: `ITEMS_PAGE_INITIAL.items[] / ITEMS_PAGE_NEXT.items[]`
+  notes: Sugar over `item list --filter COL=VAL`. Returns the same shape as `item list`.
 - `item get`
   type: `object`
   fields: `id`, `name`, `state`, `created_at`, `updated_at`, `creator{id,name}`, `group{id,title}`, `board{id,name}`, `column_values{id,type,text,value}`, `updates{id,body,text_body,creator{id,name},created_at}?`, `subitems{id,name,state,column_values{id,type,text,value}}?`, `url?`
@@ -435,6 +451,14 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `object`
   fields: `id`, `text`
   source: `CREATE_NOTIFICATION.create_notification`
+
+## skill
+
+- `skill install`
+  type: `text-message`
+  fields: none
+  source: `typer.echo`
+  notes: No structured payload. Prints installed path and each written file.
 
 ## subitem
 
