@@ -73,6 +73,34 @@ class TestBenignNoticesEnabled:
         assert benign_notices_enabled(verbose=True) is True
 
 
+class TestMondoVerboseEnvVar:
+    """`MONDO_VERBOSE=1` is wired onto the root `--verbose` option via
+    `envvar`, so it enables verbose logging — not just the benign-notice
+    gate in `_notices.py`."""
+
+    def _seen_verbose(self, monkeypatch: pytest.MonkeyPatch) -> bool:
+        import mondo.logging_ as logging_
+
+        seen: dict = {}
+        monkeypatch.setattr(
+            logging_,
+            "configure_logging",
+            lambda **kw: seen.update(kw),
+        )
+        result = runner.invoke(app, ["help", "output"])
+        assert result.exit_code == 0
+        return seen["verbose"]
+
+    def test_env_var_enables_verbose(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MONDO_VERBOSE", "1")
+        assert self._seen_verbose(monkeypatch) is True
+
+    def test_unset_env_var_keeps_verbose_off(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        assert self._seen_verbose(monkeypatch) is False
+
+
 class TestMondoErrorStdoutMirror:
     def test_machine_mode_mirrors_envelope_to_stdout(
         self, httpx_mock: HTTPXMock

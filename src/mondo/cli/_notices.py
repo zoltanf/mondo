@@ -19,7 +19,4 @@ def benign_notices_enabled(*, verbose: bool = False) -> bool:
     """True when benign notices should be written to stderr."""
     if verbose or os.environ.get("MONDO_VERBOSE") == "1":
         return True
-    try:
-        return sys.stderr.isatty()
-    except Exception:
-        return False
+    return sys.stderr.isatty()

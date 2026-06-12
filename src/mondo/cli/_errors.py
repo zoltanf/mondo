@@ -178,15 +178,13 @@ def mirror_envelope_to_stdout(opts: GlobalOpts | None, envelope: dict[str, Any])
 
     Guards:
     - never fires once `emit()` has written to stdout (a partial-success
-      stream is never corrupted);
-    - `-o none` keeps stdout silent.
+      stream is never corrupted).
 
-    Callers gate on `is_machine_output` — the mirror only fires where the
-    stderr envelope fired too.
+    Callers gate on `is_machine_output` / `is_machine_output_argv` — the
+    mirror only fires where the stderr envelope fired too. Those classify
+    `-o none` as a human format, so it keeps stdout silent without a
+    guard here.
     """
-    output = ((opts.output if opts is not None else None) or "").lower()
-    if output == "none":
-        return
     if opts is not None and opts.stdout_emitted:
         return
     typer.echo(json.dumps(envelope, separators=(",", ":")))

@@ -73,19 +73,14 @@ def handle_mondo_error_or_exit(
 def usage_error_or_exit(message: str) -> NoReturn:
     """Uniform exit for command-level usage errors.
 
-    Red `error:` line on stderr plus, in machine mode, the JSON envelope
-    on stderr and the stdout mirror (#25). Replaces the bare
-    `typer.secho(...) + typer.Exit(2)` pattern, which left suppressed-stderr
-    pipelines with empty stdout and no clue.
+    Wraps `message` in a `UsageError` (exit code 2) and routes it through
+    the canonical `handle_mondo_error_or_exit` path: red `error:` line on
+    stderr plus, in machine mode, the JSON envelope on stderr and the
+    stdout mirror (#25). Replaces the bare `typer.secho(...) +
+    typer.Exit(2)` pattern, which left suppressed-stderr pipelines with
+    empty stdout and no clue.
     """
-    typer.secho(f"error: {message}", fg=typer.colors.RED, err=True)
-    ctx = click.get_current_context(silent=True)
-    opts = ctx.ensure_object(_GlobalOpts) if ctx is not None else None
-    if is_machine_output(opts):
-        envelope = error_envelope(UsageError(message))
-        emit_envelope(envelope)
-        mirror_envelope_to_stdout(opts, envelope)
-    raise typer.Exit(code=2)
+    handle_mondo_error_or_exit(UsageError(message))
 
 
 def client_or_exit(opts: GlobalOpts) -> MondayClient:

@@ -344,7 +344,13 @@ def _root(
         "Runs before --query. Client-side projection — does not narrow the "
         "GraphQL request.",
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Log INFO-level events to stderr."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        envvar="MONDO_VERBOSE",
+        help="Log INFO-level events to stderr.",
+    ),
     debug: bool = typer.Option(
         False, "--debug", help="Log every GraphQL query and response to stderr."
     ),
