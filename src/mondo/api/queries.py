@@ -95,35 +95,77 @@ query ($id: ID!) {
 
 # --- items: cursor-paginated list ---
 
-ITEMS_PAGE_INITIAL = """
-query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery) {
-  boards(ids: $boards) {
-    items_page(limit: $limit, query_params: $qp) {
+
+def build_items_page_queries(
+    *,
+    column_values: str = "full",
+) -> tuple[str, str]:
+    """Return ``(initial, next)`` items_page queries. Single source of
+    truth for the `item list` item shape.
+
+    On large boards the full ``column_values`` selection is ~3x the
+    per-page complexity of the bare item fields, so narrowing it
+    server-side is the main lever for `item list` performance.
+    ``column_values`` picks the selection:
+
+    - ``"full"`` (default): the canonical full selection
+      (``ITEMS_PAGE_INITIAL`` / ``ITEMS_PAGE_NEXT`` are built from this).
+    - ``"ids"``: narrow to ``column_values(ids: $cols)``. Both queries
+      gain a ``$cols: [String!]!`` variable the caller must bind.
+    - ``"none"``: drop ``column_values`` entirely
+      (the ``--fields id,name`` auto-slim path).
+    """
+    cols_decl = ""
+    fields = ["id", "name", "state", "group { id title }"]
+    if column_values == "full":
+        fields.append("column_values { id type text value }")
+    elif column_values == "ids":
+        cols_decl = ", $cols: [String!]!"
+        fields.append("column_values(ids: $cols) { id type text value }")
+    elif column_values != "none":
+        raise ValueError(f"unknown column_values mode: {column_values!r}")
+    initial = f"""
+query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery{cols_decl}) {{
+  boards(ids: $boards) {{
+    items_page(limit: $limit, query_params: $qp) {{
       cursor
-      items {
-        id
-        name
-        state
-        group { id title }
-        column_values { id type text value }
-      }
-    }
-  }
-}
+      items {{
+        {"\n        ".join(fields)}
+      }}
+    }}
+  }}
+}}
 """.strip()
-
-
-ITEMS_PAGE_NEXT = """
-query ($cursor: String!, $limit: Int!) {
-  next_items_page(cursor: $cursor, limit: $limit) {
+    next_q = f"""
+query ($cursor: String!, $limit: Int!{cols_decl}) {{
+  next_items_page(cursor: $cursor, limit: $limit) {{
     cursor
-    items {
-      id
-      name
-      state
-      group { id title }
-      column_values { id type text value }
-    }
+    items {{
+      {"\n      ".join(fields)}
+    }}
+  }}
+}}
+""".strip()
+    return initial, next_q
+
+
+ITEMS_PAGE_INITIAL, ITEMS_PAGE_NEXT = build_items_page_queries()
+
+
+# Single-item variant of the server-side column narrowing above.
+ITEM_GET_WITH_COLUMNS = """
+query ($id: ID!, $cols: [String!]!) {
+  items(ids: [$id]) {
+    id
+    name
+    state
+    created_at
+    updated_at
+    url
+    creator { id name }
+    group { id title }
+    board { id name }
+    column_values(ids: $cols) { id type text value }
   }
 }
 """.strip()

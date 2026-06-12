@@ -19,12 +19,14 @@ from mondo.api.queries import (
     ITEM_DELETE,
     ITEM_DUPLICATE,
     ITEM_GET,
+    ITEM_GET_WITH_COLUMNS,
     ITEM_GET_WITH_SUBITEMS,
     ITEM_GET_WITH_UPDATES,
     ITEM_MOVE_BOARD,
     ITEM_MOVE_GROUP,
     ITEM_RENAME,
     SUBITEMS_LIST,
+    build_items_page_queries,
 )
 from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
@@ -215,6 +217,30 @@ def _build_column_values(
     return out
 
 
+def _parse_columns_csv(spec: str) -> list[str]:
+    """Split a `--columns col1,col2` spec; raise `UsageError` when empty."""
+    col_ids = [c.strip() for c in spec.split(",") if c.strip()]
+    if not col_ids:
+        raise UsageError("--columns expects a comma-separated list of column ids.")
+    return col_ids
+
+
+def _can_slim_column_values(opts: GlobalOpts) -> bool:
+    """True when `--fields` provably never reads `column_values`, so the
+    GraphQL query can drop it (~3x cheaper per page on big boards).
+
+    Only `--fields` is inspected. A `-q` JMESPath cannot prove this: it
+    can read fields inside predicates / sort keys yet still return whole
+    rows (e.g. `[?contains(name, 'x')]`), so any `-q` — alone or combined
+    with `--fields` (it runs first, against the raw rows) — keeps the
+    full selection.
+    """
+    if opts.query is not None or not opts.fields:
+        return False
+    keys = [k.strip() for k in opts.fields.split(",") if k.strip()]
+    return bool(keys) and all(k.split(".")[0] != "column_values" for k in keys)
+
+
 def _build_query_params(
     parsed_filters: list[tuple[str, str, str]] | None,
     order_by: str | None,
@@ -256,6 +282,14 @@ def get_cmd(
         False, "--include-updates", help="Also fetch item updates (comments)."
     ),
     include_subitems: bool = typer.Option(False, "--include-subitems", help="Also fetch subitems."),
+    columns_sel: str | None = typer.Option(
+        None,
+        "--columns",
+        metavar="COL1,COL2",
+        help="Fetch only these column values, server-side (cheaper than the "
+        "full column_values selection). Bypasses the per-item cache. "
+        "Unknown/typo'd column ids are silently omitted by the API (no error).",
+    ),
     with_url: bool = typer.Option(
         False,
         "--with-url",
@@ -302,7 +336,22 @@ def get_cmd(
             err=True,
         )
         raise typer.Exit(code=2)
-    if include_updates:
+    if columns_sel is not None and (include_updates or include_subitems):
+        typer.secho(
+            "error: --columns cannot be combined with --include-updates / --include-subitems.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    variables: dict[str, Any] = {"id": item_id}
+    if columns_sel is not None:
+        try:
+            variables["cols"] = _parse_columns_csv(columns_sel)
+        except UsageError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
+        query = ITEM_GET_WITH_COLUMNS
+    elif include_updates:
         query = ITEM_GET_WITH_UPDATES
     elif include_subitems:
         query = ITEM_GET_WITH_SUBITEMS
@@ -315,11 +364,12 @@ def get_cmd(
         or no_cache
         or include_updates
         or include_subitems
+        or columns_sel is not None
         or poll_until is not None
     )
 
     def _fetch_once() -> dict[str, Any] | None:
-        data = execute(opts, query, {"id": item_id})
+        data = execute(opts, query, variables)
         items = data.get("items") or []
         return items[0] if items else None
 
@@ -398,6 +448,15 @@ def list_cmd(
         help="Column to sort by, optionally with ',asc'/',desc' (default: asc).",
         rich_help_panel="Filters",
     ),
+    columns_sel: str | None = typer.Option(
+        None,
+        "--columns",
+        metavar="COL1,COL2",
+        help="Fetch only these column values, server-side. The full "
+        "column_values selection is ~3x the per-page cost on big boards. "
+        "Unknown/typo'd column ids are silently omitted by the API (no error).",
+        rich_help_panel="Filters",
+    ),
     limit: int = typer.Option(
         MAX_PAGE_SIZE,
         "--limit",
@@ -442,6 +501,7 @@ def list_cmd(
         parent_id=parent_id,
         filter_expr=filter_expr,
         order_by=order_by,
+        columns_sel=columns_sel,
         limit=limit,
         max_items=max_items,
         poll_until=poll_until,
@@ -461,6 +521,7 @@ def _list_items_impl(
     parent_id: int | None = None,
     filter_expr: list[str] | None = None,
     order_by: str | None = None,
+    columns_sel: str | None = None,
     limit: int = MAX_PAGE_SIZE,
     max_items: int | None = None,
     poll_until: str | None = None,
@@ -479,6 +540,13 @@ def _list_items_impl(
     # same SUBITEMS_LIST query that `mondo subitem list --parent` uses, so
     # both commands return identical shapes.
     if parent_id is not None:
+        if columns_sel is not None:
+            typer.secho(
+                "error: --columns is not supported with --parent (subitem listing).",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=2)
         data = execute(opts, SUBITEMS_LIST, {"parent": parent_id})
         items = data.get("items") or []
         if not items:
@@ -504,6 +572,25 @@ def _list_items_impl(
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2) from e
 
+    # Server-side column_values narrowing: an explicit `--columns` wins;
+    # otherwise drop column_values entirely when `--fields` provably never
+    # reads them (`--fields id,name` and friends). `--poll-until` evaluates
+    # against the raw fetched rows, so its expression may read column_values
+    # even when `--fields` doesn't — never slim while polling.
+    extra_vars: dict[str, Any] | None = None
+    if columns_sel is not None:
+        try:
+            extra_vars = {"cols": _parse_columns_csv(columns_sel)}
+        except UsageError as e:
+            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from e
+        query_initial, query_next = build_items_page_queries(column_values="ids")
+    else:
+        slim = poll_until is None and _can_slim_column_values(opts)
+        query_initial, query_next = build_items_page_queries(
+            column_values="none" if slim else "full"
+        )
+
     try:
         client = opts.build_client()
         with client:
@@ -522,12 +609,13 @@ def _list_items_impl(
             if opts.dry_run:
                 opts.emit(
                     {
-                        "query": "<items_page iterator>",
+                        "query": query_initial,
                         "variables": {
                             "boards": [board_id],
                             "limit": limit,
                             "qp": qp,
                             "max_items": max_items,
+                            **(extra_vars or {}),
                         },
                     }
                 )
@@ -541,6 +629,9 @@ def _list_items_impl(
                         limit=limit,
                         query_params=qp,
                         max_items=max_items,
+                        query_initial=query_initial,
+                        query_next=query_next,
+                        extra_vars=extra_vars,
                     )
                 )
 
