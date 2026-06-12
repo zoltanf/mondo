@@ -150,16 +150,14 @@ class TestMondoErrorStdoutMirror:
 
 
 class TestUsageErrorStdoutMirror:
-    def test_graphql_query_via_q_hint_lands_on_stdout(
+    def test_graphql_missing_query_usage_error_lands_on_stdout(
         self, httpx_mock: HTTPXMock
     ) -> None:
-        result = runner.invoke(
-            app, ["-o", "json", "-q", "query { me { id } }", "graphql"]
-        )
+        result = runner.invoke(app, ["-o", "json", "graphql"])
         assert result.exit_code == 2
         env = _stdout_envelope(result.stdout)
         assert env["exit_code"] == 2
-        assert "passed to `-q`" in env["error"]
+        assert "missing required argument" in env["error"]
         assert httpx_mock.get_requests() == []
 
     def test_graphql_dry_run_refusal_lands_on_stdout(
@@ -174,9 +172,7 @@ class TestUsageErrorStdoutMirror:
         assert httpx_mock.get_requests() == []
 
     def test_human_mode_keeps_stdout_empty(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(
-            app, ["-o", "table", "-q", "query { me { id } }", "graphql"]
-        )
+        result = runner.invoke(app, ["-o", "table", "graphql"])
         assert result.exit_code == 2
         assert result.stdout.strip() == ""
 

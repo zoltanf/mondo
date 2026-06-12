@@ -1356,6 +1356,7 @@ mutation (
     board_kind
     workspace_id
     board_folder_id
+    url
   }
 }
 """.strip()

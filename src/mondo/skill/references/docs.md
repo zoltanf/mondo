@@ -63,10 +63,10 @@ mondo doc create --workspace 592446 --name "Spec — Q3 launch"
 ```
 
 ```json
-{"id": 5095668850, "object_id": "abcd1239", "name": "Spec — Q3 launch", "blocks": []}
+{"id": 5095668850, "object_id": "abcd1239", "name": "Spec — Q3 launch", "url": "https://acct.monday.com/docs/abcd1239"}
 ```
 
-*Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`.
+*Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`. The create payload always carries `url` (`--with-url` is accepted for symmetry with `board create` / `item create` but is a no-op).
 
 ## Add markdown to a doc
 

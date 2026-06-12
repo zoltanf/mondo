@@ -57,12 +57,14 @@ graphql`:
 |-------------------|-----------------------------------------------------|
 | `board list`      | `--with-item-counts`, `--with-url`, `--with-tags`   |
 | `board get`       | `--with-url`, `--with-views`                        |
+| `board create`    | `--with-url` (returns the new board's URL without a follow-up GET) |
 | `item get`        | `--with-url`                                        |
 | `item create`     | `--with-url` (returns the new item's URL without a follow-up GET) |
 | `item duplicate`  | `--with-updates`                                    |
 | `subitem get`     | `--with-url`                                        |
 | `doc list`        | `--with-url`                                        |
 | `doc get`         | `--with-url`                                        |
+| `doc create`      | `--with-url` (no-op: the create payload always carries `url`; accepted for symmetry) |
 
 Some of these (e.g. `--with-item-counts`, `--with-tags`) bypass the
 local cache because the extra fields aren't cached — read each

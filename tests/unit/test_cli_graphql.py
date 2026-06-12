@@ -87,27 +87,90 @@ def test_graphql_query_from_file(httpx_mock: HTTPXMock, tmp_path: Path) -> None:
     assert body["query"] == "query { me { id } }"
 
 
-def test_graphql_hint_when_q_swallowed_query() -> None:
-    """User typed `mondo graphql -q 'query { … }'`. After `reorder_argv`,
-    Typer parses `-q` as the global JMESPath and dispatches `graphql` with
-    no positional. Emit a targeted recovery hint instead of the generic
-    "Missing argument 'QUERY'" message.
+def test_graphql_query_flag_runs_as_document(httpx_mock: HTTPXMock) -> None:
+    """User typed `mondo graphql --query 'query { … }'`. After `reorder_argv`,
+    Typer parses `--query` as the global JMESPath and dispatches `graphql`
+    with no positional. Issue #13: run the value as the GraphQL document
+    instead of exiting 2, with a stderr note pointing at the positional form.
     """
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={"data": {"me": {"id": "1", "name": "Alice"}}, "extensions": {"request_id": "r"}},
+    )
     # Reordered form, matching what `main()` produces from the user's argv.
-    result = runner.invoke(app, ["-q", "query { me { id } }", "graphql"])
-    assert result.exit_code != 0
+    result = runner.invoke(app, ["--query", "query { me { id name } }", "graphql"])
+    assert result.exit_code == 0, result.output
+    body = json.loads(httpx_mock.get_request().content)  # type: ignore[union-attr]
+    assert body["query"] == "query { me { id name } }"
+    # Projection is disabled: the full envelope is printed, un-projected.
+    out = json.loads(result.stdout)
+    assert out["data"]["me"]["name"] == "Alice"
+    assert "note:" in (result.stderr or "")
+    assert "positionally" in (result.stderr or "")
+
+
+def test_graphql_query_flag_through_main(
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Acceptance: the literal user invocation `mondo graphql --query '<gql>'`
+    works end-to-end through `main()` (argv reordering included)."""
+    from mondo.cli.main import main
+
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={"data": {"me": {"id": "1"}}, "extensions": {"request_id": "r"}},
+    )
+    monkeypatch.setattr("sys.argv", ["mondo", "graphql", "--query", "query { me { id } }"])
+    try:
+        main()
+    except SystemExit as e:  # main() may sys.exit(0)
+        assert not e.code, f"expected success, got exit {e.code}"
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["data"]["me"]["id"] == "1"
+    assert "note:" in captured.err
+
+
+def test_graphql_positional_plus_projection_unchanged(httpx_mock: HTTPXMock) -> None:
+    """Canonical form: positional document + `-q` JMESPath projection."""
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={"data": {"me": {"id": "1", "name": "Alice"}}, "extensions": {"request_id": "r"}},
+    )
+    result = runner.invoke(
+        app, ["-o", "json", "-q", "data.me", "graphql", "query { me { id name } }"]
+    )
+    assert result.exit_code == 0, result.output
+    body = json.loads(httpx_mock.get_request().content)  # type: ignore[union-attr]
+    assert body["query"] == "query { me { id name } }"
+    out = json.loads(result.stdout)
+    assert out == {"id": "1", "name": "Alice"}
+
+
+def test_graphql_dry_run_still_refused_for_query_flag(httpx_mock: HTTPXMock) -> None:
+    """Issue #13: the --dry-run refusal (#5) fires before the --query
+    fallback executes anything."""
+    result = runner.invoke(
+        app,
+        ["--dry-run", "--query", "mutation { delete_item(item_id: 1) { id } }", "graphql"],
+    )
+    assert result.exit_code == 2, result.output
     combined = ((result.stdout or "") + (result.stderr or "")).lower()
-    assert "graphql query" in combined and "-q" in combined
-    assert "positional" in combined
+    assert "--dry-run" in combined
+    assert httpx_mock.get_requests() == []
 
 
-def test_graphql_hint_only_when_q_looks_like_graphql() -> None:
-    """A real JMESPath in -q (e.g. 'data.me.id') without a positional should
-    still error, but without the GraphQL-payload hint (it'd be misleading)."""
+def test_graphql_no_positional_and_non_graphql_q_exits_2() -> None:
+    """A real JMESPath in -q (e.g. 'data.me.id') without a positional is
+    still a usage error — the fallback only fires for GraphQL-looking text."""
     result = runner.invoke(app, ["-q", "data.me.id", "graphql"])
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     combined = ((result.stdout or "") + (result.stderr or "")).lower()
-    assert "passed to" not in combined
+    assert "missing required argument" in combined
 
 
 def test_graphql_dry_run_refuses_mutation(httpx_mock: HTTPXMock) -> None:

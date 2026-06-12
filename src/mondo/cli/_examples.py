@@ -63,7 +63,8 @@ EXAMPLES: dict[str, list[Example]] = {
             "cat mutation.graphql | mondo graphql -",
         ),
         Example(
-            "Tip: pass GraphQL as positional, not `-q` (which is global JMESPath)",
+            "Tip: prefer positional GraphQL; a GraphQL-looking `-q` value is "
+            "accepted as the query (JMESPath disabled)",
             "mondo graphql 'query { me { id } }'",
         ),
     ],
@@ -175,6 +176,10 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Create an empty board (no starter items/groups)",
             'mondo board create --name "Scratch" --kind public --empty',
+        ),
+        Example(
+            "Create and get the board's URL in one call",
+            'mondo board create --name "Roadmap" --kind public --with-url -q url -o none',
         ),
     ],
     "board update": [
@@ -733,6 +738,16 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Download to a specific path",
             "mondo file download --asset 42 --out /tmp/x.pdf",
+        ),
+    ],
+    "file url": [
+        Example(
+            "Asset metadata incl. its download URLs",
+            "mondo file url --asset 42",
+        ),
+        Example(
+            "Just the pre-signed link (expires ~1h)",
+            "mondo file url --asset 42 -q '[0].public_url'",
         ),
     ],
     # --- folder ------------------------------------------------------------
@@ -1417,7 +1432,7 @@ EXAMPLES: dict[str, list[Example]] = {
 # Matched against the final whitespace-delimited segment of the dotted path,
 # so hyphenated writes like "tag create-or-get" don't trip the heuristic.
 _READ_SUFFIXES = frozenset(
-    {"list", "get", "find", "show", "status", "tree", "labels", "inspect"}
+    {"list", "get", "find", "show", "status", "tree", "labels", "inspect", "url"}
 )
 _QUERY_HINT = (
     "[dim]Tip: every command supports `-q '<jmespath>'` projection and "

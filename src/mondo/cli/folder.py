@@ -120,7 +120,7 @@ def list_cmd(
         return
 
     # Live path
-    from mondo.api.pagination import iter_boards_page
+    from mondo.api.pagination import fetch_pages_concurrent
     from mondo.api.queries import build_folders_list_query
     from mondo.cli._normalize import normalize_folder_entry
 
@@ -139,7 +139,7 @@ def list_cmd(
         with client:
             items = [
                 normalize_folder_entry(entry)
-                for entry in iter_boards_page(
+                for entry in fetch_pages_concurrent(
                     client,
                     query=query,
                     variables=variables,
@@ -244,7 +244,7 @@ def tree_cmd(
         folders = cached.entries
     else:
         # Live path
-        from mondo.api.pagination import iter_boards_page
+        from mondo.api.pagination import fetch_pages_concurrent
         from mondo.api.queries import build_folders_list_query
         from mondo.cli._normalize import normalize_folder_entry
 
@@ -261,7 +261,7 @@ def tree_cmd(
             with client:
                 folders = [
                     normalize_folder_entry(entry)
-                    for entry in iter_boards_page(
+                    for entry in fetch_pages_concurrent(
                         client,
                         query=query,
                         variables=variables,
