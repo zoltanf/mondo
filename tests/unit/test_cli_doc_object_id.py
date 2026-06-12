@@ -173,6 +173,62 @@ class TestExportMarkdownObjectId:
         assert "--object-id" not in result.stderr
 
 
+class TestAddMarkdownEnvelope:
+    def test_500_envelope_with_object_id_as_doc_gets_targeted_hint(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        # HTTP 200 + success:false (the issue-#24 fetcher-500 case): the
+        # envelope must fail the command (exit 5), not be emitted as success.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": False,
+                        "error": "Fetcher response returned NON-OK status=500 "
+                        "statusText=Internal Server Error",
+                        "block_ids": None,
+                    }
+                }
+            ),
+        )
+        # Probe resolves the id as an object_id → targeted hint.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_head_hit())
+        result = runner.invoke(
+            app, ["doc", "add-markdown", "--doc", OBJECT_ID, "--markdown", "# Hi"]
+        )
+        assert result.exit_code == 5
+        assert "status=500" in result.stderr
+        assert f"--object-id {OBJECT_ID}" in result.stderr
+        assert "looks like a URL-visible object id" in result.stderr
+
+    def test_500_envelope_with_real_internal_id_no_hint(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": False,
+                        "error": "boom",
+                        "block_ids": None,
+                    }
+                }
+            ),
+        )
+        # Probe misses — the id is not an object id; no hint.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
+        result = runner.invoke(
+            app, ["doc", "add-markdown", "--doc", INTERNAL_ID, "--markdown", "# Hi"]
+        )
+        assert result.exit_code == 5
+        assert "boom" in result.stderr
+        assert "--object-id" not in result.stderr
+
+
 MUTATION_CASES = [
     (
         ["doc", "rename", "--name", "n"],
