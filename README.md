@@ -674,13 +674,14 @@ remaining group on a board with `DeleteLastGroupException`.
 ### Items
 
 ```bash
-mondo item list   --board 1234567890 [--max-items 50] [--filter status=Done] [--order-by date4,desc]
+mondo item list   --board 1234567890 [--max-items 50] [--filter status=Done] \
+                  [--order-by date4,desc] [--columns col1,col2]
 mondo item list   --board 1234567890 --group backlog              # first-class group shortcut
 mondo item list   --parent 9876543210                             # subitems of a parent
 mondo item list   --board 1234567890 --poll-until 'length(@) > `0`' \
                   --poll-interval 2s --poll-timeout 30s           # wait for async state
 mondo item find   --board 1234567890 --column status --value Done # sugar over --filter
-mondo item get    --id 987 [--include-updates] [--include-subitems] [--with-url]
+mondo item get    --id 987 [--include-updates] [--include-subitems] [--columns col1,col2] [--with-url]
 mondo item get    --id 987 --poll-until 'state == `active`' --poll-timeout 60s
 mondo item create --board 1234567890 --name "Fix CI" \
                   --column status=Working --column owner=42 --column due=2026-04-25 \

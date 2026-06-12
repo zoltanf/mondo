@@ -5,7 +5,9 @@ common shape: a flat record (or list of records) projected down to a few
 named keys. Dotted paths walk through nested dicts; the result key is the
 dotted form so a downstream JMESPath / formatter sees a flat record.
 Missing keys map to None — never raise — so a heterogeneous list projects
-cleanly. Projection is client-side; it does not narrow the GraphQL request.
+cleanly. Projection itself is client-side, but `item list` also inspects
+the spec up front and drops `column_values` from its GraphQL request when
+no key reads them (see `_can_slim_column_values` in mondo.cli.item).
 """
 from __future__ import annotations
 

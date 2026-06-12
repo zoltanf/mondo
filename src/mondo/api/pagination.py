@@ -40,7 +40,7 @@ def iter_items_page(
     `query_initial` / `query_next` let callers swap in field selections
     (e.g. `ITEMS_PAGE_INITIAL_WITH_SUBITEMS` for export). `extra_vars`
     binds additional variables both queries declare (e.g. `$cols` from
-    `build_items_page_queries(columns=True)`).
+    `build_items_page_queries(column_values="ids")`).
     """
     yielded = 0
     page_size = min(limit, MAX_PAGE_SIZE)

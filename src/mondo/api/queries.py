@@ -95,76 +95,42 @@ query ($id: ID!) {
 
 # --- items: cursor-paginated list ---
 
-ITEMS_PAGE_INITIAL = """
-query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery) {
-  boards(ids: $boards) {
-    items_page(limit: $limit, query_params: $qp) {
-      cursor
-      items {
-        id
-        name
-        state
-        group { id title }
-        column_values { id type text value }
-      }
-    }
-  }
-}
-""".strip()
-
-
-ITEMS_PAGE_NEXT = """
-query ($cursor: String!, $limit: Int!) {
-  next_items_page(cursor: $cursor, limit: $limit) {
-    cursor
-    items {
-      id
-      name
-      state
-      group { id title }
-      column_values { id type text value }
-    }
-  }
-}
-""".strip()
-
 
 def build_items_page_queries(
     *,
-    columns: bool = False,
-    include_column_values: bool = True,
+    column_values: str = "full",
 ) -> tuple[str, str]:
-    """Return ``(initial, next)`` items_page queries with a custom
-    ``column_values`` selection.
+    """Return ``(initial, next)`` items_page queries. Single source of
+    truth for the `item list` item shape.
 
     On large boards the full ``column_values`` selection is ~3x the
     per-page complexity of the bare item fields, so narrowing it
-    server-side is the main lever for `item list` performance:
+    server-side is the main lever for `item list` performance.
+    ``column_values`` picks the selection:
 
-    - ``columns=True``: narrow to ``column_values(ids: $cols)``. Both
-      queries gain a ``$cols: [String!]!`` variable the caller must bind.
-    - ``include_column_values=False``: drop ``column_values`` entirely
+    - ``"full"`` (default): the canonical full selection
+      (``ITEMS_PAGE_INITIAL`` / ``ITEMS_PAGE_NEXT`` are built from this).
+    - ``"ids"``: narrow to ``column_values(ids: $cols)``. Both queries
+      gain a ``$cols: [String!]!`` variable the caller must bind.
+    - ``"none"``: drop ``column_values`` entirely
       (the ``--fields id,name`` auto-slim path).
-    - Defaults return the canonical module constants unchanged.
     """
-    if columns:
+    cols_decl = ""
+    fields = ["id", "name", "state", "group { id title }"]
+    if column_values == "full":
+        fields.append("column_values { id type text value }")
+    elif column_values == "ids":
         cols_decl = ", $cols: [String!]!"
-        selection = "\n        column_values(ids: $cols) { id type text value }"
-    elif include_column_values:
-        return ITEMS_PAGE_INITIAL, ITEMS_PAGE_NEXT
-    else:
-        cols_decl = ""
-        selection = ""
+        fields.append("column_values(ids: $cols) { id type text value }")
+    elif column_values != "none":
+        raise ValueError(f"unknown column_values mode: {column_values!r}")
     initial = f"""
 query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery{cols_decl}) {{
   boards(ids: $boards) {{
     items_page(limit: $limit, query_params: $qp) {{
       cursor
       items {{
-        id
-        name
-        state
-        group {{ id title }}{selection}
+        {"\n        ".join(fields)}
       }}
     }}
   }}
@@ -175,15 +141,15 @@ query ($cursor: String!, $limit: Int!{cols_decl}) {{
   next_items_page(cursor: $cursor, limit: $limit) {{
     cursor
     items {{
-      id
-      name
-      state
-      group {{ id title }}{selection}
+      {"\n      ".join(fields)}
     }}
   }}
 }}
 """.strip()
     return initial, next_q
+
+
+ITEMS_PAGE_INITIAL, ITEMS_PAGE_NEXT = build_items_page_queries()
 
 
 # Single-item variant of the server-side column narrowing above.

@@ -225,33 +225,20 @@ def _parse_columns_csv(spec: str) -> list[str]:
     return col_ids
 
 
-# Leaves a `-q` projection may reference and still provably avoid
-# `column_values` in the items_page shape (group { id title } + item
-# scalars). `type`/`text`/`value` only occur under column_values there.
-_SLIM_SAFE_QUERY_LEAVES = frozenset({"id", "name", "state", "group", "title"})
-
-
 def _can_slim_column_values(opts: GlobalOpts) -> bool:
-    """True when the requested output provably never reads `column_values`,
-    so the GraphQL query can drop it (~3x cheaper per page on big boards).
+    """True when `--fields` provably never reads `column_values`, so the
+    GraphQL query can drop it (~3x cheaper per page on big boards).
 
-    Conservative: any doubt (no projection at all, unparseable `-q`,
-    a leaf outside the known-safe set) keeps the full selection.
+    Only `--fields` is inspected. A `-q` JMESPath cannot prove this: it
+    can read fields inside predicates / sort keys yet still return whole
+    rows (e.g. `[?contains(name, 'x')]`), so any `-q` — alone or combined
+    with `--fields` (it runs first, against the raw rows) — keeps the
+    full selection.
     """
-    if opts.fields:
-        keys = [k.strip() for k in opts.fields.split(",") if k.strip()]
-        if not keys or any(k.split(".")[0] == "column_values" for k in keys):
-            return False
-        if opts.query is None:
-            return True
-        # Both -q and --fields: -q runs first against the raw rows, so it
-        # must independently avoid column_values too.
-    elif opts.query is None:
+    if opts.query is not None or not opts.fields:
         return False
-    from mondo.output.query import extract_query_leaf_fields
-
-    leaves = extract_query_leaf_fields(opts.query)
-    return bool(leaves) and leaves <= _SLIM_SAFE_QUERY_LEAVES
+    keys = [k.strip() for k in opts.fields.split(",") if k.strip()]
+    return bool(keys) and all(k.split(".")[0] != "column_values" for k in keys)
 
 
 def _build_query_params(
@@ -300,7 +287,8 @@ def get_cmd(
         "--columns",
         metavar="COL1,COL2",
         help="Fetch only these column values, server-side (cheaper than the "
-        "full column_values selection). Bypasses the per-item cache.",
+        "full column_values selection). Bypasses the per-item cache. "
+        "Unknown/typo'd column ids are silently omitted by the API (no error).",
     ),
     with_url: bool = typer.Option(
         False,
@@ -468,7 +456,8 @@ def list_cmd(
         "--columns",
         metavar="COL1,COL2",
         help="Fetch only these column values, server-side. The full "
-        "column_values selection is ~3x the per-page cost on big boards.",
+        "column_values selection is ~3x the per-page cost on big boards. "
+        "Unknown/typo'd column ids are silently omitted by the API (no error).",
         rich_help_panel="Filters",
     ),
     limit: int = typer.Option(
@@ -588,8 +577,10 @@ def _list_items_impl(
             raise typer.Exit(code=2) from e
 
     # Server-side column_values narrowing: an explicit `--columns` wins;
-    # otherwise drop column_values entirely when the projection provably
-    # never reads them (`--fields id,name` and friends).
+    # otherwise drop column_values entirely when `--fields` provably never
+    # reads them (`--fields id,name` and friends). `--poll-until` evaluates
+    # against the raw fetched rows, so its expression may read column_values
+    # even when `--fields` doesn't — never slim while polling.
     extra_vars: dict[str, Any] | None = None
     if columns_sel is not None:
         try:
@@ -597,10 +588,11 @@ def _list_items_impl(
         except UsageError as e:
             typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2) from e
-        query_initial, query_next = build_items_page_queries(columns=True)
+        query_initial, query_next = build_items_page_queries(column_values="ids")
     else:
+        slim = poll_until is None and _can_slim_column_values(opts)
         query_initial, query_next = build_items_page_queries(
-            include_column_values=not _can_slim_column_values(opts)
+            column_values="none" if slim else "full"
         )
 
     try:

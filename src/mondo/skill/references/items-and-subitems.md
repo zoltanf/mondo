@@ -79,7 +79,7 @@ mondo item list --board 5094861043 --columns status,person        # only these c
 
 *Gotcha:* `--filter col=val` is server-side and **AND'ed** when repeated; far cheaper than client-side JMESPath on big boards. For text contains-style search, monday's API doesn't support it — list and filter client-side with `-q "[?contains(name, 'auth')]"`.
 
-*Cost model:* on boards beyond a few hundred items the full `column_values` selection is ~**3x** the per-page complexity/wall time of the bare item fields (~2.9s vs ~8.7s per 500-item page on a 1.3k-item board). `--fields id,name` (or a `-q` that only touches id/name/state/group) auto-drops `column_values` from the GraphQL query; `--columns col1,col2` narrows it server-side to just those columns (also on `item get`). See `mondo help complexity`.
+*Cost model:* on boards beyond a few hundred items the full `column_values` selection is ~**3x** the per-page complexity/wall time of the bare item fields (~2.9s vs ~8.7s per 500-item page on a 1.3k-item board). `--fields id,name` (any `--fields` set not reading `column_values`) auto-drops `column_values` from the GraphQL query — a `-q` never auto-slims (it can read fields inside predicates yet return whole rows), so use `-q` to shape and `--fields` to slim. `--columns col1,col2` narrows it server-side to just those columns (also on `item get`); unknown column ids are silently omitted by the API (no error). See `mondo help complexity`.
 
 *Shortcuts (first-class flags, not aliases of `--filter`):*
 

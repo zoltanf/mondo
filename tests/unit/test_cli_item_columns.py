@@ -4,8 +4,10 @@ Two levers, both about not paying the ~3x per-page complexity of the full
 `column_values` selection on big boards:
 
 - `--columns col1,col2` → `column_values(ids: $cols)` server-side.
-- auto-slim: when `--fields` / `-q` provably never read column_values,
-  the GraphQL query drops the selection entirely.
+- auto-slim: when `--fields` provably never reads column_values, the
+  GraphQL query drops the selection entirely. `-q` never auto-slims: a
+  JMESPath can read fields inside predicates yet still return whole rows
+  (e.g. `[?contains(name, 'x')]`), so slimming would silently lose data.
 """
 
 from __future__ import annotations
@@ -175,28 +177,30 @@ class TestItemListAutoSlim:
         assert result.exit_code == 0
         assert "column_values" in _bodies(httpx_mock)[-1]["query"]
 
-    def test_query_on_safe_leaves_slims(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
-        result = runner.invoke(
-            app,
-            ["-q", "[?group.id=='g1'].{id: id, name: name}", "item", "list", "--board", "42"],
-        )
-        assert result.exit_code == 0, result.output
-        assert "column_values" not in _bodies(httpx_mock)[-1]["query"]
-
-    def test_query_touching_column_values_keeps_them(
-        self, httpx_mock: HTTPXMock
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            # Filter-only: returns WHOLE ROW objects, so slimming would
+            # silently lose column_values vs the unprojected output.
+            "[?contains(name, 'x')]",
+            # Projection over "safe" leaves only — still no auto-slim:
+            # leaf inspection can't distinguish predicate reads from output.
+            "[?group.id=='g1'].{id: id, name: name}",
+            # Directly reads column_values.
+            "[].column_values[?id=='status'].text",
+        ],
+    )
+    def test_query_only_keeps_full_column_values(
+        self, httpx_mock: HTTPXMock, expression: str
     ) -> None:
         httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(_items_page([{"id": "1", "name": "Ax"}])),
         )
-        result = runner.invoke(
-            app, ["-q", "[].column_values[?id=='status'].text", "item", "list", "--board", "42"]
-        )
-        assert result.exit_code == 0
-        assert "column_values" in _bodies(httpx_mock)[-1]["query"]
+        result = runner.invoke(app, ["-q", expression, "item", "list", "--board", "42"])
+        assert result.exit_code == 0, result.output
+        assert "column_values { id type text value }" in _bodies(httpx_mock)[-1]["query"]
 
     def test_no_projection_keeps_full_shape(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -206,10 +210,9 @@ class TestItemListAutoSlim:
         assert result.exit_code == 0
         assert "column_values" in _bodies(httpx_mock)[-1]["query"]
 
-    def test_safe_fields_with_unsafe_query_keeps_them(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
-        # -q runs before --fields, so it must independently avoid column_values.
+    def test_safe_fields_with_query_keeps_them(self, httpx_mock: HTTPXMock) -> None:
+        # -q runs before --fields against the raw rows; any -q disables
+        # auto-slim even when --fields alone would qualify.
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
         )
@@ -223,6 +226,23 @@ class TestItemListAutoSlim:
         )
         assert result.exit_code == 0
         assert "column_values" in _bodies(httpx_mock)[-1]["query"]
+
+    def test_poll_until_disables_auto_slim(self, httpx_mock: HTTPXMock) -> None:
+        # --poll-until evaluates against the raw fetched rows, so its
+        # expression may read column_values even when --fields doesn't.
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--fields", "id,name",
+                "item", "list", "--board", "42",
+                "--poll-until", "length(@) > `0`",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "column_values { id type text value }" in _bodies(httpx_mock)[-1]["query"]
 
     def test_dry_run_shows_cols_variable(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
