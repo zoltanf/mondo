@@ -87,6 +87,26 @@ mondo item list --board 5094861043 --columns status,person        # only these c
 - `--parent <item-id>` — switches to the subitems query for that parent. When set, `--board` becomes optional. Equivalent to `mondo subitem list --parent <id>` (same shape).
 - `--refresh-cache` / `--no-cache` — load-bearing on `item list --parent <id>` (per-parent `subitems/<id>.json` cache, 60s TTL — see below), on the per-item `item get` cache (`items/<id>.json`, 60s), **and** on board-scope `item list`: the bare `--board` (and `--board --group`) variants are served from a 60s `board_items/<board_id>.json` cache — a repeat listing inside a triage loop costs ~1s instead of ~23s on a 1.3k-item board. Filtered / ordered / `--columns` variants always fetch live. mondo writes to the board drop the cache in-process; cross-client writes ride the 60s TTL — `--refresh-cache` when in doubt.
 
+## Resolve an item id by name (the cheap way)
+
+```bash
+# Canonical id lookup: server-side group narrowing + slim --fields projection.
+mondo item list --board 5094861043 --group backlog --fields id,name -o json
+
+# One-liner when you know the exact title:
+mondo item list --board 5094861043 --fields id,name \
+  -q "[?name=='Refactor auth middleware'].id | [0]"
+```
+
+```json
+[
+  {"id": "9876543210", "name": "Refactor auth middleware"},
+  {"id": "9876543211", "name": "Implement OAuth callback"}
+]
+```
+
+*Why this shape:* `--fields id,name` makes mondo drop `column_values` from the GraphQL query entirely — ~3x cheaper per 500-item page on big boards — and `--group` narrows server-side. A `-q` expression on its own never narrows the request (it shapes output client-side); pair it with `--fields`, as in the one-liner above, to get the slim query *and* the custom shape. Don't pull the full board with full column_values just to find one id. For lookup by a column value, `mondo item find` (below) is the server-side path.
+
 ## Find items by column value
 
 ```bash
