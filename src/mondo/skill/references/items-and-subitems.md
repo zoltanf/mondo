@@ -90,7 +90,7 @@ mondo item list --board 5094861043 --columns status,person        # only these c
 ## Resolve an item id by name (the cheap way)
 
 ```bash
-# Canonical id lookup: server-side group narrowing + auto-slim projection.
+# Canonical id lookup: server-side group narrowing + slim --fields projection.
 mondo item list --board 5094861043 --group backlog --fields id,name -o json
 
 # One-liner when you know the exact title:
@@ -105,7 +105,7 @@ mondo item list --board 5094861043 --fields id,name \
 ]
 ```
 
-*Why this shape:* `--fields id,name` (or a `-q` that only touches id/name/state/group) makes mondo drop `column_values` from the GraphQL query entirely — ~3x cheaper per 500-item page on big boards — and `--group` narrows server-side. Don't pull the full board with full column_values just to find one id. For lookup by a column value, `mondo item find` (below) is the server-side path.
+*Why this shape:* `--fields id,name` makes mondo drop `column_values` from the GraphQL query entirely — ~3x cheaper per 500-item page on big boards — and `--group` narrows server-side. A `-q` expression on its own never narrows the request (it shapes output client-side); pair it with `--fields`, as in the one-liner above, to get the slim query *and* the custom shape. Don't pull the full board with full column_values just to find one id. For lookup by a column value, `mondo item find` (below) is the server-side path.
 
 ## Find items by column value
 
