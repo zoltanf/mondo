@@ -258,3 +258,59 @@ def test_live_cache_updates_invalidated_on_create(
     assert not updates_file.exists(), (
         "update create did not invalidate updates cache"
     )
+
+
+@pytest.mark.integration
+def test_live_cache_board_items_round_trip(
+    pm_board_session: PmBoard,
+    cleanup_plan: CleanupPlan,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#21: bare `item list --board X` writes `board_items/<board>.json`,
+    a repeat list serves from it, and an item write on the board drops it."""
+    pm = pm_board_session
+    cache_root = _cache_root(monkeypatch)
+    board_items_file = cache_root / "board_items" / f"{pm.board_id}.json"
+
+    # Warm: bare list writes the cache.
+    listed = invoke_json(["item", "list", "--board", str(pm.board_id), "--refresh-cache"])
+    assert board_items_file.exists(), "board_items cache file wasn't written"
+
+    # Repeat list serves the same rows from cache.
+    cached = invoke_json(["item", "list", "--board", str(pm.board_id)])
+    assert [r["id"] for r in cached] == [r["id"] for r in listed]
+
+    # The --group variant filters the cached full list client-side; parity
+    # with a forced-live group listing.
+    group_id = pm.group_ids["backlog"]
+    from_cache = invoke_json(
+        ["item", "list", "--board", str(pm.board_id), "--group", group_id]
+    )
+    live = invoke_json(
+        ["item", "list", "--board", str(pm.board_id), "--group", group_id, "--no-cache"]
+    )
+    assert {r["id"] for r in from_cache} == {r["id"] for r in live}
+
+    # An item write on the board drops the cache file.
+    suffix = uuid.uuid4().hex[:8]
+    created = invoke_json(
+        [
+            "item", "create",
+            "--board", str(pm.board_id),
+            "--group", group_id,
+            "--name", f"E2E BoardItems Cache {suffix}",
+        ]
+    )
+    item_id = int(created["id"])
+    cleanup_plan.add(
+        f"board_items cache test item {item_id}",
+        "item", "delete", "--id", str(item_id), "--hard",
+    )
+    assert not board_items_file.exists(), (
+        "item create did not invalidate the board_items cache"
+    )
+
+    # Re-list sees the new item and re-warms the cache.
+    re_listed = invoke_json(["item", "list", "--board", str(pm.board_id)])
+    assert any(int(r["id"]) == item_id for r in re_listed), re_listed
+    assert board_items_file.exists()

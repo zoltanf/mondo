@@ -85,7 +85,7 @@ mondo item list --board 5094861043 --columns status,person        # only these c
 
 - `--group <id>` — sugar over `--filter group=<id>`. Composes with `--filter`.
 - `--parent <item-id>` — switches to the subitems query for that parent. When set, `--board` becomes optional. Equivalent to `mondo subitem list --parent <id>` (same shape).
-- `--refresh-cache` / `--no-cache` — load-bearing on `item list --parent <id>` (per-parent `subitems/<id>.json` cache, 60s TTL — see below) and on the per-item `item get` cache (`items/<id>.json`, 60s). On board-scope `item list` without `--parent`, the flags are accepted for parity but no-op — board-scope listings are too volatile to cache safely.
+- `--refresh-cache` / `--no-cache` — load-bearing on `item list --parent <id>` (per-parent `subitems/<id>.json` cache, 60s TTL — see below), on the per-item `item get` cache (`items/<id>.json`, 60s), **and** on board-scope `item list`: the bare `--board` (and `--board --group`) variants are served from a 60s `board_items/<board_id>.json` cache — a repeat listing inside a triage loop costs ~1s instead of ~23s on a 1.3k-item board. Filtered / ordered / `--columns` variants always fetch live. mondo writes to the board drop the cache in-process; cross-client writes ride the 60s TTL — `--refresh-cache` when in doubt.
 
 ## Find items by column value
 

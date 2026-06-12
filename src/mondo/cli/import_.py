@@ -320,6 +320,11 @@ def board_cmd(
         # re-fetch fresh defs for the whole board.
         invalidate_columns_cache(opts, board_id)
 
+    if created > 0:
+        from mondo.cli._cache_invalidate import invalidate_board_items_cache
+
+        invalidate_board_items_cache(opts, board_id)
+
     summary = {
         "created": created,
         "skipped": skipped,

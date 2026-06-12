@@ -42,6 +42,7 @@ EntityType = Literal[
     "webhooks",
     "board_details",
     "items",
+    "board_items",
     "subitems",
     "updates",
     "docs_blocks",

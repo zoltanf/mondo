@@ -21,6 +21,7 @@ DEFAULT_CACHE_TTL_TAGS = 86400  # 24h — account-level tags are low-churn
 DEFAULT_CACHE_TTL_WEBHOOKS = 600  # 10m — per-board webhook subscriptions
 DEFAULT_CACHE_TTL_BOARD_DETAILS = 900  # 15m — BOARD_GET payload (minus items_count)
 DEFAULT_CACHE_TTL_ITEMS = 60  # 1m — per-item ITEM_GET payload (volatile)
+DEFAULT_CACHE_TTL_BOARD_ITEMS = 60  # 1m — per-board bare `item list` result (volatile)
 DEFAULT_CACHE_TTL_SUBITEMS = 60  # 1m — per-parent subitems list (volatile)
 DEFAULT_CACHE_TTL_UPDATES = 300  # 5m — per-item updates list
 DEFAULT_CACHE_TTL_DOCS_BLOCKS = 300  # 5m — per-doc full block tree
@@ -42,6 +43,7 @@ class CacheTTLConfig(BaseModel):
     webhooks: int | None = None
     board_details: int | None = None
     items: int | None = None
+    board_items: int | None = None
     subitems: int | None = None
     updates: int | None = None
     docs_blocks: int | None = None

@@ -27,6 +27,7 @@ and `--refresh-cache` (force-refetch + write-through), grouped under a
 | webhooks | per-board | id, board_id, event, config |
 | board_details | per-board | full `BOARD_GET` payload **minus `items_count`**; the count is fetched live and merged on read |
 | items | per-item | full `ITEM_GET` payload (also serves `subitem get`) |
+| board_items | per-board | bare `item list --board X` result (full normalized list; also serves the `--group` variant via client-side filtering) |
 | subitems | per-parent-item | subitems list |
 | updates | per-item | item's updates list with replies/likes/pinning |
 | docs_blocks | per-doc | full doc payload with the merged block tree |
@@ -52,9 +53,14 @@ serial).
 
 ## What's NOT cached (deliberate)
 
-- `mondo item list` at board scope, and `mondo item find` — the invalidation
-  surface is too wide; one write anywhere on the board would have to drop the
-  whole list. Both stay live.
+- Filtered / ordered / column-narrowed `mondo item list` variants, and
+  `mondo item find` — those stay live. The **bare** `item list --board X`
+  (and `--board --group`) IS cached since #21, on a 60s TTL
+  (`board_items/<board_id>.json`) — the same volatile tier and stale-data
+  contract as the per-item caches. Session logs showed triage loops
+  re-listing the same board 3-4x within minutes at ~23s per listing; the
+  60s TTL captures exactly that pattern while the short window bounds
+  staleness.
 - Account-wide `mondo update list` (no `--item`) — same reason. `update list
   --item <id>` IS cached.
 - `mondo update get` (single update by id) — covered by the parent item's
@@ -69,7 +75,8 @@ serial).
 
 ## Stale-data risk and the `--refresh-cache` escape hatch
 
-Short-TTL caches (items / subitems 60 s, updates / docs_blocks 5 m) trade
+Short-TTL caches (items / subitems / board_items 60 s, updates /
+docs_blocks 5 m) trade
 freshness for speed. Two callers using `mondo` from different terminals see
 each other's writes only after the TTL expires, or via an explicit
 `--refresh-cache`. The same is true for board / column / group / tag changes
@@ -170,7 +177,8 @@ Or via environment variables (highest non-CLI precedence):
 - `MONDO_CACHE_TTL_*` — one per entity above
   (`MONDO_CACHE_TTL_BOARDS`, `_WORKSPACES`, `_USERS`, `_TEAMS`, `_DOCS`,
   `_FOLDERS`, `_COLUMNS`, `_GROUPS`, `_TAGS`, `_WEBHOOKS`, `_BOARD_DETAILS`,
-  `_ITEMS`, `_SUBITEMS`, `_UPDATES`, `_DOCS_BLOCKS`) — integer seconds
+  `_ITEMS`, `_BOARD_ITEMS`, `_SUBITEMS`, `_UPDATES`, `_DOCS_BLOCKS`) —
+  integer seconds
 - `MONDO_CACHE_FUZZY_THRESHOLD` — integer 0-100
 - `MONDO_NO_CACHE_NOTICE=1` — silence the `cache: hit (entity=…, age=…)`
   stderr provenance line on hits
@@ -227,13 +235,19 @@ score before acting on the id.
    | Trigger | Drops |
    |---|---|
    | `board create/update/archive/delete/duplicate/move/set-permission` | `boards`, `board_details/<id>` |
-   | `column create/rename/change-metadata/delete` | `columns/<board_id>`, `board_details/<board_id>` |
-   | `column set/set-many/clear` | `items/<item_id>` (+ `columns/<board_id>` when `--create-labels-if-missing` may have minted a label) |
-   | `group create/update/reorder/delete` | `groups/<board_id>`, `board_details/<board_id>` |
+   | `column create/delete` | `columns/<board_id>`, `board_details/<board_id>`, `board_items/<board_id>` (a structural change alters every cached row's `column_values`) |
+   | `column rename/change-metadata` | `columns/<board_id>`, `board_details/<board_id>` |
+   | `column set/set-many/clear` | `items/<item_id>`, `board_items/<board_id>` (+ `columns/<board_id>` when `--create-labels-if-missing` may have minted a label) |
+   | `group create/reorder` | `groups/<board_id>`, `board_details/<board_id>` |
+   | `group rename/update/duplicate/archive/delete` | `groups/<board_id>`, `board_details/<board_id>`, `board_items/<board_id>` (cached `item list` rows embed `group { id title }`; duplicate adds rows, archive/delete remove them) |
    | `tag create-or-get` | `tags`, `board_details/<board_id>` |
    | `webhook create` | `webhooks/<board_id>` |
    | `webhook delete` | every `webhooks/<board_id>.json` (wildcard — webhook id alone doesn't carry a board) |
-   | `item rename/move/move-to-board/archive/delete` | `items/<item_id>` |
+   | `item create` (single + `--batch`) / `import board` | `board_items/<board_id>` |
+   | `item rename` | `items/<item_id>`, `board_items/<board_id>` |
+   | `item duplicate` | `board_items/<board_id>` |
+   | `item move-to-board` | the *destination* board's `board_items/<board_id>` only — the source board id isn't known in-process and rides the 60s TTL |
+   | `item move/archive/delete` | `items/<item_id>` (these only carry the item id, so `board_items` rides the 60s TTL) |
    | `subitem create` | `subitems/<parent_id>` |
    | `subitem rename/move/archive/delete` | `items/<subitem_id>` |
    | `update create` / `update clear` / `update pin/unpin --item` | `updates/<item_id>` |
@@ -316,6 +330,8 @@ writes. WARNING-level: write failures. No INFO-level spam on the happy path.
   processes / users / API clients are picked up at TTL expiry or via
   `--refresh-cache` — not in real time.
 - Background / pre-emptive refresh.
-- Caching `mondo item list` at board scope, `mondo item find`, or
+- Caching filtered `mondo item list` variants, `mondo item find`, or
   account-wide `mondo update list` — invalidation surface too wide.
+  (The bare board-scope `item list` is cached on a 60s TTL — see
+  "What's cached".)
 - Negative-lookup refresh (refetching because a name didn't match).
