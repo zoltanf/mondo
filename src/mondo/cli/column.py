@@ -389,6 +389,19 @@ def set_cmd(
                     typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
                     raise typer.Exit(code=5) from e
                 except UnknownColumnTypeError as e:
+                    if col_type == "name":
+                        # The item title masquerades as a `name` column in
+                        # monday's UI but isn't settable via
+                        # change_column_value — what `column set` sends,
+                        # including --raw. Point at the real command.
+                        typer.secho(
+                            "error: 'name' is the item's title, not a settable "
+                            "column. Use: mondo item rename "
+                            f'{item_id} --board {board_id} --name "<new name>"',
+                            fg=typer.colors.RED,
+                            err=True,
+                        )
+                        raise typer.Exit(code=5) from e
                     typer.secho(
                         f"error: no codec for column type {col_type!r}. "
                         f"Use --raw to send a literal JSON payload. Details: {e}",
