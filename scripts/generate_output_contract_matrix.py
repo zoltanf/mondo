@@ -384,6 +384,16 @@ MANUAL_ROWS: dict[str, Row] = {
         ),
         source="FILE_UPLOAD_ITEM.add_file_to_column | FILE_UPLOAD_UPDATE.add_file_to_update",
     ),
+    "file url": Row(
+        command="file url",
+        output_type="list[object]",
+        fields=["id", "name", "file_extension", "file_size", "public_url", "url"],
+        notes=(
+            "Always a list, even for a single --asset (no single-item unwrap). public_url is "
+            "the pre-signed, expiring S3 link; url is monday's browser-only protected_static proxy."
+        ),
+        source="file.url results",
+    ),
     "folder list": Row(
         command="folder list",
         output_type="list[object]",

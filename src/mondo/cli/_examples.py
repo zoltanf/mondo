@@ -1427,7 +1427,7 @@ EXAMPLES: dict[str, list[Example]] = {
 # Matched against the final whitespace-delimited segment of the dotted path,
 # so hyphenated writes like "tag create-or-get" don't trip the heuristic.
 _READ_SUFFIXES = frozenset(
-    {"list", "get", "find", "show", "status", "tree", "labels", "inspect"}
+    {"list", "get", "find", "show", "status", "tree", "labels", "inspect", "url"}
 )
 _QUERY_HINT = (
     "[dim]Tip: every command supports `-q '<jmespath>'` projection and "

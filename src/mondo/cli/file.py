@@ -28,7 +28,12 @@ from mondo.api.queries import (
     FILE_UPLOAD_UPDATE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -126,10 +131,9 @@ def upload_cmd(
 # ----- download / url -----
 
 
-def _fetch_assets_by_id(client: Any, asset_ids: list[int]) -> dict[int, dict[str, Any]]:
-    """Fetch assets via `assets(ids)` keyed by id; exit 6 listing missing ids."""
-    result = client.execute(ASSETS_GET, variables={"ids": asset_ids})
-    assets = ((result.get("data") or {}).get("assets")) or []
+def _assets_by_id(data: dict[str, Any], asset_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Key an `assets(ids)` payload by asset id; exit 6 listing missing ids."""
+    assets = data.get("assets") or []
     found_ids = {int(a["id"]) for a in assets if a.get("id") is not None}
     missing = [i for i in asset_ids if i not in found_ids]
     if missing:
@@ -191,7 +195,7 @@ def download_cmd(
     results: list[dict[str, Any]] = []
     try:
         with client:
-            by_id = _fetch_assets_by_id(client, asset_ids)
+            by_id = _assets_by_id(exec_or_exit(client, ASSETS_GET, variables), asset_ids)
             for aid in asset_ids:
                 asset = by_id[aid]
                 # Prefer the pre-signed S3 `public_url` — monday's `url` is a
@@ -246,17 +250,7 @@ def url_cmd(
     works in a logged-in browser session.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    if opts.dry_run:
-        opts.emit({"query": ASSETS_GET, "variables": {"ids": asset_ids}})
-        raise typer.Exit(0)
-
-    client = client_or_exit(opts)
-    try:
-        with client:
-            by_id = _fetch_assets_by_id(client, asset_ids)
-    except MondoError as e:
-        handle_mondo_error_or_exit(e)
-
+    by_id = _assets_by_id(execute(opts, ASSETS_GET, {"ids": asset_ids}), asset_ids)
     opts.emit(
         [
             {

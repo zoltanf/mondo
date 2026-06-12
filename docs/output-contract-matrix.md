@@ -156,6 +156,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `type`, `text`, `value`
   source: `COLUMN_CONTEXT.items[0].column_values[] | render_value`
   notes: Default output is a rendered scalar/string. --raw emits the current column_values row.
+- `column get-meta`
+  type: `manual-review`
+  fields: none
+  source: `column.py`
+  notes: Could not auto-infer. Final emit expression: column
 - `column labels`
   type: `list[object]`
   fields: `index,label | id,name`
@@ -167,9 +172,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `column.list simplified rows`
   notes: Derived from cached/live column defs; settings_str is intentionally omitted.
 - `column rename`
-  type: `object`
-  fields: `id`, `title`, `type`
-  source: `COLUMN_RENAME.change_column_title`
+  type: `manual-review`
+  fields: none
+  source: `column.py`
+  notes: Could not auto-infer. Final emit expression: data.get("change_column_title") or {}
 - `column set`
   type: `object`
   fields: `id`, `name`, `column_values{id,type,text,value}`
@@ -218,9 +224,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`
   source: `DELETE_DOC_BLOCK.delete_doc_block`
 - `doc duplicate`
-  type: `list[object]`
+  type: `manual-review`
   fields: none
-  source: `DUPLICATE_DOC.duplicate_doc`
+  source: `DUPLICATE_DOC, DOC_HEAD_BY_OBJECT_ID`
+  notes: Could not auto-infer. Final emit expression: { "id": new_doc.get("id"), "object_id": new_doc.get("object_id"), "name": new_doc.get("name"), "url": new_doc.get("url"), }
 - `doc export-markdown`
   type: `manual-review`
   fields: none
@@ -284,6 +291,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`, `url`, `uploaded_by`, `uploaded_at`
   source: `FILE_UPLOAD_ITEM.add_file_to_column | FILE_UPLOAD_UPDATE.add_file_to_update`
   notes: Both item-column and update upload paths return an Asset-like payload. Dry-run emits endpoint/query/variables/filename instead.
+- `file url`
+  type: `list[object]`
+  fields: `id`, `name`, `file_extension`, `file_size`, `public_url`, `url`
+  source: `file.url results`
+  notes: Always a list, even for a single --asset (no single-item unwrap). public_url is the pre-signed, expiring S3 link; url is monday's browser-only protected_static proxy.
 
 ## folder
 
@@ -298,8 +310,8 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
 - `folder get`
   type: `manual-review`
   fields: none
-  source: `FOLDER_GET`
-  notes: Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])
+  source: `folder.py`
+  notes: Could not auto-infer. Final emit expression: entry
 - `folder list`
   type: `list[object]`
   fields: `id`, `name`, `color`, `workspace_id`, `workspace_name`, `parent_id`, `parent_name`, `created_at`, `owner_id`
@@ -342,21 +354,24 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `title`, `color`, `position`
   source: `GROUP_DUPLICATE.duplicate_group`
 - `group list`
-  type: `list[object]`
-  fields: `id`, `title`, `color`, `position`, `archived`, `deleted`
-  source: `GROUPS_LIST.boards[0].groups[]`
+  type: `manual-review`
+  fields: none
+  source: `group.py`
+  notes: Could not auto-infer. Final emit expression: groups
 - `group rename`
-  type: `object`
-  fields: `id`, `title`, `color`, `position`
-  source: `GROUP_UPDATE.update_group`
+  type: `manual-review`
+  fields: none
+  source: `group.py`
+  notes: Could not auto-infer. Final emit expression: data.get("update_group") or {}
 - `group reorder`
   type: `object`
   fields: `id`, `title`, `color`, `position`
   source: `GROUP_UPDATE.update_group`
 - `group update`
-  type: `object`
-  fields: `id`, `title`, `color`, `position`
-  source: `GROUP_UPDATE.update_group`
+  type: `manual-review`
+  fields: none
+  source: `group.py`
+  notes: Could not auto-infer. Final emit expression: data.get("update_group") or {}
 
 ## help
 
@@ -393,6 +408,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `object`
   fields: `id`, `name`, `state`, `group{id,title}`
   source: `ITEM_DUPLICATE.duplicate_item`
+- `item find`
+  type: `manual-review`
+  fields: none
+  source: `item.py`
+  notes: Could not auto-infer. Final emit expression: <none>
 - `item get`
   type: `object`
   fields: `id`, `name`, `state`, `created_at`, `updated_at`, `creator{id,name}`, `group{id,title}`, `board{id,name}`, `column_values{id,type,text,value}`, `updates{id,body,text_body,creator{id,name},created_at}?`, `subitems{id,name,state,column_values{id,type,text,value}}?`, `url?`
@@ -412,9 +432,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`, `state`, `board{id,name}`, `group{id,title}`
   source: `ITEM_MOVE_BOARD.move_item_to_board`
 - `item rename`
-  type: `object`
-  fields: `id`, `name`
-  source: `ITEM_RENAME.change_simple_column_value`
+  type: `manual-review`
+  fields: none
+  source: `item.py`
+  notes: Could not auto-infer. Final emit expression: data.get("change_simple_column_value") or {}
 
 ## me
 
@@ -429,6 +450,14 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `object`
   fields: `id`, `text`
   source: `CREATE_NOTIFICATION.create_notification`
+
+## skill
+
+- `skill install`
+  type: `manual-review`
+  fields: none
+  source: `skill.py`
+  notes: Could not auto-infer. Final emit expression: <none>
 
 ## subitem
 
@@ -497,9 +526,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `name`
   source: `TEAM_DELETE.delete_team`
 - `team get`
-  type: `object`
-  fields: `id`, `name`, `picture_url`, `is_guest`, `users{id,name}`, `owners{id,name}`
-  source: `TEAMS_LIST.teams[0]`
+  type: `manual-review`
+  fields: none
+  source: `team.py`
+  notes: Could not auto-infer. Final emit expression: entry
 - `team list`
   type: `list[object]`
   fields: `id`, `name`, `picture_url`, `is_guest`, `users{id,name}`, `owners{id,name}`, `_fuzzy_score?`
@@ -651,9 +681,10 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`
   source: `WORKSPACE_DELETE.delete_workspace`
 - `workspace get`
-  type: `object`
-  fields: `id`, `name`, `kind`, `description`, `state`, `created_at`
-  source: `WORKSPACE_GET.workspaces[0]`
+  type: `manual-review`
+  fields: none
+  source: `workspace.py`
+  notes: Could not auto-infer. Final emit expression: entry
 - `workspace list`
   type: `list[object]`
   fields: `id`, `name`, `kind`, `description`, `state`, `created_at`, `_fuzzy_score?`

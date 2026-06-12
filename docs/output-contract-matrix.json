@@ -362,6 +362,13 @@
     "source": "COLUMN_CONTEXT.items[0].column_values[] | render_value"
   },
   {
+    "command": "column get-meta",
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: column",
+    "source": "column.py"
+  },
+  {
     "command": "column labels",
     "output_type": "list[object]",
     "fields": [
@@ -384,14 +391,10 @@
   },
   {
     "command": "column rename",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "title",
-      "type"
-    ],
-    "notes": "",
-    "source": "COLUMN_RENAME.change_column_title"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"change_column_title\") or {}",
+    "source": "column.py"
   },
   {
     "command": "column set",
@@ -494,10 +497,10 @@
   },
   {
     "command": "doc duplicate",
-    "output_type": "list[object]",
+    "output_type": "manual-review",
     "fields": [],
-    "notes": "",
-    "source": "DUPLICATE_DOC.duplicate_doc"
+    "notes": "Could not auto-infer. Final emit expression: { \"id\": new_doc.get(\"id\"), \"object_id\": new_doc.get(\"object_id\"), \"name\": new_doc.get(\"name\"), \"url\": new_doc.get(\"url\"), }",
+    "source": "DUPLICATE_DOC, DOC_HEAD_BY_OBJECT_ID"
   },
   {
     "command": "doc export-markdown",
@@ -648,6 +651,20 @@
     "source": "FILE_UPLOAD_ITEM.add_file_to_column | FILE_UPLOAD_UPDATE.add_file_to_update"
   },
   {
+    "command": "file url",
+    "output_type": "list[object]",
+    "fields": [
+      "id",
+      "name",
+      "file_extension",
+      "file_size",
+      "public_url",
+      "url"
+    ],
+    "notes": "Always a list, even for a single --asset (no single-item unwrap). public_url is the pre-signed, expiring S3 link; url is monday's browser-only protected_static proxy.",
+    "source": "file.url results"
+  },
+  {
     "command": "folder create",
     "output_type": "object",
     "fields": [
@@ -672,8 +689,8 @@
     "command": "folder get",
     "output_type": "manual-review",
     "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])",
-    "source": "FOLDER_GET"
+    "notes": "Could not auto-infer. Final emit expression: entry",
+    "source": "folder.py"
   },
   {
     "command": "folder list",
@@ -773,29 +790,17 @@
   },
   {
     "command": "group list",
-    "output_type": "list[object]",
-    "fields": [
-      "id",
-      "title",
-      "color",
-      "position",
-      "archived",
-      "deleted"
-    ],
-    "notes": "",
-    "source": "GROUPS_LIST.boards[0].groups[]"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: groups",
+    "source": "group.py"
   },
   {
     "command": "group rename",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "title",
-      "color",
-      "position"
-    ],
-    "notes": "",
-    "source": "GROUP_UPDATE.update_group"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"update_group\") or {}",
+    "source": "group.py"
   },
   {
     "command": "group reorder",
@@ -811,15 +816,10 @@
   },
   {
     "command": "group update",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "title",
-      "color",
-      "position"
-    ],
-    "notes": "",
-    "source": "GROUP_UPDATE.update_group"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"update_group\") or {}",
+    "source": "group.py"
   },
   {
     "command": "help",
@@ -889,6 +889,13 @@
     "source": "ITEM_DUPLICATE.duplicate_item"
   },
   {
+    "command": "item find",
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: <none>",
+    "source": "item.py"
+  },
+  {
     "command": "item get",
     "output_type": "object",
     "fields": [
@@ -947,13 +954,10 @@
   },
   {
     "command": "item rename",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "name"
-    ],
-    "notes": "",
-    "source": "ITEM_RENAME.change_simple_column_value"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: data.get(\"change_simple_column_value\") or {}",
+    "source": "item.py"
   },
   {
     "command": "me",
@@ -986,6 +990,13 @@
     ],
     "notes": "",
     "source": "CREATE_NOTIFICATION.create_notification"
+  },
+  {
+    "command": "skill install",
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: <none>",
+    "source": "skill.py"
   },
   {
     "command": "subitem archive",
@@ -1151,17 +1162,10 @@
   },
   {
     "command": "team get",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "name",
-      "picture_url",
-      "is_guest",
-      "users{id,name}",
-      "owners{id,name}"
-    ],
-    "notes": "",
-    "source": "TEAMS_LIST.teams[0]"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: entry",
+    "source": "team.py"
   },
   {
     "command": "team list",
@@ -1532,17 +1536,10 @@
   },
   {
     "command": "workspace get",
-    "output_type": "object",
-    "fields": [
-      "id",
-      "name",
-      "kind",
-      "description",
-      "state",
-      "created_at"
-    ],
-    "notes": "",
-    "source": "WORKSPACE_GET.workspaces[0]"
+    "output_type": "manual-review",
+    "fields": [],
+    "notes": "Could not auto-infer. Final emit expression: entry",
+    "source": "workspace.py"
   },
   {
     "command": "workspace list",
