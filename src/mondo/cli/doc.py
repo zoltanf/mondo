@@ -21,7 +21,7 @@ import re
 import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import typer
 
@@ -90,6 +90,24 @@ class DuplicateDocType(StrEnum):
 # ----- helpers -----
 
 _DOC_BLOCKS_PAGE_SIZE = 100
+
+# The `--doc` XOR `--object-id` pair shared by every doc-targeting subcommand
+# (same shared-option pattern as the Poll*Opt trio in `mondo.cli._exec`).
+DocIdOpt = Annotated[
+    int | None,
+    typer.Option(
+        "--doc",
+        help="Internal doc ID (not the URL-visible object_id).",
+    ),
+]
+DocObjectIdOpt = Annotated[
+    int | None,
+    typer.Option(
+        "--object-id",
+        help="URL-visible doc object_id (or monday.com /docs/<id> URL).",
+        click_type=MondayIdParam(),
+    ),
+]
 
 
 def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> str:
@@ -712,8 +730,162 @@ def _emit_doc_not_found(
                 err=True,
             )
             return
-    ref = f"id={doc_id}" if doc_id is not None else f"object_id={object_id}"
-    typer.secho(f"doc {ref} not found.", fg=typer.colors.RED, err=True)
+    if doc_id is not None:
+        _emit_doc_id_not_found(client, doc_id, probe=True)
+        return
+    typer.secho(f"doc object_id={object_id} not found.", fg=typer.colors.RED, err=True)
+
+
+# Exit codes worth the object-id probe: generic server failure, validation,
+# not-found, service error (a monday HTTP 5xx — the canonical symptom of an
+# object id sent as --doc — maps to exit 7; the probe degrades safely if it
+# also fails). Auth / rate-limit failures would just re-fail the probe.
+_OBJECT_ID_HINT_EXIT_CODES = frozenset({1, 5, 6, 7})
+
+
+def _object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
+    """Probe whether a failing `--doc` id is actually a URL-visible object_id
+    (the id a human copies out of a `/docs/<id>` URL). Returns the targeted
+    hint when it resolves; never raises — the probe must not mask the
+    original error.
+    """
+    try:
+        result = client.execute(DOC_HEAD_BY_OBJECT_ID, {"objs": [doc_id]})
+        docs = (result.get("data") or {}).get("docs") or []
+    except Exception:
+        return None
+    if not docs:
+        return None
+    return (
+        f"hint: {doc_id} looks like a URL-visible object id, not an internal "
+        f"doc id — retry with --object-id {doc_id}"
+    )
+
+
+def _emit_doc_id_not_found(client: MondayClient, doc_id: int, *, probe: bool) -> None:
+    """Standard `doc id=X not found.` line, plus the object-id retry hint
+    when the id was user-supplied via `--doc` (`probe=True`)."""
+    line = f"doc id={doc_id} not found."
+    if probe:
+        hint = _object_id_hint_with_client(client, doc_id)
+        if hint is not None:
+            line = f"{line}\n{hint}"
+    typer.secho(line, fg=typer.colors.RED, err=True)
+
+
+def _object_id_hint(opts: GlobalOpts, doc_id: int) -> str | None:
+    """`_object_id_hint_with_client` with a fresh short-lived client."""
+    try:
+        client = opts.build_client()
+        with client:
+            return _object_id_hint_with_client(client, doc_id)
+    except Exception:
+        return None
+
+
+def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | None) -> NoReturn:
+    """Emit a mutation-envelope failure and exit 5, appending the object-id
+    retry hint when the failing id came from `--doc`.
+
+    The observed failure mode for an object id sent as --doc is an opaque
+    mutation-level 500 ("Fetcher response returned NON-OK status=500") —
+    probe before giving up.
+    """
+    line = f"error: {err_line}"
+    hint = _object_id_hint(opts, doc_id) if doc_id is not None else None
+    if hint:
+        line = f"{line}\n{hint}"
+    typer.secho(line, fg=typer.colors.RED, err=True)
+    raise typer.Exit(code=5)
+
+
+def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
+    """Map a URL-visible `object_id` to the internal doc id via a head query."""
+    data = exec_or_exit(client, DOC_HEAD_BY_OBJECT_ID, {"objs": [object_id]})
+    docs = data.get("docs") or []
+    if not docs:
+        return None
+    try:
+        return int(docs[0]["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _require_one_doc_flag(doc_id: int | None, object_id: int | None) -> None:
+    """Usage gate for commands taking `--doc` XOR `--object-id`."""
+    if (doc_id is None) == (object_id is None):
+        typer.secho(
+            "error: pass exactly one of --doc or --object-id.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+
+def _resolve_doc_in_client(
+    opts: GlobalOpts,
+    client: MondayClient,
+    *,
+    doc_id: int | None,
+    object_id: int | None,
+) -> int:
+    """Return the internal doc id, resolving `--object-id` on the given
+    (already-open) client — docs directory cache first (when enabled),
+    then the cheap live head query on a miss. A miss in both exits 6.
+    A stale cache hit fails downstream identically to a live hit gone
+    stale, so cache-first is safe.
+    """
+    if doc_id is not None:
+        return doc_id
+    assert object_id is not None
+    resolved: int | None = None
+    if opts.resolve_cache_config().enabled:
+        resolved = _resolve_doc_id_from_object_id(opts, client, object_id)
+    if resolved is None:
+        resolved = _resolve_object_id_live(client, object_id)
+    if resolved is None:
+        typer.secho(f"doc object_id={object_id} not found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=6)
+    return resolved
+
+
+def _execute_doc_command(
+    opts: GlobalOpts,
+    query: str,
+    variables: dict[str, Any],
+    *,
+    doc_id: int | None,
+    object_id: int | None,
+) -> tuple[dict[str, Any], int]:
+    """Resolve `--doc` XOR `--object-id` and `execute()` on one shared client,
+    plus the object-id-vs-internal-id guardrail: when a `--doc`-addressed call
+    fails server-side and the id resolves as an object_id, append the targeted
+    retry hint to the error output (probed on the still-open client).
+
+    `variables` is the query payload minus `doc`; the resolved id is injected.
+    Returns `(data, resolved_doc_id)`. Resolution runs even under `--dry-run`
+    (read-side, same as codec preflights).
+    """
+    _require_one_doc_flag(doc_id, object_id)
+    if doc_id is not None and opts.dry_run:
+        dry_run_and_exit(opts, query, {"doc": doc_id, **variables})
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
+            full_variables = {"doc": resolved, **variables}
+            if opts.dry_run:
+                dry_run_and_exit(opts, query, full_variables)
+            try:
+                result = client.execute(query, variables=full_variables)
+            except MondoError as e:
+                suffix = None
+                if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
+                    suffix = _object_id_hint_with_client(client, doc_id)
+                handle_mondo_error_or_exit(e, human_suffix=suffix)
+            return (result.get("data") or {}), resolved
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
 
 
 # ----- write commands -----
@@ -750,7 +922,8 @@ def create_cmd(
 @app.command("add-block", epilog=epilog_for("doc add-block"))
 def add_block_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id, NOT object_id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     block_type: str = typer.Option(
         ...,
         "--type",
@@ -771,51 +944,50 @@ def add_block_cmd(
 ) -> None:
     """Append a single block to a doc."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    _require_one_doc_flag(doc_id, object_id)
     parsed_content = parse_json_flag(content, flag_name="--content")
-    if opts.dry_run:
-        dry_run_and_exit(
-            opts,
-            CREATE_DOC_BLOCK,
-            {
-                "doc": doc_id,
-                "type": block_type,
-                "content": json.dumps(parsed_content),
-                "after": after,
-                "parent": parent_block,
-            },
-        )
+
+    def _variables(doc: int, after_id: str | None) -> dict[str, Any]:
+        return {
+            "doc": doc,
+            "type": block_type,
+            "content": json.dumps(parsed_content),
+            "after": after_id,
+            "parent": parent_block,
+        }
+
+    if doc_id is not None and opts.dry_run:
+        dry_run_and_exit(opts, CREATE_DOC_BLOCK, _variables(doc_id, after))
     client = client_or_exit(opts)
     try:
         with client:
+            resolved_doc = _resolve_doc_in_client(
+                opts, client, doc_id=doc_id, object_id=object_id
+            )
+            if opts.dry_run:
+                dry_run_and_exit(opts, CREATE_DOC_BLOCK, _variables(resolved_doc, after))
             effective_after = after
             if effective_after is None:
-                existing_doc = _fetch_doc_by_id_all_blocks(client, doc_id)
+                existing_doc = _fetch_doc_by_id_all_blocks(client, resolved_doc)
                 if existing_doc is None:
-                    typer.secho(f"doc id={doc_id} not found.", fg=typer.colors.RED, err=True)
+                    _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                     raise typer.Exit(code=6)
                 effective_after = _last_block_id(existing_doc)
             data = exec_or_exit(
-                client,
-                CREATE_DOC_BLOCK,
-                {
-                    "doc": doc_id,
-                    "type": block_type,
-                    "content": json.dumps(parsed_content),
-                    "after": effective_after,
-                    "parent": parent_block,
-                },
+                client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after)
             )
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
     opts.emit(data.get("create_doc_block") or {})
 
 
 @app.command("add-content", epilog=epilog_for("doc add-content"))
 def add_content_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     markdown: str | None = typer.Option(None, "--markdown", help="Markdown source."),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load markdown from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
@@ -832,6 +1004,7 @@ def add_content_cmd(
     from mondo.docs import markdown_to_blocks
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    _require_one_doc_flag(doc_id, object_id)
     md = _load_markdown(markdown, from_file, from_stdin)
     blocks = markdown_to_blocks(md)
     if not blocks:
@@ -841,7 +1014,7 @@ def add_content_cmd(
             err=True,
         )
         raise typer.Exit(code=5)
-    if opts.dry_run:
+    if doc_id is not None and opts.dry_run:
         dry_run_and_exit(
             opts,
             f"{CREATE_DOC_BLOCK} (looped per block)",
@@ -853,25 +1026,35 @@ def add_content_cmd(
     created: list[dict[str, Any]] = []
     try:
         with client:
+            resolved_doc = _resolve_doc_in_client(
+                opts, client, doc_id=doc_id, object_id=object_id
+            )
+            if opts.dry_run:
+                dry_run_and_exit(
+                    opts,
+                    f"{CREATE_DOC_BLOCK} (looped per block)",
+                    {"doc": resolved_doc, "blocks": blocks},
+                )
             # Seed `after_block_id` from the doc's current last block so blocks
             # land at the end (monday's default for `after=null` is TOP insert).
-            existing_doc = _fetch_doc_by_id_all_blocks(client, doc_id)
+            existing_doc = _fetch_doc_by_id_all_blocks(client, resolved_doc)
             if existing_doc is None:
-                typer.secho(f"doc id={doc_id} not found.", fg=typer.colors.RED, err=True)
+                _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                 raise typer.Exit(code=6)
             prev_id = _last_block_id(existing_doc)
-            created = create_blocks(client, doc_id, blocks, after_block_id=prev_id)
+            created = create_blocks(client, resolved_doc, blocks, after_block_id=prev_id)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
     opts.emit(created)
 
 
 @app.command("add-markdown", epilog=epilog_for("doc add-markdown"))
 def add_markdown_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     markdown: str | None = typer.Option(None, "--markdown", help="Markdown source."),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load markdown from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
@@ -881,10 +1064,20 @@ def add_markdown_cmd(
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     md = _load_markdown(markdown, from_file, from_stdin)
-    variables = {"doc": doc_id, "md": md, "after": after}
-    data = execute(opts, ADD_CONTENT_TO_DOC_FROM_MARKDOWN, variables)
-    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
-    opts.emit(data.get("add_content_to_doc_from_markdown") or {})
+    data, resolved_doc = _execute_doc_command(
+        opts,
+        ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
+        {"md": md, "after": after},
+        doc_id=doc_id,
+        object_id=object_id,
+    )
+    result = data.get("add_content_to_doc_from_markdown") or {}
+    if not result.get("success"):
+        _fail_with_object_id_hint(
+            opts, result.get("error") or "add_content_to_doc_from_markdown failed", doc_id
+        )
+    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
+    opts.emit(result)
 
 
 @app.command("import-html", epilog=epilog_for("doc import-html"))
@@ -924,14 +1117,17 @@ def import_html_cmd(
 @app.command("rename", epilog=epilog_for("doc rename"))
 def rename_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     name: str = typer.Option(..., "--name", help="New document title."),
 ) -> None:
     """Rename a doc."""
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = execute(opts, UPDATE_DOC_NAME, {"doc": doc_id, "name": name})
-    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+    data, resolved_doc = _execute_doc_command(
+        opts, UPDATE_DOC_NAME, {"name": name}, doc_id=doc_id, object_id=object_id
+    )
+    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
     invalidate_entity(opts, "docs")
     opts.emit(data.get("update_doc_name"))
 
@@ -939,7 +1135,8 @@ def rename_cmd(
 @app.command("duplicate", epilog=epilog_for("doc duplicate"))
 def duplicate_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     duplicate_type: DuplicateDocType = typer.Option(
         DuplicateDocType.duplicate_doc_with_content,
         "--duplicate-type",
@@ -949,16 +1146,16 @@ def duplicate_cmd(
 ) -> None:
     """Duplicate a doc."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = execute(
+    data, _ = _execute_doc_command(
         opts,
         DUPLICATE_DOC,
-        {"doc": doc_id, "dup": duplicate_type.value},
+        {"dup": duplicate_type.value},
+        doc_id=doc_id,
+        object_id=object_id,
     )
     result = data.get("duplicate_doc") or {}
     if not result.get("success"):
-        err = result.get("error") or "duplicate_doc failed"
-        typer.secho(f"error: {err}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=5)
+        _fail_with_object_id_hint(opts, result.get("error") or "duplicate_doc failed", doc_id)
     new_object_id = result.get("id")
     if new_object_id is None:
         typer.secho(
@@ -991,13 +1188,16 @@ def duplicate_cmd(
 @app.command("delete", epilog=epilog_for("doc delete"))
 def delete_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
 ) -> None:
     """Delete a doc."""
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = execute(opts, DELETE_DOC, {"doc": doc_id})
-    invalidate_entity(opts, "docs_blocks", scope=str(doc_id))
+    data, resolved_doc = _execute_doc_command(
+        opts, DELETE_DOC, {}, doc_id=doc_id, object_id=object_id
+    )
+    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
     invalidate_entity(opts, "docs")
     opts.emit(data.get("delete_doc"))
 
@@ -1005,7 +1205,8 @@ def delete_cmd(
 @app.command("export-markdown", epilog=epilog_for("doc export-markdown"))
 def export_markdown_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     block_id: list[str] | None = typer.Option(
         None,
         "--block",
@@ -1019,26 +1220,29 @@ def export_markdown_cmd(
 ) -> None:
     """Export doc content as markdown."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = execute(
+    data, _ = _execute_doc_command(
         opts,
         EXPORT_MARKDOWN_FROM_DOC,
-        {"doc": doc_id, "blocks": block_id or None},
+        {"blocks": block_id or None},
+        doc_id=doc_id,
+        object_id=object_id,
     )
     result = data.get("export_markdown_from_doc") or {}
     if raw:
         opts.emit(result)
         return
     if not result.get("success"):
-        err = result.get("error") or "export_markdown_from_doc failed"
-        typer.secho(f"error: {err}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=5)
+        _fail_with_object_id_hint(
+            opts, result.get("error") or "export_markdown_from_doc failed", doc_id
+        )
     typer.echo(result.get("markdown") or "")
 
 
 @app.command("version-history", epilog=epilog_for("doc version-history"))
 def version_history_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     since: str | None = typer.Option(
         None,
         "--since",
@@ -1052,14 +1256,21 @@ def version_history_cmd(
 ) -> None:
     """Fetch restoring points for a doc (API 2026-04+)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = execute(opts, DOC_VERSION_HISTORY, {"doc": doc_id, "since": since, "until": until})
+    data, _ = _execute_doc_command(
+        opts,
+        DOC_VERSION_HISTORY,
+        {"since": since, "until": until},
+        doc_id=doc_id,
+        object_id=object_id,
+    )
     opts.emit(data.get("doc_version_history") or {})
 
 
 @app.command("version-diff", epilog=epilog_for("doc version-diff"))
 def version_diff_cmd(
     ctx: typer.Context,
-    doc_id: int = typer.Option(..., "--doc", help="Doc ID (internal id)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     date: str = typer.Option(..., "--date", help="Newer restoring-point ISO8601 timestamp."),
     prev_date: str = typer.Option(
         ...,
@@ -1069,7 +1280,13 @@ def version_diff_cmd(
 ) -> None:
     """Fetch block-level diff between two restoring points (API 2026-04+)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    data = execute(opts, DOC_VERSION_DIFF, {"doc": doc_id, "date": date, "prev": prev_date})
+    data, _ = _execute_doc_command(
+        opts,
+        DOC_VERSION_DIFF,
+        {"date": date, "prev": prev_date},
+        doc_id=doc_id,
+        object_id=object_id,
+    )
     opts.emit(data.get("doc_version_diff") or {})
 
 
