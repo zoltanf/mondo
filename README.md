@@ -168,17 +168,25 @@ Intel Mac users: no pre-built binary — install [from source](#from-source).
 
 Then:
 
+The archive contains a `mondo/` directory (the executable plus its
+`_internal/` runtime — onedir layout, ~6x faster startup than a
+self-extracting single file). Put the directory somewhere permanent and
+symlink the inner binary onto your PATH:
+
 ```bash
 # macOS / Linux
 tar -xzf mondo-<ver>-<os>-<arch>.tar.gz
-sudo mv mondo /usr/local/bin/
+sudo mkdir -p /usr/local/lib
+sudo rm -rf /usr/local/lib/mondo
+sudo mv mondo /usr/local/lib/
+sudo ln -sf /usr/local/lib/mondo/mondo /usr/local/bin/mondo
 mondo --version
 ```
 
 ```powershell
 # Windows
 Expand-Archive mondo-<ver>-windows-x86_64.zip
-# move mondo.exe somewhere on your PATH
+# move the extracted mondo\ directory somewhere permanent and add it to PATH
 mondo --version
 ```
 
@@ -200,19 +208,23 @@ Pick one of the fixes below.
 **Fix 1 — one-liner in Terminal (recommended):**
 
 ```bash
-xattr -d com.apple.quarantine ./mondo
-./mondo --version
+xattr -dr com.apple.quarantine ./mondo
+./mondo/mondo --version
 ```
 
 The `com.apple.quarantine` xattr is what macOS sets on anything downloaded
-through a browser. Removing it tells Gatekeeper the binary is locally
-provenanced.
+through a browser. Removing it (recursively — the archive is a directory
+of files) tells Gatekeeper the binary is locally provenanced.
 
 **Fix 2 — GUI, per-binary:**
 
-1. In Finder, locate `mondo`, **Control-click** it, choose **Open**.
+1. In Finder, open the extracted `mondo` folder, **Control-click** the inner `mondo` executable, choose **Open**.
 2. Confirm **Open** in the dialog that appears.
 3. Subsequent runs from Terminal then work without further prompts.
+
+Caveat: Finder approves only the file you clicked — the bundled libraries
+under `_internal/` may stay quarantined and still trip Gatekeeper. If that
+happens, use Fix 1, which clears the whole directory.
 
 **Fix 3 — "damaged and can't be opened":**
 
