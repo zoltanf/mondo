@@ -92,6 +92,9 @@ jobs:
           # the tarball carries the whole directory as its single top-level entry.
           archive="mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz"
           tar -czf "$archive" -C dist mondo
+          # The formula, README and release notes all assume a single
+          # top-level mondo/ entry — fail fast if the layout drifts.
+          tar -tzf "$archive" | head -1 | grep -qx 'mondo/'
           echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
 
       - name: Archive (windows)
@@ -100,6 +103,11 @@ jobs:
         run: |
           $archive = "mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.zip"
           Compress-Archive -Path dist\mondo -DestinationPath $archive
+          # Same layout assumption as the tarballs: everything under a
+          # single top-level mondo/ entry. bsdtar on the runner reads zips;
+          # Compress-Archive may emit backslash separators, accept both.
+          $first = (tar -tf $archive | Select-Object -First 1)
+          if ($first -notmatch '^mondo([\\/]|$)') { throw "unexpected zip layout: first entry '$first'" }
           "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - uses: actions/upload-artifact@v7
@@ -128,10 +136,10 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             prerelease_flag="--prerelease"
           fi
-          notes="**Packaging note:** archives now contain a \`mondo/\` directory \
-          (PyInstaller onedir — ~6x faster startup than the previous single-file \
-          binaries). Extract it somewhere permanent and symlink or add \
-          \`mondo/mondo\` to your PATH; \`brew install\` handles this automatically."
+          notes="**Packaging note:** archives contain a \`mondo/\` directory \
+          (PyInstaller onedir). Extract it somewhere permanent and symlink \
+          \`mondo/mondo\` onto your PATH; \`brew install\` handles this \
+          automatically."
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
@@ -220,12 +228,9 @@ jobs:
             end
 
             def install
-              # The tarball's single top-level \`mondo/\` directory is stripped
-              # by Homebrew's unpack, leaving the onedir contents (the
-              # \`mondo\` executable + \`_internal/\`) at the stage root.
-              # Guard for both layouts in case the archive shape changes.
-              stage = File.exist?("mondo/_internal") ? "mondo/*" : "*"
-              libexec.install Dir[stage]
+              # Homebrew strips the tarball's single top-level \`mondo/\`
+              # directory, leaving the onedir contents at the stage root.
+              libexec.install Dir["*"]
               bin.install_symlink libexec/"mondo"
             end
 

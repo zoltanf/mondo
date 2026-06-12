@@ -176,7 +176,9 @@ symlink the inner binary onto your PATH:
 ```bash
 # macOS / Linux
 tar -xzf mondo-<ver>-<os>-<arch>.tar.gz
-sudo mv mondo /usr/local/lib/mondo
+sudo mkdir -p /usr/local/lib
+sudo rm -rf /usr/local/lib/mondo
+sudo mv mondo /usr/local/lib/
 sudo ln -sf /usr/local/lib/mondo/mondo /usr/local/bin/mondo
 mondo --version
 ```
@@ -219,6 +221,10 @@ of files) tells Gatekeeper the binary is locally provenanced.
 1. In Finder, open the extracted `mondo` folder, **Control-click** the inner `mondo` executable, choose **Open**.
 2. Confirm **Open** in the dialog that appears.
 3. Subsequent runs from Terminal then work without further prompts.
+
+Caveat: Finder approves only the file you clicked — the bundled libraries
+under `_internal/` may stay quarantined and still trip Gatekeeper. If that
+happens, use Fix 1, which clears the whole directory.
 
 **Fix 3 — "damaged and can't be opened":**
 
