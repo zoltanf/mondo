@@ -362,13 +362,6 @@
     "source": "COLUMN_CONTEXT.items[0].column_values[] | render_value"
   },
   {
-    "command": "column get-meta",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: column",
-    "source": "column.py"
-  },
-  {
     "command": "column labels",
     "output_type": "list[object]",
     "fields": [
@@ -391,10 +384,14 @@
   },
   {
     "command": "column rename",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: data.get(\"change_column_title\") or {}",
-    "source": "column.py"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "title",
+      "type"
+    ],
+    "notes": "",
+    "source": "COLUMN_RENAME.change_column_title"
   },
   {
     "command": "column set",
@@ -497,10 +494,10 @@
   },
   {
     "command": "doc duplicate",
-    "output_type": "manual-review",
+    "output_type": "list[object]",
     "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: { \"id\": new_doc.get(\"id\"), \"object_id\": new_doc.get(\"object_id\"), \"name\": new_doc.get(\"name\"), \"url\": new_doc.get(\"url\"), }",
-    "source": "DUPLICATE_DOC, DOC_HEAD_BY_OBJECT_ID"
+    "notes": "",
+    "source": "DUPLICATE_DOC.duplicate_doc"
   },
   {
     "command": "doc export-markdown",
@@ -689,8 +686,8 @@
     "command": "folder get",
     "output_type": "manual-review",
     "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: entry",
-    "source": "folder.py"
+    "notes": "Could not auto-infer. Final emit expression: normalize_folder_entry(folders[0])",
+    "source": "FOLDER_GET"
   },
   {
     "command": "folder list",
@@ -739,7 +736,7 @@
       "errors?",
       "extensions?"
     ],
-    "notes": "Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 — mondo can't safely preview a query it doesn't parse).",
+    "notes": "Raw GraphQL response envelope from monday; shape depends entirely on the submitted query. --dry-run is not supported (refused with exit 2 \u2014 mondo can't safely preview a query it doesn't parse).",
     "source": "client.execute(..., raw=True)"
   },
   {
@@ -790,17 +787,29 @@
   },
   {
     "command": "group list",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: groups",
-    "source": "group.py"
+    "output_type": "list[object]",
+    "fields": [
+      "id",
+      "title",
+      "color",
+      "position",
+      "archived",
+      "deleted"
+    ],
+    "notes": "",
+    "source": "GROUPS_LIST.boards[0].groups[]"
   },
   {
     "command": "group rename",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: data.get(\"update_group\") or {}",
-    "source": "group.py"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "title",
+      "color",
+      "position"
+    ],
+    "notes": "",
+    "source": "GROUP_UPDATE.update_group"
   },
   {
     "command": "group reorder",
@@ -816,10 +825,15 @@
   },
   {
     "command": "group update",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: data.get(\"update_group\") or {}",
-    "source": "group.py"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "title",
+      "color",
+      "position"
+    ],
+    "notes": "",
+    "source": "GROUP_UPDATE.update_group"
   },
   {
     "command": "help",
@@ -889,13 +903,6 @@
     "source": "ITEM_DUPLICATE.duplicate_item"
   },
   {
-    "command": "item find",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: <none>",
-    "source": "item.py"
-  },
-  {
     "command": "item get",
     "output_type": "object",
     "fields": [
@@ -954,10 +961,13 @@
   },
   {
     "command": "item rename",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: data.get(\"change_simple_column_value\") or {}",
-    "source": "item.py"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "name"
+    ],
+    "notes": "",
+    "source": "ITEM_RENAME.change_simple_column_value"
   },
   {
     "command": "me",
@@ -990,13 +1000,6 @@
     ],
     "notes": "",
     "source": "CREATE_NOTIFICATION.create_notification"
-  },
-  {
-    "command": "skill install",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: <none>",
-    "source": "skill.py"
   },
   {
     "command": "subitem archive",
@@ -1162,10 +1165,17 @@
   },
   {
     "command": "team get",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: entry",
-    "source": "team.py"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "name",
+      "picture_url",
+      "is_guest",
+      "users{id,name}",
+      "owners{id,name}"
+    ],
+    "notes": "",
+    "source": "TEAMS_LIST.teams[0]"
   },
   {
     "command": "team list",
@@ -1536,10 +1546,17 @@
   },
   {
     "command": "workspace get",
-    "output_type": "manual-review",
-    "fields": [],
-    "notes": "Could not auto-infer. Final emit expression: entry",
-    "source": "workspace.py"
+    "output_type": "object",
+    "fields": [
+      "id",
+      "name",
+      "kind",
+      "description",
+      "state",
+      "created_at"
+    ],
+    "notes": "",
+    "source": "WORKSPACE_GET.workspaces[0]"
   },
   {
     "command": "workspace list",
