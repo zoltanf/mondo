@@ -8,11 +8,17 @@ cache. Callers apply any filtering client-side after this returns.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
+from itertools import chain
 from typing import Any
 
 from mondo.api.client import MondayClient
 from mondo.api.errors import NotFoundError
-from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE, fetch_pages_concurrent
+from mondo.api.pagination import (
+    MAX_BOARDS_PAGE_SIZE,
+    directory_fetch_concurrency,
+    fetch_pages_concurrent,
+)
 from mondo.api.queries import (
     BOARD_GET,
     COLUMNS_ON_BOARD,
@@ -248,8 +254,6 @@ def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
     # workspace (a small worker pool — most workspaces hold a handful of
     # docs, so the serial walk was dominated by per-workspace round-trips)
     # and dedupe on merge (defensive; ids are globally unique).
-    from mondo.api.pagination import _directory_fetch_concurrency
-
     ws_ids: list[int] = []
     for ws in _fetch_all_workspaces(client):
         try:
@@ -273,20 +277,12 @@ def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
             )
         ]
 
-    workers = _directory_fetch_concurrency()
-    if workers <= 1 or len(ws_ids) <= 1:
-        per_workspace = [_fetch_workspace_docs(ws_id) for ws_id in ws_ids]
-    else:
-        from concurrent.futures import ThreadPoolExecutor
+    # pool.map preserves input order, so max_workers=1 behaves exactly like
+    # a serial walk — no special case needed.
+    with ThreadPoolExecutor(max_workers=directory_fetch_concurrency()) as pool:
+        per_workspace = list(pool.map(_fetch_workspace_docs, ws_ids))
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            per_workspace = list(pool.map(_fetch_workspace_docs, ws_ids))
-
-    def _iter_all() -> Iterable[dict[str, Any]]:
-        for docs in per_workspace:
-            yield from docs
-
-    return _dedup_by_id(_iter_all())
+    return _dedup_by_id(chain.from_iterable(per_workspace))
 
 
 def get_columns(

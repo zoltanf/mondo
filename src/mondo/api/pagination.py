@@ -141,11 +141,13 @@ DIRECTORY_FETCH_CONCURRENCY_ENV = "MONDO_DIR_FETCH_CONCURRENCY"
 DEFAULT_DIRECTORY_FETCH_CONCURRENCY = 4
 
 
-def _directory_fetch_concurrency() -> int:
+def directory_fetch_concurrency() -> int:
     raw = os.environ.get(DIRECTORY_FETCH_CONCURRENCY_ENV)
     if raw:
         try:
-            return max(1, int(raw))
+            # Clamp to 16 — anything higher just spawns idle threads and
+            # multiplies in-flight requests against the complexity budget.
+            return max(1, min(int(raw), 16))
         except ValueError:
             pass
     return DEFAULT_DIRECTORY_FETCH_CONCURRENCY
@@ -175,11 +177,11 @@ def fetch_pages_concurrent(
     short page, then at `max_items`).
 
     Thread-safety: `httpx.Client` is documented thread-safe; the complexity
-    meter's samples may interleave but stay consistent under the GIL. A
-    wave of 4 100-row pages stays far below the complexity budget.
+    meter takes an internal lock in `record()`. A wave of 4 100-row pages
+    stays far below the complexity budget.
     """
     page_size = max(1, limit)
-    workers = concurrency if concurrency is not None else _directory_fetch_concurrency()
+    workers = concurrency if concurrency is not None else directory_fetch_concurrency()
     if workers <= 1:
         return list(
             iter_boards_page(
@@ -207,11 +209,17 @@ def fetch_pages_concurrent(
     next_page = 2
     with ThreadPoolExecutor(max_workers=workers) as pool:
         while True:
-            wave = range(next_page, next_page + workers)
+            wave_size = workers
+            if max_items is not None:
+                # Don't request pages beyond what max_items can consume —
+                # overshoot requests are billed complexity, then discarded.
+                pages_left = -(-(max_items - len(out)) // page_size)
+                wave_size = min(workers, pages_left)
+            wave = range(next_page, next_page + wave_size)
             for records in pool.map(_fetch, wave):
                 out.extend(records)
                 if len(records) < page_size:
                     return _truncated(out)
                 if max_items is not None and len(out) >= max_items:
                     return _truncated(out)
-            next_page += workers
+            next_page += wave_size
