@@ -99,7 +99,7 @@ jobs:
           ARCHIVE="$archive" python3 -c "import os,tarfile; t=tarfile.open(os.environ['ARCHIVE'],'w:gz'); t.add('dist/mondo',arcname='mondo'); t.close(); print('created',os.environ['ARCHIVE'])"
           # The formula, README and release notes all assume a single
           # top-level mondo/ entry — fail fast if the layout drifts.
-          tar -tzf "$archive" | head -1 | grep -qx 'mondo/'
+          ARCHIVE="$archive" python3 -c "import os,tarfile; m=tarfile.open(os.environ['ARCHIVE']).getmembers(); first=m[0].name.rstrip('/'); assert first=='mondo',f'unexpected layout: {first}'"
           echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
 
       - name: Archive (windows)
