@@ -55,6 +55,7 @@ def rewrite_id_aliases(cmd: click.Command, args: list[str]) -> list[str]:
         return args
 
     declared = _declared_opts(cmd)
+    present = {a.partition("=")[0] for a in args}
     out: list[str] = []
     i = 0
     while i < len(args):
@@ -65,8 +66,7 @@ def rewrite_id_aliases(cmd: click.Command, args: list[str]) -> list[str]:
             out.append(token)
             i += 1
             continue
-        canonical_present = any(a == canonical or a.startswith(f"{canonical}=") for a in args)
-        if canonical_present:
+        if canonical in present:
             # Canonical wins: drop the alias and its value.
             i += 1 if eq else 2
             continue

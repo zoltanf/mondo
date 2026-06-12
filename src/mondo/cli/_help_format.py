@@ -23,6 +23,8 @@ import copy
 import click
 import typer.core
 
+from mondo.cli._alias import rewrite_id_aliases
+
 _GLOBAL_PANEL_TITLE = "Global Options"
 _OUTPUT_PANEL_TITLE = "Output / Query"
 _PANEL_ATTR = "rich_help_panel"
@@ -144,8 +146,6 @@ class MondoCommand(typer.core.TyperCommand):
         when this command declares the canonical option, so az/gh-style
         guesses don't cost a failed round-trip.
         """
-        from mondo.cli._alias import rewrite_id_aliases
-
         return super().parse_args(ctx, rewrite_id_aliases(self, args))
 
 
