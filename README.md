@@ -332,7 +332,7 @@ mondo board list       [--state active|archived|deleted|all] [--kind public|priv
                        [--limit 100] [--max-items 500]
 mondo board get        --id 1234567890
 mondo board create     --name "Roadmap" --kind public [--workspace 42] [--description …] \
-                       [--owner 7] [--subscriber 8] [--empty]
+                       [--owner 7] [--subscriber 8] [--empty] [--with-url]
 mondo board update     --id 1234567890 --attribute name --value "Renamed"
 mondo board archive    --id 1234567890                   # reversible (30 days)
 mondo board delete     --id 1234567890 --hard --yes      # permanent

@@ -727,11 +727,17 @@ def create_cmd(
     kind: DocKind | None = typer.Option(
         None, "--kind", help="public / private / share.", case_sensitive=False
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="(No-op for docs — `url` is always present in the payload.)",
+    ),
 ) -> None:
     """Create a new doc inside a workspace."""
     from mondo.cli._normalize import normalize_doc_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    del with_url  # docs always carry `url` from monday; flag kept for symmetry
     variables = {
         "workspace": workspace,
         "name": name,

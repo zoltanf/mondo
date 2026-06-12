@@ -70,7 +70,7 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 - **Stable exit codes:** 0 ok · 2 usage · 3 auth · 4 rate/complexity (retry after 60s) · 5 validation · 6 not-found · 7 network.
 - **Dry-run writes first:** every typed mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar. Not supported on `mondo graphql` — the raw passthrough refuses `--dry-run` with exit 2 because mondo can't safely preview a query it doesn't parse.
 - **Batch:** `--batch <file.json>` on bulk operations (`item create`, `column set`, `import board`). Returns a per-row envelope; partial failure → exit 1, full success → exit 0.
-- **URLs:** pass `--with-url` on `board get`, `board list`, `item get`, `item create` (NEW — single-call create + URL retrieval), `subitem get`, `doc get`, `doc list` to return a clickable monday.com link to the user.
+- **URLs:** pass `--with-url` on `board get`, `board list`, `board create`, `item get`, `item create`, `subitem get`, `doc get`, `doc list`, `doc create` to return a clickable monday.com link to the user. On the create commands this is single-call create + URL retrieval (no extra request).
 - **Wait for async state changes** with `--poll-until '<jmespath>'` + `--poll-interval` + `--poll-timeout` on `item list`, `item get`, `board get` — replaces hand-rolled bash `until/sleep` loops.
 - **Find items by column value** with `mondo item find --board X --column COL --value VAL` (sugar over `item list --filter`, with the same codec dispatch).
 - **Inspect a single column's metadata** with `mondo column get-meta --board X --column COL` (returns one column with `settings_str` preserved; `column list` strips it).
