@@ -63,7 +63,8 @@ EXAMPLES: dict[str, list[Example]] = {
             "cat mutation.graphql | mondo graphql -",
         ),
         Example(
-            "Tip: pass GraphQL as positional, not `-q` (which is global JMESPath)",
+            "Tip: prefer positional GraphQL; a GraphQL-looking `-q` value is "
+            "accepted as the query (JMESPath disabled)",
             "mondo graphql 'query { me { id } }'",
         ),
     ],
