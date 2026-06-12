@@ -94,13 +94,14 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          echo "=== dist/mondo size ===" && du -sh dist/mondo
-          echo "=== broken symlinks ===" && find dist/mondo -type l ! -exec test -e {} \; -print || true
-          # dist/mondo is the onedir bundle (mondo executable + _internal/);
-          # the tarball carries the whole directory as its single top-level entry.
           archive="mondo-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz"
-          # Use an explicit pipe so tar and gzip failures surface separately.
-          tar -cf - -C dist mondo | gzip -c > "$archive"
+          # Use Python's tarfile to avoid system tar/gzip issues on Linux runners.
+          ARCHIVE="$archive" python3 -c "
+import os, tarfile
+with tarfile.open(os.environ['ARCHIVE'], 'w:gz') as t:
+    t.add('dist/mondo', arcname='mondo')
+print('created', os.environ['ARCHIVE'])
+"
           # The formula, README and release notes all assume a single
           # top-level mondo/ entry — fail fast if the layout drifts.
           tar -tzf "$archive" | head -1 | grep -qx 'mondo/'
