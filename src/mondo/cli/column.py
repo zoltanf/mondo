@@ -391,8 +391,9 @@ def set_cmd(
                 except UnknownColumnTypeError as e:
                     if col_type == "name":
                         # The item title masquerades as a `name` column in
-                        # monday's UI but isn't settable via column mutations
-                        # (--raw won't work either). Point at the real command.
+                        # monday's UI but isn't settable via
+                        # change_column_value — what `column set` sends,
+                        # including --raw. Point at the real command.
                         typer.secho(
                             "error: 'name' is the item's title, not a settable "
                             "column. Use: mondo item rename "
