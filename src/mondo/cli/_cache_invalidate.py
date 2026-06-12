@@ -35,6 +35,17 @@ def invalidate_entity(
         )
 
 
+def invalidate_board_items_cache(opts: GlobalOpts, board_id: int) -> None:
+    """Drop the short-TTL `board_items/<board_id>` cache (bare `item list`).
+
+    Called by every mutation that changes the board's row membership, the
+    cached row shape (group `{id title}`, column_values), or cell values —
+    and knows the board id in-process. Mutations that only carry an item id
+    ride the 60s TTL instead.
+    """
+    invalidate_entity(opts, "board_items", scope=str(board_id))
+
+
 def invalidate_board_caches(opts: GlobalOpts, board_id: int) -> None:
     """Drop both the global `boards` directory cache and the per-board
     `board_details/<board_id>` cache.

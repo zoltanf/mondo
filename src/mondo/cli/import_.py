@@ -321,9 +321,9 @@ def board_cmd(
         invalidate_columns_cache(opts, board_id)
 
     if created > 0:
-        from mondo.cli._cache_invalidate import invalidate_entity
+        from mondo.cli._cache_invalidate import invalidate_board_items_cache
 
-        invalidate_entity(opts, "board_items", scope=str(board_id))
+        invalidate_board_items_cache(opts, board_id)
 
     summary = {
         "created": created,

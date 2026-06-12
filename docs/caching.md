@@ -216,14 +216,19 @@ score before acting on the id.
    | Trigger | Drops |
    |---|---|
    | `board create/update/archive/delete/duplicate/move/set-permission` | `boards`, `board_details/<id>` |
-   | `column create/rename/change-metadata/delete` | `columns/<board_id>`, `board_details/<board_id>` |
+   | `column create/delete` | `columns/<board_id>`, `board_details/<board_id>`, `board_items/<board_id>` (a structural change alters every cached row's `column_values`) |
+   | `column rename/change-metadata` | `columns/<board_id>`, `board_details/<board_id>` |
    | `column set/set-many/clear` | `items/<item_id>`, `board_items/<board_id>` (+ `columns/<board_id>` when `--create-labels-if-missing` may have minted a label) |
-   | `group create/update/reorder/delete` | `groups/<board_id>`, `board_details/<board_id>` |
+   | `group create/reorder` | `groups/<board_id>`, `board_details/<board_id>` |
+   | `group rename/update/duplicate/archive/delete` | `groups/<board_id>`, `board_details/<board_id>`, `board_items/<board_id>` (cached `item list` rows embed `group { id title }`; duplicate adds rows, archive/delete remove them) |
    | `tag create-or-get` | `tags`, `board_details/<board_id>` |
    | `webhook create` | `webhooks/<board_id>` |
    | `webhook delete` | every `webhooks/<board_id>.json` (wildcard — webhook id alone doesn't carry a board) |
    | `item create` (single + `--batch`) / `import board` | `board_items/<board_id>` |
-   | `item rename/move/move-to-board/archive/delete` | `items/<item_id>` (+ `board_items/<board_id>` on rename/duplicate; move-to-board drops the *destination* board's file — the source board id isn't known in-process and rides the 60s TTL, as do archive/delete/move, which only carry the item id) |
+   | `item rename` | `items/<item_id>`, `board_items/<board_id>` |
+   | `item duplicate` | `board_items/<board_id>` |
+   | `item move-to-board` | the *destination* board's `board_items/<board_id>` only — the source board id isn't known in-process and rides the 60s TTL |
+   | `item move/archive/delete` | `items/<item_id>` (these only carry the item id, so `board_items` rides the 60s TTL) |
    | `subitem create` | `subitems/<parent_id>` |
    | `subitem rename/move/archive/delete` | `items/<subitem_id>` |
    | `update create` / `update clear` / `update pin/unpin --item` | `updates/<item_id>` |

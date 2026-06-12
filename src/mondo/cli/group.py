@@ -21,6 +21,7 @@ from mondo.api.queries import (
     GROUP_UPDATE,
 )
 from mondo.cli._cache_flags import reject_mutually_exclusive
+from mondo.cli._cache_invalidate import invalidate_board_items_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -284,6 +285,8 @@ def rename_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     invalidate_groups_cache(opts, board_id)
+    # Cached `item list` rows embed `group { id title }` — drop them too.
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
 
@@ -362,6 +365,10 @@ def update_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     invalidate_groups_cache(opts, board_id)
+    # `--attribute title` changes the `group { id title }` embedded in
+    # cached `item list` rows; the other attributes don't, but one extra
+    # drop is cheaper than special-casing.
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("update_group") or {})
 
 
@@ -429,6 +436,8 @@ def duplicate_cmd(
     }
     data = execute(opts, GROUP_DUPLICATE, variables)
     invalidate_groups_cache(opts, board_id)
+    # The copy adds rows to the board — drop the cached `item list`.
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("duplicate_group") or {})
 
 
@@ -444,6 +453,8 @@ def archive_cmd(
     variables = {"board": board_id, "group": group_id}
     data = execute(opts, GROUP_ARCHIVE, variables)
     invalidate_groups_cache(opts, board_id)
+    # Archiving removes the group's rows from the board listing.
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("archive_group") or {})
 
 
@@ -477,4 +488,6 @@ def delete_cmd(
     variables = {"board": board_id, "group": group_id}
     data = execute(opts, GROUP_DELETE, variables)
     invalidate_groups_cache(opts, board_id)
+    # Deletion cascades to the group's items — drop the cached `item list`.
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("delete_group") or {})

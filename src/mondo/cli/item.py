@@ -29,6 +29,7 @@ from mondo.api.queries import (
     build_items_page_queries,
 )
 from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
+from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
@@ -511,7 +512,10 @@ def list_cmd(
     60s — set via `MONDO_CACHE_TTL_BOARD_ITEMS`). Filtered / ordered /
     column-narrowed variants always fetch live.
     """
+    from mondo.cli._cache_flags import reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     board_flag = coalesce_board_flag(board_flag, board_id_alias)
     _list_items_impl(
         opts,
@@ -620,19 +624,27 @@ def _list_items_impl(
     # filtered client-side off the same file) variants are served from it;
     # anything with filters / ordering / column narrowing stays live.
     # Same stale-data contract as the per-item caches — see docs/caching.md.
-    cfg = opts.resolve_cache_config()
-    cache_readable = (
-        cfg.enabled
-        and not no_cache
-        and not opts.dry_run
-        and poll_until is None
-        and not user_filters
-        and order_by is None
-        and columns_sel is None
+    from mondo.cli._cache_flags import resolve_cache_prefs
+
+    prefs = resolve_cache_prefs(
+        opts,
+        no_cache=no_cache,
+        fuzzy_threshold=None,
+        extra_disable=(
+            opts.dry_run
+            or poll_until is not None
+            or user_filters
+            or order_by is not None
+            or columns_sel is not None
+            # A comma in --group means multiple ids on the live path (the
+            # raw-filter fallback comma-splits); the cached path matches
+            # the id exactly, so don't serve it from the cache.
+            or (group_id is not None and "," in group_id)
+        ),
     )
     store = (
         opts.build_cache_store("board_items", scope=str(board_id))
-        if cache_readable
+        if prefs.use_cache
         else None
     )
     if store is not None and not refresh_cache:
@@ -1003,9 +1015,7 @@ def create_cmd(
         # May have minted a status/dropdown label in settings_str; drop the
         # cached column defs so the next read sees the new labels.
         invalidate_columns_cache(opts, board_id)
-    from mondo.cli._cache_invalidate import invalidate_entity
-
-    invalidate_entity(opts, "board_items", scope=str(board_id))
+    invalidate_board_items_cache(opts, board_id)
     payload = data.get("create_item") or {}
     if not with_url:
         payload.pop("url", None)
@@ -1102,9 +1112,7 @@ def _run_batch(
 
     if create_labels_default or any(row.get("create_labels") for row in rows):
         invalidate_columns_cache(opts, board_id)
-    from mondo.cli._cache_invalidate import invalidate_entity
-
-    invalidate_entity(opts, "board_items", scope=str(board_id))
+    invalidate_board_items_cache(opts, board_id)
 
     if not with_url:
         for row in results:
@@ -1134,8 +1142,10 @@ def _resolve_item_target(
     first: bool,
     fuzzy_threshold: int,
 ) -> int:
-    """Pick a single item id for the mutation. Items aren't cached (volatile),
-    so the filter path streams `items_page` and matches client-side."""
+    """Pick a single item id for the mutation. The filter path streams
+    `items_page` live and matches client-side — it deliberately skips the
+    short-TTL board_items cache so name filters never resolve a mutation
+    target against stale rows."""
     if item_id is not None and not (name_contains or name_matches_re or name_fuzzy):
         return item_id
     items = list(iter_items_page(client, board_id=board_id))
@@ -1209,10 +1219,8 @@ def rename_cmd(
             data = exec_or_exit(client, ITEM_RENAME, variables)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
-    from mondo.cli._cache_invalidate import invalidate_entity
-
     invalidate_entity(opts, "items", scope=str(resolved_item))
-    invalidate_entity(opts, "board_items", scope=str(board_id))
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("change_simple_column_value") or {})
 
 
@@ -1234,9 +1242,7 @@ def duplicate_cmd(
         ITEM_DUPLICATE,
         {"board": board_id, "id": item_id, "with_updates": with_updates},
     )
-    from mondo.cli._cache_invalidate import invalidate_entity
-
-    invalidate_entity(opts, "board_items", scope=str(board_id))
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("duplicate_item") or {})
 
 
@@ -1247,8 +1253,6 @@ def archive_cmd(
     id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
 ) -> None:
     """Archive an item (reversible via monday UI within 30 days)."""
-    from mondo.cli._cache_invalidate import invalidate_entity
-
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     _confirm(opts, f"Archive item {item_id}?")
@@ -1279,8 +1283,6 @@ def delete_cmd(
         raise typer.Exit(code=2)
     _confirm(opts, f"PERMANENTLY delete item {item_id}?")
     data = execute(opts, ITEM_DELETE, {"id": item_id})
-    from mondo.cli._cache_invalidate import invalidate_entity
-
     invalidate_entity(opts, "items", scope=str(item_id))
     opts.emit(data.get("delete_item") or {})
 
@@ -1292,8 +1294,6 @@ def move_cmd(
     group_id: str = typer.Option(..., "--group", help="Target group ID within the same board."),
 ) -> None:
     """Move an item to a different group within the same board."""
-    from mondo.cli._cache_invalidate import invalidate_entity
-
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = execute(opts, ITEM_MOVE_GROUP, {"id": item_id, "group": group_id})
     invalidate_entity(opts, "items", scope=str(item_id))
@@ -1375,8 +1375,6 @@ def move_to_board_cmd(
         "subitemColumns": subitem_columns or None,
     }
     data = execute(opts, ITEM_MOVE_BOARD, variables)
-    from mondo.cli._cache_invalidate import invalidate_entity
-
     # The source board isn't known in-process — its 60s TTL covers it.
-    invalidate_entity(opts, "board_items", scope=str(board_id))
+    invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("move_item_to_board") or {})

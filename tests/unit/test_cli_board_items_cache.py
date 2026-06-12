@@ -202,6 +202,28 @@ class TestNonBareVariantsStayLive:
         assert result.exit_code == 0, result.output
         assert len(httpx_mock.get_requests()) == 3
 
+    def test_group_with_comma_bypasses_cache(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        # `--group "g1,g2"` comma-splits to multiple ids on the live path
+        # (raw-filter fallback); the cached path matches the id exactly, so
+        # multi-id group filters must not be served from the cache.
+        _warm(httpx_mock)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"boards": [{"id": BOARD, "name": "B", "columns": []}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok(_items_page(ITEMS))
+        )
+        result = runner.invoke(
+            app, ["item", "list", "--board", BOARD, "--group", "g1,g2"]
+        )
+        assert result.exit_code == 0, result.output
+        assert [r["id"] for r in json.loads(result.stdout)] == ["1", "2"]
+        assert len(httpx_mock.get_requests()) == 3
+
     def test_columns_selection_bypasses_cache(
         self, httpx_mock: HTTPXMock
     ) -> None:
@@ -217,6 +239,14 @@ class TestNonBareVariantsStayLive:
 
 
 class TestCacheFlags:
+    def test_no_cache_and_refresh_cache_are_mutually_exclusive(self) -> None:
+        result = runner.invoke(
+            app,
+            ["item", "list", "--board", BOARD, "--no-cache", "--refresh-cache"],
+        )
+        assert result.exit_code == 2
+        assert "mutually exclusive" in result.stderr
+
     def test_no_cache_fetches_live(self, httpx_mock: HTTPXMock) -> None:
         _warm(httpx_mock)
         httpx_mock.add_response(
@@ -328,6 +358,40 @@ class TestWritePathInvalidation:
         result = runner.invoke(
             app,
             ["column", "set", "--item", "1", "--column", "text7", "--value", "x"],
+        )
+        assert result.exit_code == 0, result.output
+        assert not cache_file.exists()
+
+    def test_group_delete_drops_board_cache(
+        self, httpx_mock: HTTPXMock, cache_file: Path
+    ) -> None:
+        _warm(httpx_mock)
+        assert cache_file.exists()
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"delete_group": {"id": "g2", "deleted": True}}),
+        )
+        result = runner.invoke(
+            app,
+            ["--yes", "group", "delete", "--board", BOARD, "--id", "g2", "--hard"],
+        )
+        assert result.exit_code == 0, result.output
+        assert not cache_file.exists()
+
+    def test_column_delete_drops_board_cache(
+        self, httpx_mock: HTTPXMock, cache_file: Path
+    ) -> None:
+        _warm(httpx_mock)
+        assert cache_file.exists()
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"delete_column": {"id": "status"}}),
+        )
+        result = runner.invoke(
+            app,
+            ["--yes", "column", "delete", "--board", BOARD, "--id", "status"],
         )
         assert result.exit_code == 0, result.output
         assert not cache_file.exists()
