@@ -79,8 +79,10 @@ def emit_cache_provenance(
 
     Fires only when `cached` was served from disk (`from_cache=True`). Suppressed
     when `MONDO_NO_CACHE_NOTICE=1` (unless `explain=True` — `--explain-cache`
-    is an explicit user request and overrides the env var) or when
-    `--output table` is in effect (interactive humans don't need it).
+    is an explicit user request and overrides the env var), when
+    `--output table` is in effect (interactive humans don't need it), or when
+    no human is plausibly watching stderr (non-TTY, see `_notices`) unless
+    `--verbose` / `MONDO_VERBOSE=1`.
 
     `explain=True` adds verbose detail (path, ttl, fetched_at).
     """
@@ -90,6 +92,10 @@ def emit_cache_provenance(
         if os.environ.get("MONDO_NO_CACHE_NOTICE") == "1":
             return
         if opts.output == "table":
+            return
+        from mondo.cli._notices import benign_notices_enabled
+
+        if not benign_notices_enabled(verbose=opts.verbose):
             return
 
     age_str = _format_age(cached.age.total_seconds())

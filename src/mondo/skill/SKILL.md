@@ -1,7 +1,7 @@
 ---
 name: mondo
 description: Use when the user wants to do anything against monday.com via the `mondo` CLI — reading or writing workspaces, folders, boards, groups, items, subitems, columns, updates, docs, files, users, teams, webhooks, or when they paste a monday.com URL.
-version: "1.1.2"
+version: "1.2.0"
 ---
 
 # mondo
@@ -70,12 +70,12 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 - **Stable exit codes:** 0 ok · 2 usage · 3 auth · 4 rate/complexity (retry after 60s) · 5 validation · 6 not-found · 7 network.
 - **Dry-run writes first:** every typed mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar. Not supported on `mondo graphql` — the raw passthrough refuses `--dry-run` with exit 2 because mondo can't safely preview a query it doesn't parse.
 - **Batch:** `--batch <file.json>` on bulk operations (`item create`, `column set`, `import board`). Returns a per-row envelope; partial failure → exit 1, full success → exit 0.
-- **URLs:** pass `--with-url` on `board get`, `board list`, `item get`, `item create` (NEW — single-call create + URL retrieval), `subitem get`, `doc get`, `doc list` to return a clickable monday.com link to the user.
+- **URLs:** pass `--with-url` on `board get`, `board list`, `board create`, `item get`, `item create`, `subitem get`, `doc get`, `doc list`, `doc create` to return a clickable monday.com link to the user. On the create commands this is single-call create + URL retrieval (no extra request).
 - **Wait for async state changes** with `--poll-until '<jmespath>'` + `--poll-interval` + `--poll-timeout` on `item list`, `item get`, `board get` — replaces hand-rolled bash `until/sleep` loops.
 - **Find items by column value** with `mondo item find --board X --column COL --value VAL` (sugar over `item list --filter`, with the same codec dispatch).
 - **Inspect a single column's metadata** with `mondo column get-meta --board X --column COL` (returns one column with `settings_str` preserved; `column list` strips it).
 - **Cleanup:** delete commands soft-archive by default; pass `--hard` for true delete.
-- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. **Pass the query as a positional**, not via `-q` (`-q` is the global JMESPath; mondo will hint if you confuse the two).
+- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. **Pass the query as a positional** — `-q/--query` is the global JMESPath projection, not the GraphQL query. If a GraphQL document lands in `--query` anyway, mondo runs it as the query (stderr note) but disables the projection for that call; pass it positionally to combine with `-q`.
 - **Cache notice:** read commands may emit `cache: hit (entity=…, age=…)` to stderr. Suppress with `MONDO_NO_CACHE_NOTICE=1`. Force refresh with `--no-cache` or `--refresh-cache` on any cached read (`<entity> list/get` directories plus per-board / per-item / per-doc caches — `item get`, `item list` bare board scope (60s TTL), `subitem list/get`, `update list --item`, `doc get`, `board get`, `webhook list`, `tag list/get`). Filtered `item list` variants, account-wide `update list`, and `mondo graphql` stay live. See `docs/caching.md` for the per-entity TTL table.
 
 ## When references aren't enough

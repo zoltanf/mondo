@@ -13,7 +13,7 @@ from pathlib import Path
 import typer
 
 from mondo.api.errors import MondoError
-from mondo.cli._exec import handle_mondo_error_or_exit
+from mondo.cli._exec import handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli.context import GlobalOpts
 
@@ -50,6 +50,12 @@ def graphql_command(
 ) -> None:
     """Send a raw GraphQL query to monday.com and print the response.
 
+    Pass the query positionally. As a convenience, a GraphQL document
+    passed to the global `-q/--query` (JMESPath projection) flag is run
+    as the query — with the projection disabled, since the value can't
+    be both. Pass the query positionally to combine it with a JMESPath
+    projection.
+
     Note: `--dry-run` is not supported on this command. Raw GraphQL can't
     be safely previewed (mondo doesn't parse your query), so the flag is
     rejected rather than silently ignored.
@@ -57,38 +63,31 @@ def graphql_command(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
 
     if opts.dry_run:
-        typer.secho(
-            "error: --dry-run is not supported with `mondo graphql`. The raw "
+        usage_error_or_exit(
+            "--dry-run is not supported with `mondo graphql`. The raw "
             "passthrough can't preview safely (mondo doesn't parse your query, "
             "and verifying success requires sending it). Review the GraphQL "
             "manually and re-run without --dry-run, or use a typed subcommand "
-            "if one wraps your operation.",
-            fg=typer.colors.RED,
-            err=True,
+            "if one wraps your operation."
         )
-        raise typer.Exit(code=2)
 
     if query is None:
-        # A4/A5 in the friction report: detect when the user passed their
-        # GraphQL to `-q` (global JMESPath) instead of as the positional,
-        # and emit a targeted recovery hint instead of the generic
-        # "Missing argument 'QUERY'" Click message.
+        # Issue #13: `--query '<gql>'` is the #1 agent guess (gh-api style).
+        # The global `-q/--query` JMESPath flag swallows it, so when no
+        # positional was given and the projection value reads as GraphQL,
+        # run it as the document instead of exiting 2. The value can't be
+        # both, so the JMESPath projection is disabled for this invocation.
         if opts.query and _looks_like_graphql(opts.query):
+            query = opts.query
+            opts.query = None
             typer.secho(
-                "error: your GraphQL query was passed to `-q` (global JMESPath "
-                "projection) instead of as a positional argument. Pass it "
-                "positionally:\n"
-                "  mondo graphql 'query { … }'",
-                fg=typer.colors.RED,
+                "note: --query interpreted as the GraphQL document; pass it "
+                "positionally to combine with a JMESPath projection.",
+                fg=typer.colors.YELLOW,
                 err=True,
             )
-            raise typer.Exit(code=2)
-        typer.secho(
-            "error: missing required argument 'QUERY'.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        else:
+            usage_error_or_exit("missing required argument 'QUERY'.")
 
     query_text = _load_query(query)
     vars_dict: dict[str, object] = {}

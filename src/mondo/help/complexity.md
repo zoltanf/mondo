@@ -46,11 +46,13 @@ column_values).
 
 Two ways to stop paying for values you don't read:
 
-- `--fields id,name` (or a `-q` projection that only touches
-  id/name/state/group) auto-drops `column_values` from the GraphQL query —
-  no extra flag needed.
+- `--fields id,name` (any `--fields` set that never reads `column_values`)
+  auto-drops `column_values` from the GraphQL query — no extra flag needed.
+  A `-q` JMESPath never auto-slims: it can read fields inside predicates
+  yet still return whole rows, so use `-q` to shape and `--fields` to slim.
 - `--columns status,person` fetches just those column values, server-side.
-  Also available on `item get`.
+  Also available on `item get`. Unknown column ids are silently omitted by
+  the API (no error, just missing from `column_values`).
 
 ## When the budget runs out
 

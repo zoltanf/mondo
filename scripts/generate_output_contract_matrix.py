@@ -120,6 +120,22 @@ MANUAL_ROWS: dict[str, Row] = {
         notes="Custom flattened identity/status payload.",
         source="auth.status payload",
     ),
+    "board create": Row(
+        command="board create",
+        output_type="object",
+        fields=[
+            "id",
+            "name",
+            "description",
+            "state",
+            "board_kind",
+            "workspace_id",
+            "board_folder_id",
+            "url?",
+        ],
+        notes="url is present only when --with-url is passed (stripped otherwise).",
+        source="BOARD_CREATE.create_board",
+    ),
     "board duplicate": Row(
         command="board duplicate",
         output_type="object",
@@ -383,6 +399,16 @@ MANUAL_ROWS: dict[str, Row] = {
             "endpoint/query/variables/filename instead."
         ),
         source="FILE_UPLOAD_ITEM.add_file_to_column | FILE_UPLOAD_UPDATE.add_file_to_update",
+    ),
+    "file url": Row(
+        command="file url",
+        output_type="list[object]",
+        fields=["id", "name", "file_extension", "file_size", "public_url", "url"],
+        notes=(
+            "Always a list, even for a single --asset (no single-item unwrap). public_url is "
+            "the pre-signed, expiring S3 link; url is monday's browser-only protected_static proxy."
+        ),
+        source="file.url results",
     ),
     "folder list": Row(
         command="folder list",
