@@ -383,7 +383,7 @@ def list_cmd(
     )
     fetch_cap = None if client_side_filter_active else max_items
 
-    from mondo.api.pagination import iter_boards_page
+    from mondo.api.pagination import fetch_pages_concurrent
     from mondo.cli._filters import apply_fuzzy
     from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
@@ -396,7 +396,7 @@ def list_cmd(
                 d
                 for d in (
                     normalize_doc_entry(entry)
-                    for entry in iter_boards_page(
+                    for entry in fetch_pages_concurrent(
                         client,
                         query=query,
                         variables=variables,

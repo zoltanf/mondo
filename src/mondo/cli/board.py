@@ -282,7 +282,7 @@ def list_cmd(
     boards. Served from the local directory cache when available.
     """
     from mondo.api.errors import UsageError
-    from mondo.api.pagination import iter_boards_page
+    from mondo.api.pagination import fetch_pages_concurrent
     from mondo.api.queries import build_boards_list_query
     from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
     from mondo.cli._filters import apply_fuzzy, compile_name_filter
@@ -362,7 +362,7 @@ def list_cmd(
                 b
                 for b in (
                     normalize_board_entry(entry)
-                    for entry in iter_boards_page(
+                    for entry in fetch_pages_concurrent(
                         client,
                         query=query,
                         variables=variables,
