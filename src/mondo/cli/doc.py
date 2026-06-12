@@ -401,7 +401,7 @@ def list_cmd(
     )
     fetch_cap = None if client_side_filter_active else max_items
 
-    from mondo.api.pagination import iter_boards_page
+    from mondo.api.pagination import fetch_pages_concurrent
     from mondo.cli._filters import apply_fuzzy
     from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
@@ -414,7 +414,7 @@ def list_cmd(
                 d
                 for d in (
                     normalize_doc_entry(entry)
-                    for entry in iter_boards_page(
+                    for entry in fetch_pages_concurrent(
                         client,
                         query=query,
                         variables=variables,
@@ -899,11 +899,17 @@ def create_cmd(
     kind: DocKind | None = typer.Option(
         None, "--kind", help="public / private / share.", case_sensitive=False
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="(No-op for docs — `url` is always present in the payload.)",
+    ),
 ) -> None:
     """Create a new doc inside a workspace."""
     from mondo.cli._normalize import normalize_doc_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    del with_url  # docs always carry `url` from monday; flag kept for symmetry
     variables = {
         "workspace": workspace,
         "name": name,

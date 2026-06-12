@@ -1,6 +1,7 @@
 # Files
 
-Upload and download file assets attached to file columns or updates.
+Upload and download file assets attached to file columns or updates, or
+print an asset's link with `file url` (no download).
 
 ## Upload to a file column
 
@@ -47,6 +48,39 @@ mondo file download --asset 1234567 --out ./downloaded.bin
 ```
 
 *Gotcha:* `mondo file download` does **not** emit JSON to stdout — it writes the asset bytes to `--out` and exits 0 on success. Don't try to pipe its stdout. To check the download succeeded, test for the file's existence + size. If `--asset` is wrong/expired, exit 6 (not found).
+
+## Get an asset's URL without downloading
+
+When you only need a link — to hand to the user, pass to `curl`, or
+inspect — use `file url` instead of `file download` (and instead of a
+raw `mondo graphql 'query { assets(ids: …) }'` escape):
+
+```bash
+mondo file url --asset 1234567 -o json
+# Repeatable: --asset 1234567 --asset 2345678
+
+# Bare pre-signed URL only:
+mondo file url --asset 1234567 -q '[0].public_url'
+```
+
+```json
+[
+  {
+    "id": "1234567",
+    "name": "spec.pdf",
+    "file_extension": ".pdf",
+    "file_size": 84321,
+    "public_url": "https://files-monday-com.s3.amazonaws.com/...",
+    "url": "https://marktguru.monday.com/protected_static/..."
+  }
+]
+```
+
+*Gotcha:* prefer `public_url` — a pre-signed S3 link that works from any
+HTTP client but **expires** (monday documents ~1 hour); re-run for a
+fresh link rather than caching it. `url` is monday's protected_static
+proxy and only works in a logged-in browser session (non-browser
+clients get 406). Unknown asset ids exit 6, same as `file download`.
 
 ## Find an asset id when you don't have it
 

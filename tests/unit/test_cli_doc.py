@@ -831,6 +831,32 @@ class TestCreate:
         assert parsed["id"] == "10"
         assert parsed["object_id"] == "100"
 
+    def test_with_url_flag_accepted_url_always_present(self, httpx_mock: HTTPXMock) -> None:
+        """Issue #10: `doc create --with-url` is accepted for symmetry with
+        `board create` / `item create`; docs always carry `url` anyway."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "create_doc": {
+                        "id": "10",
+                        "object_id": "100",
+                        "name": "New",
+                        "url": "https://acme.monday.com/docs/100",
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["doc", "create", "--workspace", "42", "--name", "New", "--with-url"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["url"] == "https://acme.monday.com/docs/100"
+        assert len(httpx_mock.get_requests()) == 1
+
 
 # --- blocks ---
 

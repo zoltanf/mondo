@@ -165,3 +165,26 @@ def error_envelope(exc: BaseException, *, suggestion: str | None = None) -> dict
 def emit_envelope(envelope: dict[str, Any]) -> None:
     """Write the envelope to stderr as a single JSON line."""
     typer.echo(json.dumps(envelope, separators=(",", ":")), err=True)
+
+
+def mirror_envelope_to_stdout(opts: GlobalOpts | None, envelope: dict[str, Any]) -> None:
+    """Mirror a fatal-error envelope to stdout in machine mode (#25).
+
+    31% of observed agent invocations suppress stderr (`2>/dev/null`), turning
+    every carefully-crafted error into an invisible failure: empty stdout +
+    nonzero exit. When the command dies before writing anything to stdout,
+    pipelines now receive the same JSON envelope there — parseable instead of
+    empty input. Exit codes are unchanged.
+
+    Guards:
+    - never fires once `emit()` has written to stdout (a partial-success
+      stream is never corrupted).
+
+    Callers gate on `is_machine_output` / `is_machine_output_argv` — the
+    mirror only fires where the stderr envelope fired too. Those classify
+    `-o none` as a human format, so it keeps stdout silent without a
+    guard here.
+    """
+    if opts is not None and opts.stdout_emitted:
+        return
+    typer.echo(json.dumps(envelope, separators=(",", ":")))

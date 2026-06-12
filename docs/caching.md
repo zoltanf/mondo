@@ -35,6 +35,21 @@ and `--refresh-cache` (force-refetch + write-through), grouped under a
 colliding. Single-file types live at `<cache_dir>/<profile>/<entity>.json`;
 scoped types at `<cache_dir>/<profile>/<entity>/<scope>.json`.
 
+### Population is concurrent (#20)
+
+Page-based collections (boards, workspaces, users, docs, folders) have
+independently addressable pages, so directory population fetches page 1
+serially and then pages 2..N in waves of 4 workers (the docs directory
+additionally fans its per-workspace queries through the same pool). The
+result is byte-identical to the serial walk — the first short page ends
+the run and later pages in the same wave are discarded. `--no-cache`
+reads use the same fetch path and benefit equally.
+
+Measured on a 5,966-board account (60 pages): serial 65s → concurrent
+21s; warm cache hit 0.4s. Reproduce with `scripts/bench_directory_fetch.sh`.
+Tune or disable with `MONDO_DIR_FETCH_CONCURRENCY` (default 4; `1` =
+serial).
+
 ## What's NOT cached (deliberate)
 
 - `mondo item list` at board scope, and `mondo item find` — the invalidation
@@ -159,6 +174,10 @@ Or via environment variables (highest non-CLI precedence):
 - `MONDO_CACHE_FUZZY_THRESHOLD` — integer 0-100
 - `MONDO_NO_CACHE_NOTICE=1` — silence the `cache: hit (entity=…, age=…)`
   stderr provenance line on hits
+- `MONDO_VERBOSE=1` — show the provenance line even when stderr is not a
+  TTY (since #25, benign notices are suppressed by default in
+  non-interactive runs; `--verbose` and `--explain-cache` also restore
+  them)
 
 Precedence (lowest → highest): built-in defaults → global `cache:` → profile
 `cache:` → env vars → CLI flags (`--no-cache`, `--refresh-cache`,
