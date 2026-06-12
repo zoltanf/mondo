@@ -22,12 +22,12 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 
 ```json
 [
-  {"id": 5095668848, "object_id": "abcd1234", "name": "Spec — login flow"},
-  {"id": 5095668849, "object_id": "abcd1235", "name": "Spec — auth middleware"}
+  {"id": 5095668848, "object_id": "5098297247", "name": "Spec — login flow"},
+  {"id": 5095668849, "object_id": "5098297248", "name": "Spec — auth middleware"}
 ]
 ```
 
-*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the UUID-style doc id used in URLs (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
+*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the (also numeric) URL-visible doc id (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Get a doc — JSON or Markdown
 
@@ -36,17 +36,17 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 mondo doc get --id 5095668848 --format json -o json
 
 # Or address by object_id (the URL form):
-mondo doc get --object-id abcd1234 --format json -o json
+mondo doc get --object-id 5098297247 --format json -o json
 
 # Render to Markdown (--object-id for the URL-visible id, --doc for the internal id):
-mondo doc export-markdown --object-id abcd1234
+mondo doc export-markdown --object-id 5098297247
 mondo doc export-markdown --doc 5095668848
 ```
 
 ```json
 {
   "id": 5095668848,
-  "object_id": "abcd1234",
+  "object_id": "5098297247",
   "name": "Spec — login flow",
   "blocks": [
     {"type": "large_title",  "content": {"deltaFormat": [{"insert": "Section A"}]}},
@@ -64,7 +64,7 @@ mondo doc create --workspace 592446 --name "Spec — Q3 launch"
 ```
 
 ```json
-{"id": 5095668850, "object_id": "abcd1239", "name": "Spec — Q3 launch", "blocks": []}
+{"id": 5095668850, "object_id": "5098297249", "name": "Spec — Q3 launch", "blocks": []}
 ```
 
 *Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`.
