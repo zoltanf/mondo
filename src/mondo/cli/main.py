@@ -341,7 +341,7 @@ def _root(
         "--fields",
         metavar="KEY1,KEY2,...",
         help="Project the payload to a CSV list of keys (dotted paths OK). "
-        "Runs before --query. Client-side projection — does not narrow the "
+        "Runs after --query. Client-side projection — does not narrow the "
         "GraphQL request.",
     ),
     verbose: bool = typer.Option(

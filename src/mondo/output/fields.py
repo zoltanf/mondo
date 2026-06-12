@@ -1,4 +1,4 @@
-"""Field projection for --fields CSV spec. Runs before -q JMESPath.
+"""Field projection for --fields CSV spec. Runs after -q JMESPath.
 
 `--fields id,name,creator.name` is a discoverable shortcut for the most
 common shape: a flat record (or list of records) projected down to a few
