@@ -120,6 +120,22 @@ MANUAL_ROWS: dict[str, Row] = {
         notes="Custom flattened identity/status payload.",
         source="auth.status payload",
     ),
+    "board create": Row(
+        command="board create",
+        output_type="object",
+        fields=[
+            "id",
+            "name",
+            "description",
+            "state",
+            "board_kind",
+            "workspace_id",
+            "board_folder_id",
+            "url?",
+        ],
+        notes="url is present only when --with-url is passed (stripped otherwise).",
+        source="BOARD_CREATE.create_board",
+    ),
     "board duplicate": Row(
         command="board duplicate",
         output_type="object",

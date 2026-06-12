@@ -690,6 +690,8 @@ class TestBoardCreate:
         assert parsed["url"] == "https://acme.monday.com/boards/99"
         # Single HTTP call — the create mutation itself carried the url.
         assert len(httpx_mock.get_requests()) == 1
+        # The outgoing mutation selection set must include url.
+        assert "url" in _last_body(httpx_mock)["query"]
 
     def test_without_with_url_strips_url(self, httpx_mock: HTTPXMock) -> None:
         """Without the flag, output is unchanged: no `url` key even though

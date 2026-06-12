@@ -112,9 +112,10 @@
       "state",
       "board_kind",
       "workspace_id",
-      "board_folder_id"
+      "board_folder_id",
+      "url?"
     ],
-    "notes": "",
+    "notes": "url is present only when --with-url is passed (stripped otherwise).",
     "source": "BOARD_CREATE.create_board"
   },
   {

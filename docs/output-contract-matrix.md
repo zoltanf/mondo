@@ -59,8 +59,9 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `BOARD_ARCHIVE.archive_board`
 - `board create`
   type: `object`
-  fields: `id`, `name`, `description`, `state`, `board_kind`, `workspace_id`, `board_folder_id`
+  fields: `id`, `name`, `description`, `state`, `board_kind`, `workspace_id`, `board_folder_id`, `url?`
   source: `BOARD_CREATE.create_board`
+  notes: url is present only when --with-url is passed (stripped otherwise).
 - `board delete`
   type: `object`
   fields: `id`, `name`, `state`
