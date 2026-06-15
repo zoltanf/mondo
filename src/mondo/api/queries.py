@@ -547,6 +547,7 @@ mutation ($block: String!) {
 
 # --- workspace docs (3e) — distinct from the `doc` column type ---
 
+
 def build_docs_list_query(
     *,
     ids: list[int] | None = None,
@@ -658,10 +659,15 @@ query ($ids: [ID!]!, $limit: Int!, $page: Int!) {
 # Create a new doc inside a workspace (vs. the already-shipped
 # CREATE_DOC_ON_ITEM which creates one attached to a doc-column on an item).
 CREATE_DOC_IN_WORKSPACE = """
-mutation ($workspace: ID!, $name: String!, $kind: BoardKind) {
+mutation ($workspace: ID!, $name: String!, $kind: BoardKind, $folder: ID) {
   create_doc(
     location: {
-      workspace: { workspace_id: $workspace, name: $name, kind: $kind }
+      workspace: {
+        workspace_id: $workspace
+        name: $name
+        kind: $kind
+        folder_id: $folder
+      }
     }
   ) {
     id
@@ -934,6 +940,7 @@ query (
 
 
 # --- folders (3h) ---
+
 
 def build_folders_list_query(
     *,
@@ -1345,11 +1352,7 @@ _BOARD_GET_DEFAULT_FIELDS = (
 
 
 def _build_board_get_query(*fields: str) -> str:
-    return (
-        "query ($id: ID!) {\n"
-        f"  boards(ids: [$id]) {{\n    {' '.join(fields)}\n  }}\n"
-        "}"
-    )
+    return f"query ($id: ID!) {{\n  boards(ids: [$id]) {{\n    {' '.join(fields)}\n  }}\n}}"
 
 
 BOARD_GET = _build_board_get_query(*_BOARD_GET_DEFAULT_FIELDS)

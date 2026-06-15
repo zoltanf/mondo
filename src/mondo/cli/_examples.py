@@ -205,7 +205,7 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example(
             "Reposition a board relative to another overview object",
-            'mondo board move --id 1234567890 --position '
+            "mondo board move --id 1234567890 --position "
             '\'{"object_id":15,"object_type":"Overview","is_after":true}\'',
         ),
     ],
@@ -286,8 +286,7 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example(
             "Match multiple labels (CSV)",
-            "mondo item find --board 1234567890 --column status "
-            "--value 'Done,Working on it'",
+            "mondo item find --board 1234567890 --column status --value 'Done,Working on it'",
         ),
         Example(
             "Count matches",
@@ -340,8 +339,7 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example(
             "Bulk create from stdin",
-            "echo '[{\"name\":\"A\"},{\"name\":\"B\"}]' | "
-            "mondo item create --board 1234567890 --batch -",
+            'echo \'[{"name":"A"},{"name":"B"}]\' | mondo item create --board 1234567890 --batch -',
         ),
         Example(
             "Smaller chunks (debug or work around complexity limits)",
@@ -486,13 +484,10 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
     ],
     "update get": [
-        Example("Fetch a single update (includes replies by default)",
-                "mondo update get --id 555"),
+        Example("Fetch a single update (includes replies by default)", "mondo update get --id 555"),
         Example("Just the body markdown", "mondo update get --id 555 -q body -o none"),
-        Example("Just the replies thread",
-                "mondo update get --id 555 -q replies"),
-        Example("Count of replies",
-                "mondo update get --id 555 -q 'length(replies)' -o none"),
+        Example("Just the replies thread", "mondo update get --id 555 -q replies"),
+        Example("Count of replies", "mondo update get --id 555 -q 'length(replies)' -o none"),
     ],
     "update create": [
         Example(
@@ -613,6 +608,26 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Create a public doc in a workspace",
             'mondo doc create --workspace 42 --name "Spec" --kind public',
+        ),
+        Example(
+            "Create a doc directly inside a folder",
+            'mondo doc create --workspace 42 --name "Spec" --folder 123456',
+        ),
+    ],
+    "doc set": [
+        Example(
+            "Replace a doc's full content from a file",
+            "mondo doc set --doc 7 --from-file spec.md",
+        ),
+        Example(
+            "Replace by object_id (the URL-visible id)",
+            'mondo doc set --object-id 5098297247 --markdown "# Fresh body"',
+        ),
+    ],
+    "doc replace": [
+        Example(
+            "Replace a doc's full content from a file (alias of `doc set`)",
+            "mondo doc replace --doc 7 --from-file spec.md",
         ),
     ],
     "doc add-content": [
@@ -1024,8 +1039,7 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example(
             "Project to id + title + type",
-            "mondo column get-meta --board 1234567890 --column status "
-            "--fields id,title,type",
+            "mondo column get-meta --board 1234567890 --column status --fields id,title,type",
         ),
         Example(
             "Force-refresh cache before reading",
@@ -1085,8 +1099,7 @@ EXAMPLES: dict[str, list[Example]] = {
         ),
         Example(
             "board_relation: GraphQL-native JSON shape also accepted",
-            "mondo column set --item 987 --column related "
-            "--value '{\"item_ids\":[12345,67890]}'",
+            "mondo column set --item 987 --column related --value '{\"item_ids\":[12345,67890]}'",
         ),
     ],
     "column set-many": [
@@ -1243,7 +1256,10 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     # --- user --------------------------------------------------------------
     "user list": [
-        Example("All non-guest users (served from cache when fresh)", "mondo user list --kind non_guests"),
+        Example(
+            "All non-guest users (served from cache when fresh)",
+            "mondo user list --kind non_guests",
+        ),
         Example(
             "Search by email (case-sensitive per monday)",
             "mondo user list --email a@example.com",
