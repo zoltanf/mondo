@@ -582,6 +582,30 @@
     "source": "doc.py"
   },
   {
+    "command": "doc replace",
+    "output_type": "object",
+    "fields": [
+      "success",
+      "block_ids",
+      "error",
+      "replaced_blocks"
+    ],
+    "notes": "Alias of `doc set` (same handler / output).",
+    "source": "ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks"
+  },
+  {
+    "command": "doc set",
+    "output_type": "object",
+    "fields": [
+      "success",
+      "block_ids",
+      "error",
+      "replaced_blocks"
+    ],
+    "notes": "In-place full content replace. Adds the new markdown first, then deletes the prior blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`.",
+    "source": "ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks"
+  },
+  {
     "command": "doc update-block",
     "output_type": "object",
     "fields": [

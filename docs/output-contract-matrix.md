@@ -254,6 +254,16 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: none
   source: `doc.py`
   notes: Could not auto-infer. Final emit expression: data.get("update_doc_name")
+- `doc replace`
+  type: `object`
+  fields: `success`, `block_ids`, `error`, `replaced_blocks`
+  source: `ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks`
+  notes: Alias of `doc set` (same handler / output).
+- `doc set`
+  type: `object`
+  fields: `success`, `block_ids`, `error`, `replaced_blocks`
+  source: `ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks`
+  notes: In-place full content replace. Adds the new markdown first, then deletes the prior blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`.
 - `doc update-block`
   type: `object`
   fields: `id`, `type`

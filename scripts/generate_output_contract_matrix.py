@@ -342,6 +342,28 @@ MANUAL_ROWS: dict[str, Row] = {
         notes="Single created block payload.",
         source="CREATE_DOC_BLOCK.create_doc_block",
     ),
+    # `doc set` / `doc replace` share one handler (set_cmd), registered via
+    # `app.command(...)(set_cmd)` rather than a decorator, so the AST walk
+    # below cannot discover them — they live here as manual rows. The emit is
+    # the add_content_to_doc_from_markdown result spread with replaced_blocks
+    # appended.
+    "doc set": Row(
+        command="doc set",
+        output_type="object",
+        fields=["success", "block_ids", "error", "replaced_blocks"],
+        notes=(
+            "In-place full content replace. Adds the new markdown first, then deletes the prior "
+            "blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`."
+        ),
+        source="ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks",
+    ),
+    "doc replace": Row(
+        command="doc replace",
+        output_type="object",
+        fields=["success", "block_ids", "error", "replaced_blocks"],
+        notes="Alias of `doc set` (same handler / output).",
+        source="ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks",
+    ),
     "doc duplicate": Row(
         command="doc duplicate",
         output_type="object",
