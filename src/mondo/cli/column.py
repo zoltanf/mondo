@@ -595,6 +595,32 @@ def _parse_defaults(raw: str | None) -> str | None:
     return json.dumps(parsed)
 
 
+def _labels_to_defaults(labels: str, column_type: str) -> str:
+    """Build a `--defaults` JSON string from `--labels` for status/dropdown columns.
+
+    status wants `{"labels": {"1": name, ...}}` (1-based string index keys);
+    dropdown wants `{"settings": {"labels": [{"id": 1, "name": name}, ...]}}`.
+    """
+    names = [part.strip() for part in labels.split(",") if part.strip()]
+    if not names:
+        typer.secho("error: --labels is empty.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if column_type == "status":
+        payload: dict[str, Any] = {"labels": {str(i): name for i, name in enumerate(names, 1)}}
+    elif column_type == "dropdown":
+        payload = {
+            "settings": {"labels": [{"id": i, "name": name} for i, name in enumerate(names, 1)]}
+        }
+    else:
+        typer.secho(
+            "error: --labels only applies to status/dropdown columns.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return json.dumps(payload)
+
+
 @app.command("create", epilog=epilog_for("column create"))
 def create_cmd(
     ctx: typer.Context,
@@ -617,7 +643,17 @@ def create_cmd(
         metavar="JSON",
         help=(
             'Type-specific defaults as JSON (e.g. status: \'{"labels":{"1":"High"}}\', '
-            'dropdown: \'{"settings":{"labels":[...]}}\').'
+            'dropdown: \'{"settings":{"labels":[...]}}\'). For initial status/dropdown '
+            "labels, prefer --labels, which builds this for you. Mutually exclusive "
+            "with --labels."
+        ),
+    ),
+    labels: str | None = typer.Option(
+        None,
+        "--labels",
+        help=(
+            "Comma-separated initial labels for a status/dropdown column; builds "
+            "--defaults for you. Mutually exclusive with --defaults."
         ),
     ),
     custom_id: str | None = typer.Option(
@@ -633,6 +669,15 @@ def create_cmd(
 ) -> None:
     """Create a new column on a board."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    if labels is not None:
+        if defaults is not None:
+            typer.secho(
+                "error: --labels and --defaults are mutually exclusive.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        defaults = _labels_to_defaults(labels, column_type)
     defaults_str = _parse_defaults(defaults)
     variables: dict[str, Any] = {
         "board": board_id,

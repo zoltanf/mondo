@@ -1117,7 +1117,17 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "column create": [
         Example(
-            "Add a status column with initial labels",
+            "Seed a status column's labels with --labels (builds --defaults for you)",
+            'mondo column create --board 1234567890 --title "Priority" '
+            '--type status --labels "High,Medium,Low"',
+        ),
+        Example(
+            "Seed a dropdown column's options the same way",
+            'mondo column create --board 1234567890 --title "Tech stack" '
+            '--type dropdown --labels "Node/Express,Python/FastAPI"',
+        ),
+        Example(
+            "Hand-craft labels via --defaults (status shape shown)",
             'mondo column create --board 1234567890 --title "Priority" '
             "--type status "
             '--defaults \'{"labels":{"1":"High","2":"Medium"}}\'',

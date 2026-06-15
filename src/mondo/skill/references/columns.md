@@ -65,6 +65,18 @@ mondo column create --board 5094861043 \
 {"id": "e2e_status", "title": "Status", "type": "status"}
 ```
 
+### Seed initial labels (status / dropdown)
+
+```bash
+mondo column create --board 5094861043 \
+  --title "Stage" --type status --labels "New,In Review,Live"
+
+mondo column create --board 5094861043 \
+  --title "Stack" --type dropdown --labels "Node/Express,Python/FastAPI"
+```
+
+*Gotcha:* `--labels` builds the right per-type `--defaults` payload for you (status uses an index→name object, dropdown an array of `{id,name}` under `settings`). It only applies to `status`/`dropdown` and is mutually exclusive with `--defaults`.
+
 *Gotcha:* `--id` sets a **stable, human-readable column id** that survives renames — use it whenever you'll reference the column from scripts. Without it monday auto-assigns `text_xyz123`. Common types: `status`, `people`, `date`, `timeline`, `numbers`, `text`, `long_text`, `doc`, `dropdown`, `checkbox`, `country`, `email`, `phone`, `link`, `rating`, `tags`, `file`, `world_clock`, `board_relation`. See `mondo help codecs` for value-format hints per type.
 
 ## Read a column value (single item)
