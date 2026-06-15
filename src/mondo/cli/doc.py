@@ -340,9 +340,7 @@ def list_cmd(
     reject_mutually_exclusive(no_cache, refresh_cache)
 
     try:
-        needle_lower, pattern = compile_name_filter(
-            name_contains, name_matches, name_fuzzy
-        )
+        needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
     except UsageError as e:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
@@ -632,8 +630,10 @@ def get_cmd(
     try:
         with client:
             if use_cache:
-                resolved_doc_id = doc_id if doc_id is not None else _resolve_doc_id_from_object_id(
-                    opts, client, object_id or 0
+                resolved_doc_id = (
+                    doc_id
+                    if doc_id is not None
+                    else _resolve_doc_id_from_object_id(opts, client, object_id or 0)
                 )
             else:
                 resolved_doc_id = None
@@ -641,9 +641,7 @@ def get_cmd(
             if use_cache and resolved_doc_id is not None:
                 from mondo.cache.directory import get_doc_blocks
 
-                store = opts.build_cache_store(
-                    "docs_blocks", scope=str(resolved_doc_id)
-                )
+                store = opts.build_cache_store("docs_blocks", scope=str(resolved_doc_id))
                 try:
                     cached = get_doc_blocks(
                         client,
@@ -651,9 +649,7 @@ def get_cmd(
                         doc_id=resolved_doc_id,
                         refresh=refresh_cache,
                     )
-                    emit_cache_provenance(
-                        opts, cached, store=store, explain=explain_cache
-                    )
+                    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                     doc = cached.entries[0] if cached.entries else None
                 except NotFoundError:
                     doc = None
@@ -697,7 +693,7 @@ def _resolve_doc_id_from_object_id(
             raw = entry.get("id")
             try:
                 return int(raw) if raw is not None else None
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return None
     return None
 
@@ -807,7 +803,7 @@ def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
         return None
     try:
         return int(docs[0]["id"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return None
 
 
@@ -899,13 +895,16 @@ def create_cmd(
     kind: DocKind | None = typer.Option(
         None, "--kind", help="public / private / share.", case_sensitive=False
     ),
+    folder_id: int | None = typer.Option(
+        None, "--folder", help="Place the new doc directly inside this folder ID."
+    ),
     with_url: bool = typer.Option(
         False,
         "--with-url",
         help="(No-op for docs — `url` is always present in the payload.)",
     ),
 ) -> None:
-    """Create a new doc inside a workspace."""
+    """Create a new doc inside a workspace (optionally inside a folder)."""
     from mondo.cli._normalize import normalize_doc_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -914,6 +913,7 @@ def create_cmd(
         "workspace": workspace,
         "name": name,
         "kind": kind.value if kind else None,
+        "folder": folder_id,
     }
     data = execute(opts, CREATE_DOC_IN_WORKSPACE, variables)
     opts.emit(normalize_doc_entry(data.get("create_doc") or {}))
@@ -961,9 +961,7 @@ def add_block_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            resolved_doc = _resolve_doc_in_client(
-                opts, client, doc_id=doc_id, object_id=object_id
-            )
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
             if opts.dry_run:
                 dry_run_and_exit(opts, CREATE_DOC_BLOCK, _variables(resolved_doc, after))
             effective_after = after
@@ -973,9 +971,7 @@ def add_block_cmd(
                     _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                     raise typer.Exit(code=6)
                 effective_after = _last_block_id(existing_doc)
-            data = exec_or_exit(
-                client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after)
-            )
+            data = exec_or_exit(client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -1026,9 +1022,7 @@ def add_content_cmd(
     created: list[dict[str, Any]] = []
     try:
         with client:
-            resolved_doc = _resolve_doc_in_client(
-                opts, client, doc_id=doc_id, object_id=object_id
-            )
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
             if opts.dry_run:
                 dry_run_and_exit(
                     opts,
@@ -1078,6 +1072,84 @@ def add_markdown_cmd(
         )
     invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
     opts.emit(result)
+
+
+def set_cmd(
+    ctx: typer.Context,
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
+    markdown: str | None = typer.Option(None, "--markdown", help="Markdown source."),
+    from_file: Path | None = typer.Option(None, "--from-file", help="Load markdown from a file."),
+    from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
+) -> None:
+    """Replace a doc's full content in place (alias: `doc replace`).
+
+    Writes the new markdown via monday's server-side parser, then removes the
+    doc's prior blocks. The new content is added *before* the old blocks are
+    deleted, so a failed write leaves the original content intact rather than
+    blanking the doc. The doc id / object_id / URL are preserved — only the
+    body changes. Mirrors `column doc set` overwrite semantics.
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    _require_one_doc_flag(doc_id, object_id)
+    md = _load_markdown(markdown, from_file, from_stdin)
+    if not md.strip():
+        typer.secho(
+            "error: refusing to replace doc content with empty markdown "
+            "(use `doc delete` to remove the doc itself).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    _plan = f"{ADD_CONTENT_TO_DOC_FROM_MARKDOWN} + {DELETE_DOC_BLOCK} (per prior block)"
+    if doc_id is not None and opts.dry_run:
+        dry_run_and_exit(opts, _plan, {"doc": doc_id, "md": md})
+
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
+            if opts.dry_run:
+                dry_run_and_exit(opts, _plan, {"doc": resolved_doc, "md": md})
+            existing_doc = _fetch_doc_by_id_all_blocks(client, resolved_doc)
+            if existing_doc is None:
+                _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
+                raise typer.Exit(code=6)
+            old_block_ids = [
+                str(b["id"])
+                for b in (existing_doc.get("blocks") or [])
+                if isinstance(b, dict) and b.get("id")
+            ]
+            # Add the new content first (after the current last block); only
+            # once it lands do we delete the prior blocks. A failed add leaves
+            # the doc untouched — no destructive half-state / data loss.
+            added = exec_or_exit(
+                client,
+                ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
+                {"doc": resolved_doc, "md": md, "after": _last_block_id(existing_doc)},
+            )
+            result = added.get("add_content_to_doc_from_markdown") or {}
+            if not result.get("success"):
+                # Nothing deleted yet: the doc still holds its original content.
+                _fail_with_object_id_hint(
+                    opts,
+                    result.get("error") or "add_content_to_doc_from_markdown failed",
+                    doc_id,
+                )
+            # New content is in place; the doc is mutated now, so drop the cache
+            # even if a subsequent delete fails partway.
+            invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
+            for block_id in old_block_ids:
+                exec_or_exit(client, DELETE_DOC_BLOCK, {"block": block_id})
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+
+    opts.emit({**result, "replaced_blocks": len(old_block_ids)})
+
+
+app.command("set", epilog=epilog_for("doc set"))(set_cmd)
+app.command("replace", epilog=epilog_for("doc replace"))(set_cmd)
 
 
 @app.command("import-html", epilog=epilog_for("doc import-html"))
@@ -1168,8 +1240,7 @@ def duplicate_cmd(
     matches = lookup.get("docs") or []
     if not matches:
         typer.secho(
-            f"error: duplicated doc with object_id={new_object_id} not "
-            "visible in workspace lookup",
+            f"error: duplicated doc with object_id={new_object_id} not visible in workspace lookup",
             fg=typer.colors.RED,
             err=True,
         )
@@ -1217,9 +1288,29 @@ def export_markdown_cmd(
         "--raw",
         help="Emit API JSON envelope instead of plain markdown text.",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="No-op — export is always live (accepted for flag symmetry).",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="No-op — export is always live (accepted for flag symmetry).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """Export doc content as markdown."""
+    """Export doc content as markdown.
+
+    Always fetched live (no per-doc cache is involved), so `--no-cache` /
+    `--refresh-cache` are accepted as no-ops purely for symmetry with the
+    other doc commands.
+    """
+    from mondo.cli._cache_flags import reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
     data, _ = _execute_doc_command(
         opts,
         EXPORT_MARKDOWN_FROM_DOC,
