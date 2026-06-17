@@ -1377,19 +1377,14 @@ def export_markdown_cmd(
         )
     markdown = result.get("markdown") or ""
     if out is not None:
-        from mondo.cli._doc_images import (
-            extract_asset_ids_from_markdown,
-            localize_markdown_images,
-        )
+        from mondo.cli._doc_images import localize_markdown_images
 
-        image_count = (
-            0 if no_images else len(extract_asset_ids_from_markdown(markdown))
-        )
+        images: list[str] = []
         if not no_images:
-            markdown = localize_markdown_images(opts, markdown, out.parent)
+            markdown, images = localize_markdown_images(opts, markdown, out.parent)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(markdown)
-        opts.emit({"out": str(out), "images": image_count})
+        opts.emit({"out": str(out), "images": images})
         return
     typer.echo(markdown)
 

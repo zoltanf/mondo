@@ -64,9 +64,12 @@ def test_live_doc_export_markdown_downloads_images(
     assert out.exists(), "markdown file not written"
     md = out.read_text()
 
-    assert summary.get("images", 0) >= 1, summary
+    # `images` is the list of localized filenames (same shape as `doc get`).
+    localized = summary.get("images") or []
+    assert localized, summary
     refs = _LOCAL_IMAGE_RE.findall(md)
     assert refs, f"no localized image references in export markdown:\n{md}"
+    assert set(refs) == set(localized), (refs, localized)
     for fname in refs:
         downloaded = tmp_path / fname
         assert downloaded.exists() and downloaded.stat().st_size > 0, fname

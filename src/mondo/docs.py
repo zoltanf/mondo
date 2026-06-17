@@ -342,7 +342,9 @@ def _render_image(
         entry = images.get(str(asset_id))
         if entry is not None:
             alt, ref = entry
-    return f"![{alt}]({ref})"
+    # Escape `]` so an asset name like "a]b.png" can't close the alt span
+    # early and corrupt the surrounding markdown.
+    return f"![{alt.replace(']', r'\]')}]({ref})"
 
 
 def _container_marker(btype: str, has_children: bool) -> str | None:

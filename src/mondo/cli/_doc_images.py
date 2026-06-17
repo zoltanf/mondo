@@ -146,10 +146,17 @@ def download_doc_images(
     }
 
 
-def localize_markdown_images(opts: GlobalOpts, markdown: str, folder: Path) -> str:
+def localize_markdown_images(
+    opts: GlobalOpts, markdown: str, folder: Path
+) -> tuple[str, list[str]]:
     """Download images referenced in a server-rendered markdown string and
-    rewrite their URLs to the downloaded local filenames."""
+    rewrite their URLs to the downloaded local filenames.
+
+    Returns `(rewritten_markdown, local_filenames)`. The filename list covers
+    only images that were actually downloaded + rewritten — assets monday
+    didn't return keep their remote URL and are excluded.
+    """
     asset_ids = extract_asset_ids_from_markdown(markdown)
     downloaded = _download_assets(opts, asset_ids, folder)
     filenames = {aid: info["filename"] for aid, info in downloaded.items()}
-    return rewrite_markdown_images(markdown, filenames)
+    return rewrite_markdown_images(markdown, filenames), list(filenames.values())

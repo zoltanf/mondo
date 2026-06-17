@@ -257,6 +257,15 @@ class TestBlocksToMarkdownImages:
         block = {"type": "image", "content": {"assetId": 1, "url": "u"}}
         assert "![](u)" in blocks_to_markdown([block])
 
+    def test_image_alt_escapes_closing_bracket(self) -> None:
+        """An asset name containing `]` must not close the alt span early and
+        corrupt the markdown."""
+        out = blocks_to_markdown(
+            [self._image(1, "https://x/img.png")],
+            images={"1": ("a]b.png", "1-a-b.png")},
+        )
+        assert "![a\\]b.png](1-a-b.png)" in out
+
     def test_nested_image_inside_notice_renders(self) -> None:
         blocks = [
             {"id": "n", "type": "notice_box", "content": {}},
