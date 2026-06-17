@@ -578,7 +578,11 @@ mondo doc list           [--workspace 42] [--object-id 77] [--order-by used_at] 
 mondo doc get            --id 7           # internal id
 mondo doc get            --object-id 77   # URL-visible id
 mondo doc get            --id 7 --format markdown    # render blocks → markdown
+mondo doc get            --id 7 --format markdown --out ./doc.md  # +download images beside the file
+mondo doc get            --id 7 --format markdown --out ./doc.md --no-images  # skip download, keep URLs
 mondo doc export-markdown --doc 7                    # always-live markdown export
+mondo doc export-markdown --doc 7 --out ./doc.md     # +download images, rewrite URLs to local files
+mondo doc export-markdown --doc 7 --out ./doc.md --no-images  # skip download, keep URLs
 mondo doc create         --workspace 42 --name "Spec" --kind public [--folder 3042556]
 
 mondo doc add-content    --doc 7 --from-file spec.md         # bulk markdown → blocks (append)

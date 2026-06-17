@@ -7,10 +7,14 @@ Scope (plan §6.4 / monday-api.md §11.5.22):
   `CreateBlockInput` dicts. Supported blocks: heading (h1/h2/h3),
   normal_text, bullet_list, numbered_list, check_list (GFM task list
   syntax `- [ ] / - [x]`), quote, code, divider.
-- `blocks_to_markdown` reverses the above for display.
+- `blocks_to_markdown` reverses the above for display. `image` blocks render
+  as `![alt](ref)`; pass an `images` map (assetId → (alt, local filename)) to
+  rewrite the monday `url` to a downloaded local file — see
+  `mondo.cli._doc_images`. Without the map they keep the (browser-only)
+  monday `url`.
 
-Unsupported markdown (images, tables, nested lists, inline formatting)
-round-trips through `normal_text` — we prefer correctness over feature parity.
+Unsupported markdown (nested lists, inline formatting) round-trips through
+`normal_text` — we prefer correctness over feature parity.
 """
 
 from __future__ import annotations
@@ -243,6 +247,29 @@ def _extract_checked(content: Any) -> bool:
     return bool(parsed.get("checked")) if parsed else False
 
 
+def collect_image_asset_ids(blocks: list[dict[str, Any]]) -> list[int]:
+    """Asset IDs of every `image` block, in document order, de-duplicated.
+
+    Markdown export resolves + downloads these before rendering. An image
+    block carries its numeric `assetId` in `content`; the sibling `url` is a
+    protected_static link that only works in a logged-in browser, so callers
+    swap it for a pre-signed asset URL / downloaded file.
+    """
+    ids: list[int] = []
+    for block in blocks:
+        if _normalize_type(block.get("type") or "") != "image":
+            continue
+        content = _as_content_dict(block.get("content")) or {}
+        aid = content.get("assetId")
+        if isinstance(aid, bool):
+            continue
+        if isinstance(aid, int):
+            ids.append(aid)
+        elif isinstance(aid, str) and aid.isdigit():
+            ids.append(int(aid))
+    return list(dict.fromkeys(ids))
+
+
 _READ_ALIASES = {
     # old name → normalized-for-dispatch name
     "heading": "large_title",
@@ -298,6 +325,26 @@ _LEAF_TYPES = frozenset(
 )
 
 
+def _render_image(
+    block: dict[str, Any], images: dict[str, tuple[str, str]] | None
+) -> str:
+    """`![alt](ref)` for an `image` block.
+
+    With an `images` map the asset's downloaded local filename (ref) and name
+    (alt) replace the browser-only monday `url`; without it the `url` is kept
+    so the image isn't silently dropped.
+    """
+    content = _as_content_dict(block.get("content")) or {}
+    asset_id = content.get("assetId")
+    alt = ""
+    ref = content.get("url") or ""
+    if images is not None and asset_id is not None:
+        entry = images.get(str(asset_id))
+        if entry is not None:
+            alt, ref = entry
+    return f"![{alt}]({ref})"
+
+
 def _container_marker(btype: str, has_children: bool) -> str | None:
     """Resolve the container handling for a block.
 
@@ -318,13 +365,20 @@ def _container_marker(btype: str, has_children: bool) -> str | None:
     return None
 
 
-def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
+def blocks_to_markdown(
+    blocks: list[dict[str, Any]],
+    images: dict[str, tuple[str, str]] | None = None,
+) -> str:
     """Render a list of monday doc blocks as a markdown string.
 
     Walks the parent→children tree implied by `parent_block_id` so container
     blocks (notice/callout/layout/table) render with their inner content
     nested underneath, instead of children being detached and rendered out
     of context (issue #1).
+
+    `images` maps `str(assetId)` → `(alt_text, ref)`; when an `image` block's
+    asset is in the map its `ref` (a downloaded local filename) is emitted
+    instead of the browser-only monday `url`.
     """
     if not blocks:
         return ""
@@ -352,7 +406,7 @@ def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
             children_of.setdefault(str(parent), []).append(b)
 
     lines: list[str] = []
-    _render_block_list(roots, children_of, "", lines)
+    _render_block_list(roots, children_of, "", lines, images)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -361,6 +415,7 @@ def _render_table(
     children_of: dict[str, list[dict[str, Any]]],
     prefix: str,
     lines: list[str],
+    images: dict[str, tuple[str, str]] | None = None,
 ) -> bool:
     """Render a `table` block as a markdown pipe table.
 
@@ -395,6 +450,9 @@ def _render_table(
                     cell_id = str(ref)
             pieces: list[str] = []
             for child in children_of.get(cell_id, []):
+                if _normalize_type(child.get("type") or "") == "image":
+                    pieces.append(_render_image(child, images))
+                    continue
                 t = _extract_text(child.get("content"))
                 if t:
                     pieces.append(t)
@@ -425,6 +483,7 @@ def _render_block_list(
     children_of: dict[str, list[dict[str, Any]]],
     prefix: str,
     lines: list[str],
+    images: dict[str, tuple[str, str]] | None = None,
 ) -> None:
     """Render a sibling group at indentation `prefix`.
 
@@ -441,7 +500,9 @@ def _render_block_list(
         if btype != "numbered_list":
             numbered_counter = 0
 
-        if btype == "table" and _render_table(block, children_of, prefix, lines):
+        if btype == "table" and _render_table(
+            block, children_of, prefix, lines, images
+        ):
             continue
 
         marker = _container_marker(btype, has_children=bool(kids))
@@ -449,7 +510,7 @@ def _render_block_list(
             child_prefix = prefix + "> " if marker else prefix
             if marker:
                 lines.append(f"{prefix}> {marker}")
-            _render_block_list(kids, children_of, child_prefix, lines)
+            _render_block_list(kids, children_of, child_prefix, lines, images)
             lines.append("")
             continue
 
@@ -479,6 +540,8 @@ def _render_block_list(
             if text:
                 lines.append(f"{prefix}{text}")
             lines.append(f"{prefix}```")
+        elif btype == "image":
+            lines.append(f"{prefix}{_render_image(block, images)}")
         elif text:
             # normal_text + any other leaf type we haven't taught.
             lines.append(f"{prefix}{text}")
@@ -486,6 +549,6 @@ def _render_block_list(
         # Defensive: a leaf block with unexpected children would otherwise
         # drop them. Render at same prefix so content survives.
         if kids:
-            _render_block_list(kids, children_of, prefix, lines)
+            _render_block_list(kids, children_of, prefix, lines, images)
 
         lines.append("")

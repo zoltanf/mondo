@@ -117,8 +117,9 @@ Variables `.env` sets:
 - `MONDO_TEST_DOC_ID` / `MONDO_TEST_DOC_URL` — pre-prepared "Mondo Test
   Doc" in workspace `592446`, exercising every block type the markdown
   renderer cares about (notice box, check lists, bulleted lists, code,
-  divider, table cells, normal text). Read-only doc tests skip unless
-  this is set.
+  divider, table cells, normal text, and image blocks — one top-level
+  plus two inside a table, relied on by `test_live_doc_images.py`).
+  Read-only doc tests skip unless this is set.
   - The value `5095668848` is the **URL-visible `object_id`** (the
     last segment of `https://marktguru.monday.com/docs/5095668848`),
     NOT the internal numeric id. The matching internal id is
@@ -155,6 +156,9 @@ Live integration tests live under `tests/integration/`, split by feature:
 - `test_live_folders.py` — folder tree, parent linking, rename, delete
   archives contained boards.
 - `test_live_doc_column.py` — `column doc set/get/append/clear`.
+- `test_live_doc_images.py` — `doc get --format markdown --out` and
+  `doc export-markdown --out` download embedded images into the markdown's
+  folder and reference them by `<assetId>-<name>` local filename.
 - `test_live_doc_md_roundtrip.py` — standalone-doc markdown round-trip
   (strict subset + rich golden) plus `doc duplicate`/`doc rename`
   (currently `xfail`-pinned for the `Int!` vs `ID!` schema mismatch).

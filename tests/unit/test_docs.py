@@ -6,6 +6,7 @@ import pytest
 
 from mondo.docs import (
     blocks_to_markdown,
+    collect_image_asset_ids,
     extract_doc_ids_from_column_value,
     markdown_to_blocks,
 )
@@ -221,6 +222,81 @@ class TestBlocksToMarkdown:
 
     def test_empty_block_list(self) -> None:
         assert blocks_to_markdown([]) == ""
+
+
+class TestBlocksToMarkdownImages:
+    def _image(self, asset_id: int | None, url: str = "") -> dict:
+        content: dict = {"url": url}
+        if asset_id is not None:
+            content["assetId"] = asset_id
+        return {"type": "image", "content": content}
+
+    def test_image_without_map_emits_monday_url(self) -> None:
+        """No download map → degrade to the (browser-only) monday url rather
+        than silently dropping the image."""
+        out = blocks_to_markdown([self._image(238776078, "https://x/img.png")])
+        assert "![](https://x/img.png)" in out
+
+    def test_image_with_map_uses_local_filename_and_alt(self) -> None:
+        out = blocks_to_markdown(
+            [self._image(238776078, "https://x/img.png")],
+            images={"238776078": ("photo.png", "238776078-photo.png")},
+        )
+        assert "![photo.png](238776078-photo.png)" in out
+
+    def test_image_with_unmapped_asset_keeps_url(self) -> None:
+        out = blocks_to_markdown(
+            [self._image(999, "https://x/img.png")],
+            images={"238776078": ("photo.png", "238776078-photo.png")},
+        )
+        assert "![](https://x/img.png)" in out
+
+    def test_image_normalizes_spaced_type(self) -> None:
+        """monday returns the type as `"image"` already, but reads pass through
+        `_normalize_type`; a spaced variant must still render."""
+        block = {"type": "image", "content": {"assetId": 1, "url": "u"}}
+        assert "![](u)" in blocks_to_markdown([block])
+
+    def test_nested_image_inside_notice_renders(self) -> None:
+        blocks = [
+            {"id": "n", "type": "notice_box", "content": {}},
+            {
+                "id": "i",
+                "type": "image",
+                "parent_block_id": "n",
+                "content": {"assetId": 7, "url": "https://x/n.png"},
+            },
+        ]
+        out = blocks_to_markdown(
+            blocks, images={"7": ("n.png", "7-n.png")}
+        )
+        assert "> ![n.png](7-n.png)" in out
+
+
+class TestCollectImageAssetIds:
+    def test_collects_in_order_deduped(self) -> None:
+        blocks = [
+            {"type": "image", "content": {"assetId": 20}},
+            {"type": "normal text", "content": {}},
+            {"type": "image", "content": {"assetId": 10}},
+            {"type": "image", "content": {"assetId": 20}},
+        ]
+        assert collect_image_asset_ids(blocks) == [20, 10]
+
+    def test_accepts_string_asset_id(self) -> None:
+        assert collect_image_asset_ids(
+            [{"type": "image", "content": '{"assetId":"55"}'}]
+        ) == [55]
+
+    def test_skips_image_without_asset_id(self) -> None:
+        assert collect_image_asset_ids(
+            [{"type": "image", "content": {"url": "u"}}]
+        ) == []
+
+    def test_ignores_non_image_blocks(self) -> None:
+        assert collect_image_asset_ids(
+            [{"type": "normal_text", "content": {"assetId": 1}}]
+        ) == []
 
 
 class TestBlocksToMarkdownContainers:
@@ -439,6 +515,27 @@ class TestBlocksToMarkdownTables:
                 if txt:
                     blocks.append(self._cell_text(f"{cid}-t", cid, txt))
         return blocks
+
+    def test_image_inside_cell_renders_with_local_filename(self) -> None:
+        """Table cells can hold image children (not just text). They must
+        render so downloaded images aren't orphaned (no markdown reference)."""
+        blocks = [
+            {
+                "id": "t",
+                "type": "table",
+                "content": self._table_payload([["t-c0-0"]]),
+                "parent_block_id": None,
+            },
+            self._cell("t-c0-0", "t"),
+            {
+                "id": "img",
+                "type": "image",
+                "content": {"assetId": 7, "url": "https://x/n.png"},
+                "parent_block_id": "t-c0-0",
+            },
+        ]
+        out = blocks_to_markdown(blocks, images={"7": ("n.png", "7-n.png")})
+        assert "| ![n.png](7-n.png) |" in out
 
     def test_simple_2x2_table_renders_as_pipe_table(self) -> None:
         blocks = self._build_table(
