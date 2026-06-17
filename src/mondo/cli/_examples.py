@@ -602,6 +602,14 @@ EXAMPLES: dict[str, list[Example]] = {
             "Render the block tree as markdown",
             "mondo doc get --id 7 --format markdown",
         ),
+        Example(
+            "Save markdown to a file + download images beside it",
+            "mondo doc get --id 7 --format markdown --out ./doc.md",
+        ),
+        Example(
+            "Save to a file but keep image URLs (skip download)",
+            "mondo doc get --id 7 --format markdown --out ./doc.md --no-images",
+        ),
         Example("Just the doc name", "mondo doc get --id 7 -q name -o none"),
     ],
     "doc create": [
@@ -688,6 +696,14 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Export specific blocks only",
             "mondo doc export-markdown --doc 7 --block <block-1> --block <block-2> --raw",
+        ),
+        Example(
+            "Save to a file + download images beside it (rewrites URLs to local files)",
+            "mondo doc export-markdown --doc 7 --out ./doc.md",
+        ),
+        Example(
+            "Save to a file but keep image URLs (skip download)",
+            "mondo doc export-markdown --doc 7 --out ./doc.md --no-images",
         ),
     ],
     "doc version-history": [

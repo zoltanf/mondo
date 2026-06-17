@@ -1667,3 +1667,70 @@ class TestDocSet:
         result = runner.invoke(app, ["doc", "set", "--doc", "10"])
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
+
+
+class TestImageExportOutputGuards:
+    """`--out` (markdown→file + image download) flag validation. Both guards
+    must reject before any network call."""
+
+    def test_get_out_requires_markdown_format(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            ["doc", "get", "--object-id", "77", "--format", "json", "--out", "x.md"],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_export_markdown_raw_and_out_mutually_exclusive(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        result = runner.invoke(
+            app,
+            ["doc", "export-markdown", "--doc", "10", "--raw", "--out", "x.md"],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_get_no_images_skips_asset_download(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """`--no-images` writes the file but never queries `assets(ids)` or
+        fetches image bytes — the monday URL stays in the markdown."""
+        httpx_mock.add_response(
+            json={
+                "data": {
+                    "docs": [
+                        {
+                            "id": "7",
+                            "object_id": "77",
+                            "name": "D",
+                            "blocks": [
+                                {
+                                    "id": "b1",
+                                    "type": "image",
+                                    "content": json.dumps(
+                                        {"assetId": 99, "url": "https://x/img.png"}
+                                    ),
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+        out = tmp_path / "doc.md"
+        result = runner.invoke(
+            app,
+            [
+                "doc", "get", "--id", "7",
+                "--format", "markdown",
+                "--out", str(out),
+                "--no-images",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        # Only the doc fetch happened — no assets(ids) call.
+        assert len(httpx_mock.get_requests()) == 1
+        md = out.read_text()
+        assert "![](https://x/img.png)" in md
+        assert json.loads(result.stdout)["images"] == []

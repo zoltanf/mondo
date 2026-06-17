@@ -51,6 +51,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
@@ -557,6 +558,21 @@ def get_cmd(
         help="Emit raw JSON (blocks as-is) or render blocks to markdown.",
         case_sensitive=False,
     ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help=(
+            "Write markdown to this file and download embedded images into "
+            "the same folder, referenced by local filename (requires "
+            "--format markdown). Without it, markdown goes to stdout and "
+            "images keep their (browser-only) monday URLs."
+        ),
+    ),
+    no_images: bool = typer.Option(
+        False,
+        "--no-images",
+        help="With --out, skip downloading images; keep their monday URLs.",
+    ),
     with_url: bool = typer.Option(
         False,
         "--with-url",
@@ -595,6 +611,8 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
+    if out is not None and fmt is not DocFormat.markdown:
+        usage_error_or_exit("--out is only valid with --format markdown.")
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
         typer.secho(
@@ -667,6 +685,21 @@ def get_cmd(
 
     if fmt is DocFormat.markdown:
         blocks = doc.get("blocks") or []
+        if out is not None:
+            images: dict[str, tuple[str, str]] = {}
+            if not no_images:
+                from mondo.cli._doc_images import download_doc_images
+
+                images = download_doc_images(opts, blocks, out.parent)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(blocks_to_markdown(blocks, images=images))
+            opts.emit(
+                {
+                    "out": str(out),
+                    "images": [ref for _, ref in images.values()],
+                }
+            )
+            return
         typer.echo(blocks_to_markdown(blocks))
         return
     doc = normalize_doc_entry(doc)
@@ -1288,6 +1321,20 @@ def export_markdown_cmd(
         "--raw",
         help="Emit API JSON envelope instead of plain markdown text.",
     ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help=(
+            "Write the markdown to this file and download embedded images "
+            "into the same folder, rewriting their URLs to local filenames. "
+            "Without it, markdown goes to stdout with monday image URLs."
+        ),
+    ),
+    no_images: bool = typer.Option(
+        False,
+        "--no-images",
+        help="With --out, skip downloading images; keep their monday URLs.",
+    ),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -1311,6 +1358,8 @@ def export_markdown_cmd(
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
+    if raw and out is not None:
+        usage_error_or_exit("--raw and --out are mutually exclusive.")
     data, _ = _execute_doc_command(
         opts,
         EXPORT_MARKDOWN_FROM_DOC,
@@ -1326,7 +1375,18 @@ def export_markdown_cmd(
         _fail_with_object_id_hint(
             opts, result.get("error") or "export_markdown_from_doc failed", doc_id
         )
-    typer.echo(result.get("markdown") or "")
+    markdown = result.get("markdown") or ""
+    if out is not None:
+        from mondo.cli._doc_images import localize_markdown_images
+
+        images: list[str] = []
+        if not no_images:
+            markdown, images = localize_markdown_images(opts, markdown, out.parent)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown)
+        opts.emit({"out": str(out), "images": images})
+        return
+    typer.echo(markdown)
 
 
 @app.command("version-history", epilog=epilog_for("doc version-history"))
