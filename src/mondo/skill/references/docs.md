@@ -41,9 +41,29 @@ mondo doc get --object-id 5098297247 --format json -o json
 # Render to Markdown (--object-id for the URL-visible id, --doc for the internal id):
 mondo doc export-markdown --object-id 5098297247
 mondo doc export-markdown --doc 5095668848
+
+# Client-side render via `doc get` (prints markdown to stdout):
+mondo doc get --object-id 5098297247 --format markdown
 ```
 
+Two markdown paths exist: `doc export-markdown` (monday's server-side renderer) and `doc get --format markdown` (mondo's client-side block renderer). Both print to stdout by default.
+
 *Note:* `export-markdown` is always live (it has no per-doc cache), so `--no-cache` / `--refresh-cache` are accepted as no-ops purely for symmetry with the other doc commands.
+
+### Write markdown to a file (and download embedded images)
+
+Add `--out FILE` to either command to write the markdown to a file. Embedded monday images are downloaded into the **same folder** and referenced by a local `<assetId>-<name>` filename — because the raw `protected_static` image URLs only resolve in a logged-in browser, so the bare markdown is useless off-platform.
+
+```bash
+mondo doc get --object-id 5098297247 --format markdown --out ./spec.md
+mondo doc export-markdown --object-id 5098297247 --out ./spec.md
+```
+
+```json
+{"out": "spec.md", "images": ["238776078-image-from-clipboard.png", "238776079-diagram.png"]}
+```
+
+*Gotchas:* `--out` requires `--format markdown` on `doc get` (it's rejected with exit 2 for JSON). Pass `--no-images` to skip the download and leave the original monday URLs in place. The `images` field lists the local filenames actually written next to the markdown (images inside table cells are downloaded too, so references aren't orphaned).
 
 ```json
 {
