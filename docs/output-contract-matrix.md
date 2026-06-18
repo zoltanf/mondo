@@ -231,15 +231,15 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `DOC_HEAD_BY_OBJECT_ID.docs[0]{id,object_id,name,url}`
   notes: Emits a slim doc header for the newly created duplicate; fetched via DOC_HEAD_BY_OBJECT_ID.
 - `doc export-markdown`
-  type: `manual-review`
-  fields: none
-  source: `doc.py`
-  notes: Could not auto-infer. Final emit expression: result
+  type: `string | object`
+  fields: `out?`, `images?`
+  source: `EXPORT_MARKDOWN_FROM_DOC + localize_markdown_images`
+  notes: Prints monday's server-rendered markdown to stdout by default. With --out FILE, writes the markdown to FILE and emits {out, images} where images is the list of localized image filenames downloaded beside it (empty with --no-images). Always live (no per-doc cache): --no-cache / --refresh-cache are accepted as no-ops.
 - `doc get`
   type: `object | string`
   fields: `id`, `object_id`, `name`, `doc_kind`, `doc_folder_id`, `created_at`, `updated_at`, `url`, `relative_url`, `workspace_id`, `created_by{id,name}`, `blocks{id,type,content,parent_block_id}`
   source: `DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]`
-  notes: Default format is JSON object above. --format markdown prints markdown text instead.
+  notes: Default format is JSON object above. --format markdown prints markdown text instead. With --format markdown --out FILE, writes the markdown to FILE and emits {out, images} where images is the list of localized image filenames downloaded beside it (empty with --no-images). --out requires --format markdown (exit 2 otherwise).
 - `doc import-html`
   type: `object`
   fields: `error`, `success`, `doc_id`

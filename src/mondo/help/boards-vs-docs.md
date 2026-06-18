@@ -55,6 +55,20 @@ On `board list` and `doc list`, `--with-url` is opt-in: the default output
 has no `url` / `relative_url` so the two commands emit the same core shape.
 Pass `--with-url` on either to get URLs back.
 
+## Once you've found a workdoc
+
+Render it to a markdown file (embedded images are downloaded alongside it,
+referenced by local filename — the raw monday image URLs only resolve in a
+logged-in browser):
+
+    mondo doc get --object-id <id> --format markdown --out ./doc.md
+    mondo doc export-markdown --object-id <id> --out ./doc.md   # server-side render
+
+Pass `--no-images` to skip the download and keep the original URLs. To write
+content back — replace a doc in place, or create one inside a folder — see
+`mondo help` and the bundled `references/docs.md` (`doc set` / `doc replace`,
+`doc create --folder`).
+
 ## Agent workflow
 
 1. Paste any monday URL into the command that matches its shape.

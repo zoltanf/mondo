@@ -388,8 +388,25 @@ MANUAL_ROWS: dict[str, Row] = {
             "created_by{id,name}",
             "blocks{id,type,content,parent_block_id}",
         ],
-        notes="Default format is JSON object above. --format markdown prints markdown text instead.",
+        notes=(
+            "Default format is JSON object above. --format markdown prints markdown text "
+            "instead. With --format markdown --out FILE, writes the markdown to FILE and emits "
+            "{out, images} where images is the list of localized image filenames downloaded "
+            "beside it (empty with --no-images). --out requires --format markdown (exit 2 otherwise)."
+        ),
         source="DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]",
+    ),
+    "doc export-markdown": Row(
+        command="doc export-markdown",
+        output_type="string | object",
+        fields=["out?", "images?"],
+        notes=(
+            "Prints monday's server-rendered markdown to stdout by default. With --out FILE, "
+            "writes the markdown to FILE and emits {out, images} where images is the list of "
+            "localized image filenames downloaded beside it (empty with --no-images). Always "
+            "live (no per-doc cache): --no-cache / --refresh-cache are accepted as no-ops."
+        ),
+        source="EXPORT_MARKDOWN_FROM_DOC + localize_markdown_images",
     ),
     "doc list": Row(
         command="doc list",

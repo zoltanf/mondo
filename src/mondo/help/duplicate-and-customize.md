@@ -59,6 +59,20 @@ options:
 See `mondo help batch-operations` for the full filter vocabulary,
 ambiguous-match behaviour, and `--first`.
 
+## Step 2b — Add a typed column (optional)
+
+If the customized board needs a new status/dropdown column, `column
+create --labels` seeds the initial labels in one call — no hand-built
+`--defaults` JSON:
+
+    mondo column create --board 9876543210 \
+        --title "Priority" --type status \
+        --labels "High,Medium,Low"
+
+`--labels` is a comma-separated list, applies only to `status` /
+`dropdown`, and is mutually exclusive with `--defaults` (use `--defaults`
+for any other column type or for advanced settings).
+
 ## Step 3 — Bulk seed items
 
 Seeding N items as N separate `mondo item create` calls is N HTTP
