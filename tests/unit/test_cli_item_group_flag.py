@@ -99,7 +99,7 @@ def test_group_flag_produces_same_query_as_filter(httpx_mock: HTTPXMock) -> None
     assert r2.exit_code == 0, r2.output
 
     requests = httpx_mock.get_requests()
-    # Two invocations × (columns preflight + items_page) = 4 requests.
+    # Two invocations x (columns preflight + items_page) = 4 requests.
     # items_page bodies are the 2nd and 4th.
     items_bodies = [json.loads(r.content) for r in requests[1::2]]
     assert len(items_bodies) == 2

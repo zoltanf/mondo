@@ -83,7 +83,12 @@ class GlobalOpts:
         from mondo.output.query import apply_query
 
         fmt = self.output or choose_default_format(is_tty=is_tty)
-        projected = apply_query(data, self.query)
+        try:
+            projected = apply_query(data, self.query)
+        except ValueError as e:
+            from mondo.cli._exec import usage_error_or_exit
+
+            usage_error_or_exit(str(e))
         projected = apply_fields(projected, self.fields)
         if (
             self.query

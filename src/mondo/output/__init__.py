@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from importlib import import_module
-from typing import Any, TextIO
+from typing import Any, TextIO, cast
 
 Formatter = Callable[[Any, TextIO, bool], None]
 
@@ -37,7 +37,7 @@ def _resolve_formatter(fmt: str) -> Formatter:
     except KeyError as e:
         raise ValueError(f"unknown format {fmt!r}; choose from {sorted(AVAILABLE_FORMATS)}") from e
     module = import_module(module_name)
-    renderer = module.render
+    renderer = cast(Formatter, module.render)
     _FORMATTER_CACHE[fmt] = renderer
     return renderer
 

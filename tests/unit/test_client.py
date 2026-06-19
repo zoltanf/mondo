@@ -9,10 +9,13 @@ from pytest_httpx import HTTPXMock
 from mondo.api.client import MondayClient
 from mondo.api.errors import (
     AuthError,
+    ExitCode,
     NetworkError,
     NotFoundError,
     RateLimitError,
     ServiceError,
+    UsageError,
+    ValidationError,
 )
 from mondo.version import __version__
 
@@ -228,6 +231,43 @@ class TestErrorMapping:
         client = MondayClient(token="t", api_version="2026-01", max_retries=3)
         with pytest.raises(ServiceError):
             client.execute("query { me { id } }")
+
+    def test_http_400_raises_usage_error(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            status_code=400,
+            text="Bad Request",
+        )
+        client = MondayClient(token="t", api_version="2026-01", max_retries=1)
+        with pytest.raises(UsageError) as exc_info:
+            client.execute("query { me { id } }")
+        assert exc_info.value.exit_code == ExitCode.USAGE
+
+    def test_http_422_raises_validation_error(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            status_code=422,
+            text="Unprocessable Entity",
+        )
+        client = MondayClient(token="t", api_version="2026-01", max_retries=1)
+        with pytest.raises(ValidationError) as exc_info:
+            client.execute("query { me { id } }")
+        assert exc_info.value.exit_code == ExitCode.VALIDATION
+
+    def test_http_429_raises_rate_limit_error(self, httpx_mock: HTTPXMock) -> None:
+        # 429 is retryable; a single attempt surfaces RateLimitError immediately.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            status_code=429,
+            text="Too Many Requests",
+        )
+        client = MondayClient(token="t", api_version="2026-01", max_retries=1)
+        with pytest.raises(RateLimitError) as exc_info:
+            client.execute("query { me { id } }")
+        assert exc_info.value.exit_code == ExitCode.RATE_LIMIT
 
 
 class TestRetry:

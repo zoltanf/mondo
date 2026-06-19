@@ -30,6 +30,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
@@ -93,13 +94,10 @@ def _validate_color(color: str | None) -> str | None:
     if not normalized.startswith("#"):
         normalized = "#" + normalized
     if normalized not in GROUP_PALETTE:
-        typer.secho(
-            f"error: --color {color!r} is not in the monday group palette. "
-            f"Valid values: {sorted(GROUP_PALETTE)}",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            f"--color {color!r} is not in the monday group palette. "
+            f"Valid values: {sorted(GROUP_PALETTE)}"
         )
-        raise typer.Exit(code=2)
     return normalized
 
 
@@ -137,8 +135,7 @@ def list_cmd(
                 opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
             )
     except NotFoundError:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from None
+        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     from mondo.cli._field_sets import group_list_fields
@@ -390,12 +387,9 @@ def reorder_cmd(
     sources = [after, before, position]
     provided = [s for s in sources if s is not None]
     if len(provided) != 1:
-        typer.secho(
-            "error: provide exactly one of --after, --before, or --position.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "provide exactly one of --after, --before, or --position."
         )
-        raise typer.Exit(code=2)
     if after is not None:
         attribute = GroupAttribute.relative_position_after.value
         value = after

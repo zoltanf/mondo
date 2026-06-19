@@ -105,7 +105,7 @@ def test_item_find_sends_same_query_as_filter(httpx_mock: HTTPXMock) -> None:
     assert r2.exit_code == 0, r2.output
 
     requests = httpx_mock.get_requests()
-    # Two invocations × (columns fetch + items_page) = 4 requests
+    # Two invocations x (columns fetch + items_page) = 4 requests
     # The 2nd and 4th are the items_page calls.
     items_bodies = [json.loads(r.content) for r in requests[1::2]]
     assert items_bodies[0]["variables"] == items_bodies[1]["variables"], (

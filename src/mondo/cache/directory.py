@@ -36,6 +36,12 @@ from mondo.api.queries import (
     build_docs_list_query,
     build_folders_list_query,
 )
+from mondo.cache.store import CachedDirectory, CacheStore
+from mondo.cli._normalize import (
+    normalize_board_entry,
+    normalize_doc_entry,
+    normalize_folder_entry,
+)
 
 # Block-fetch page size for `get_doc_blocks` — picked to match the existing
 # CLI default in `mondo/cli/doc.py`. Doc bodies can be hundreds of blocks;
@@ -46,8 +52,6 @@ _DOC_BLOCKS_PAGE_SIZE = 50
 # `MAX_UPDATES_PAGE_SIZE` (25). Updates change less than items but pages
 # are smaller server-side.
 _UPDATES_PAGE_SIZE = 25
-from mondo.cache.store import CachedDirectory, CacheStore
-from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
 
 # Label for entries whose `workspace_id` is null (monday's "Main workspace").
 MAIN_WORKSPACE_NAME = "Main workspace"

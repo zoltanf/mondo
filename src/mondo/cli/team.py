@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     ADD_USERS_TO_TEAM,
     ASSIGN_TEAM_OWNERS,
@@ -206,7 +206,7 @@ def get_cmd(
         opts.emit({"query": TEAMS_LIST, "variables": {"ids": [team_id]}})
         raise typer.Exit(0)
 
-    def _fetch_live(client: MondayClient) -> dict | None:
+    def _fetch_live(client: MondayClient) -> dict[str, Any] | None:
         data = exec_or_exit(client, TEAMS_LIST, {"ids": [team_id]})
         teams = data.get("teams") or []
         return teams[0] if teams else None
@@ -222,8 +222,7 @@ def get_cmd(
         explain_cache=explain_cache,
     )
     if entry is None:
-        typer.secho(f"team {team_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"team {team_id} not found."))
     opts.emit(entry)
 
 

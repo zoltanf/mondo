@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError, NotFoundError
+from mondo.api.errors import MondoError, NotFoundError, ValidationError
 from mondo.api.queries import (
     ITEM_ARCHIVE,
     ITEM_DELETE,
@@ -34,7 +34,11 @@ from mondo.api.queries import (
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
@@ -166,12 +170,9 @@ def list_cmd(
                     refresh=refresh_cache,
                 )
         except _NotFoundError:
-            typer.secho(
-                f"parent item {parent_id} not found.",
-                fg=typer.colors.RED,
-                err=True,
+            handle_mondo_error_or_exit(
+                NotFoundError(f"parent item {parent_id} not found.")
             )
-            raise typer.Exit(code=6) from None
         except MondoError as e:
             handle_mondo_error_or_exit(e)
         emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
@@ -182,8 +183,9 @@ def list_cmd(
     data = execute(opts, SUBITEMS_LIST, variables)
     items = data.get("items") or []
     if not items:
-        typer.secho(f"parent item {parent_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(
+            NotFoundError(f"parent item {parent_id} not found.")
+        )
     opts.emit(items[0].get("subitems") or [])
 
 
@@ -247,7 +249,7 @@ def get_cmd(
     cfg = opts.resolve_cache_config()
     use_cache = cfg.enabled and not no_cache
 
-    item: dict | None
+    item: dict[str, Any] | None
     if use_cache:
         from mondo.cache.directory import get_item
 
@@ -272,8 +274,9 @@ def get_cmd(
         item = items[0] if items else None
 
     if item is None:
-        typer.secho(f"subitem {subitem_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(
+            NotFoundError(f"subitem {subitem_id} not found.")
+        )
     if not with_url:
         item.pop("url", None)
     opts.emit(item)
@@ -335,8 +338,7 @@ def create_cmd(
             except ValueError as e:
                 # Codec validation (e.g. unknown status label) — surface as a
                 # clean CLI error rather than a Python traceback.
-                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=5) from e
+                handle_mondo_error_or_exit(ValidationError(str(e)))
 
     variables = {
         "parent": parent_id,

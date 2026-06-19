@@ -19,7 +19,9 @@ from typing import Any
 import click
 import typer
 
+from mondo.api.errors import NotFoundError
 from mondo.cli._examples import EXAMPLES
+from mondo.cli._exec import handle_mondo_error_or_exit
 from mondo.cli._help_format import is_global_param
 
 _TOPIC_PACKAGE = "mondo.help"
@@ -184,12 +186,9 @@ def help_command(
     body = _read_topic(topic)
     if body is None:
         available = ", ".join(_list_topics()) or "(none)"
-        typer.secho(
-            f"unknown help topic: {topic!r}. Available: {available}",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            NotFoundError(f"unknown help topic: {topic!r}. Available: {available}")
         )
-        raise typer.Exit(code=6)
 
     import sys
 

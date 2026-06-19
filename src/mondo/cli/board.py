@@ -37,6 +37,7 @@ from mondo.cli._exec import (
     execute_read,
     handle_mondo_error_or_exit,
     poll_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
@@ -131,12 +132,11 @@ def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
     data = execute_read(opts, BOARD_GET, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
-        typer.secho(
-            f"error: source board {board_id} not found (cannot resolve workspace).",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            MondoError(
+                f"source board {board_id} not found (cannot resolve workspace)."
+            )
         )
-        raise typer.Exit(code=1)
     ws = boards[0].get("workspace_id")
     if ws in (None, ""):
         return None
@@ -296,8 +296,7 @@ def list_cmd(
     try:
         needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     prefs = resolve_cache_prefs(
         opts,
@@ -588,12 +587,12 @@ def get_cmd(
         not cfg.enabled or no_cache or with_views or poll_until is not None
     )
 
-    def _fetch_once() -> dict | None:
+    def _fetch_once() -> dict[str, Any] | None:
         data = execute(opts, query, {"id": board_id})
         boards = data.get("boards") or []
         return boards[0] if boards else None
 
-    board: dict | None
+    board: dict[str, Any] | None
     if bypass_cache:
         if poll_until is not None:
             board = poll_or_exit(
@@ -629,8 +628,7 @@ def get_cmd(
             handle_mondo_error_or_exit(e)
 
     if board is None:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     warn_cross_type(board, expected="board", id_=board_id)
     if with_url:
         client = client_or_exit(opts)
@@ -823,12 +821,9 @@ def move_cmd(
     if position_obj is not None:
         attributes["position"] = position_obj
     if not attributes:
-        typer.secho(
-            "error: pass at least one of --workspace, --folder, --product-id, or --position.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "pass at least one of --workspace, --folder, --product-id, or --position."
         )
-        raise typer.Exit(code=2)
     data = execute(opts, BOARD_UPDATE_HIERARCHY, {"board": board_id, "attributes": attributes})
     invalidate_board_caches(opts, board_id)
     opts.emit(data.get("update_board_hierarchy") or {})
@@ -951,28 +946,25 @@ def duplicate_cmd(
         board_payload = (duplicate_payload.get("board") or {}) if duplicate_payload else {}
         dup_id_raw = board_payload.get("id")
         if dup_id_raw is None:
-            typer.secho(
-                "error: duplicate_board returned no board id — cannot poll for completion.",
-                fg=typer.colors.RED,
-                err=True,
+            handle_mondo_error_or_exit(
+                MondoError(
+                    "duplicate_board returned no board id — cannot poll for completion."
+                )
             )
-            raise typer.Exit(code=1)
         try:
             dup_id = int(dup_id_raw)
         except (TypeError, ValueError):
-            typer.secho(
-                f"error: duplicate_board returned non-integer id {dup_id_raw!r}.",
-                fg=typer.colors.RED,
-                err=True,
+            handle_mondo_error_or_exit(
+                MondoError(
+                    f"duplicate_board returned non-integer id {dup_id_raw!r}."
+                )
             )
-            raise typer.Exit(code=1) from None
         from mondo.util.duration import parse_duration
         try:
             timeout_s = parse_duration(timeout)
             poll_interval_s = parse_duration(poll_interval)
         except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+            usage_error_or_exit(str(e))
         # Structure-only duplicates never copy items, so the target is 0 by
         # definition — using the source's count would mismatch and force the
         # stall-counter path to terminate the wait, which is correct but

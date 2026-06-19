@@ -21,7 +21,7 @@ from typing import Any
 import httpx
 import typer
 
-from mondo.api.errors import MondoError, NetworkError
+from mondo.api.errors import MondoError, NetworkError, NotFoundError
 from mondo.api.queries import (
     ASSETS_GET,
     FILE_UPLOAD_ITEM,
@@ -33,6 +33,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli.context import GlobalOpts
 
@@ -80,23 +81,13 @@ def upload_cmd(
 
     if target is UploadTarget.item:
         if item_id is None or column_id is None:
-            typer.secho(
-                "error: --target item requires both --item and --column.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2)
+            usage_error_or_exit("--target item requires both --item and --column.")
         query = FILE_UPLOAD_ITEM
         variables: dict[str, Any] = {"item": item_id, "col": column_id, "file": None}
         response_key = "add_file_to_column"
     else:
         if update_id is None:
-            typer.secho(
-                "error: --target update requires --update.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2)
+            usage_error_or_exit("--target update requires --update.")
         query = FILE_UPLOAD_UPDATE
         variables = {"update": update_id, "file": None}
         response_key = "add_file_to_update"
@@ -138,12 +129,9 @@ def _assets_by_id(data: dict[str, Any], asset_ids: list[int]) -> dict[int, dict[
     missing = [i for i in asset_ids if i not in found_ids]
     if missing:
         label = "asset" if len(missing) == 1 else "assets"
-        typer.secho(
-            f"{label} not found: {', '.join(str(i) for i in missing)}",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            NotFoundError(f"{label} not found: {', '.join(str(i) for i in missing)}")
         )
-        raise typer.Exit(code=6)
     return {int(a["id"]): a for a in assets}
 
 
@@ -184,12 +172,9 @@ def download_cmd(
         raise typer.Exit(0)
 
     if len(asset_ids) > 1 and out is not None and not out.is_dir():
-        typer.secho(
-            "error: --out must be an existing directory when downloading multiple assets.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--out must be an existing directory when downloading multiple assets."
         )
-        raise typer.Exit(code=2)
 
     client = client_or_exit(opts)
     results: list[dict[str, Any]] = []
@@ -202,12 +187,7 @@ def download_cmd(
                 # protected_static proxy that returns 406 to non-browser clients.
                 url = asset.get("public_url") or asset.get("url")
                 if not url:
-                    typer.secho(
-                        f"asset {aid} has no url.",
-                        fg=typer.colors.RED,
-                        err=True,
-                    )
-                    raise typer.Exit(code=6)
+                    handle_mondo_error_or_exit(NotFoundError(f"asset {aid} has no url."))
                 target = _resolve_download_target(out, asset, aid)
                 try:
                     with httpx.stream("GET", url, follow_redirects=True) as resp:

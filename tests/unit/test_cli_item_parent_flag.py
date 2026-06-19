@@ -91,7 +91,7 @@ def test_parent_flag_uses_same_query_as_subitem_list(httpx_mock: HTTPXMock) -> N
     body1 = json.loads(requests[0].content)
     body2 = json.loads(requests[1].content)
     assert body1["query"] == body2["query"], (
-        f"item list --parent and subitem list --parent sent different "
-        f"GraphQL queries"
+        "item list --parent and subitem list --parent sent different "
+        "GraphQL queries"
     )
     assert body1["variables"] == body2["variables"]

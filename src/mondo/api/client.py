@@ -26,8 +26,11 @@ from mondo.api.errors import (
     MondoError,
     NetworkError,
     NotFoundError,
+    RateLimitError,
     RetryableError,
     ServiceError,
+    UsageError,
+    ValidationError,
     from_response,
 )
 from mondo.logging_ import register_secret
@@ -249,6 +252,12 @@ def _classify_response(
         return AuthError("forbidden — token lacks the required scope")
     if status == 404:
         return NotFoundError("endpoint or resource not found")
+    if status == 429:
+        return RateLimitError(f"monday returned HTTP {status}")
+    if status == 400:
+        return UsageError(f"monday returned HTTP {status}")
+    if status == 422:
+        return ValidationError(f"monday returned HTTP {status}")
     if status >= 500:
         return ServiceError(f"monday returned HTTP {status}")
 
@@ -261,4 +270,13 @@ def _classify_response(
     except ValueError:
         return ServiceError(f"invalid JSON response (HTTP {status})")
 
-    return from_response(parsed)
+    # A GraphQL `errors` array (even atop a non-2xx status) is the richest
+    # signal — prefer it for typed mapping.
+    if (mapped := from_response(parsed)) is not None:
+        return mapped
+
+    # Any other non-2xx without GraphQL errors must not pass as success.
+    if not 200 <= status < 300:
+        return UsageError(f"monday returned HTTP {status}")
+
+    return None

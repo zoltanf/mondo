@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE
 from mondo.api.queries import (
     WORKSPACE_ADD_TEAMS,
@@ -29,8 +29,8 @@ from mondo.cli._exec import (
     client_or_exit,
     exec_or_exit,
     execute,
-    execute_read,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
@@ -266,7 +266,7 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     workspace_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="workspace")
 
-    def _fetch_live(client: MondayClient) -> dict | None:
+    def _fetch_live(client: MondayClient) -> dict[str, Any] | None:
         data = exec_or_exit(client, WORKSPACE_GET, {"id": workspace_id})
         workspaces = data.get("workspaces") or []
         return workspaces[0] if workspaces else None
@@ -282,8 +282,7 @@ def get_cmd(
         explain_cache=explain_cache,
     )
     if entry is None:
-        typer.secho(f"workspace {workspace_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"workspace {workspace_id} not found."))
     opts.emit(entry)
 
 
@@ -343,12 +342,7 @@ def update_cmd(
     if kind is not None:
         attributes["kind"] = kind.value
     if not attributes:
-        typer.secho(
-            "error: pass at least one of --name, --description, --kind.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("pass at least one of --name, --description, --kind.")
     variables = {"id": workspace_id, "attributes": attributes}
     data = execute(opts, WORKSPACE_UPDATE, variables)
     invalidate_entity(opts, "workspaces")

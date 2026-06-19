@@ -12,7 +12,6 @@ the EvalResult so it can extract created ids and queue them for LIFO teardown.
 from __future__ import annotations
 
 import re
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -41,10 +40,10 @@ class TaskContext:
 class Task:
     name: str
     prompt_template: str
-    predicate: Callable[["EvalResult", TaskContext], bool]
+    predicate: Callable[[EvalResult, TaskContext], bool]
     max_turns: int = 8
     setup: Callable[[TaskContext], None] | None = None
-    cleanup_register: Callable[["EvalResult", TaskContext], None] | None = None
+    cleanup_register: Callable[[EvalResult, TaskContext], None] | None = None
 
     def render_prompt(self, ctx: TaskContext) -> str:
         return self.prompt_template.format(
@@ -57,7 +56,7 @@ class Task:
 # --- Task 1: read-only board listing ----------------------------------------
 
 
-def _t1_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t1_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del ctx
     if not any(
         re.search(r"\bmondo\s+board\s+list\b", c) and "--workspace" in c
@@ -85,14 +84,14 @@ def _t2_setup(ctx: TaskContext) -> None:
     ctx.extras["target_group_title"] = f"Q3 Goals {ctx.suffix}"
 
 
-def _t2_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t2_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     target = ctx.extras["target_group_title"]
     groups = invoke_json(["group", "list", "--board", str(ctx.board_id)])
     return any(g.get("title") == target for g in groups)
 
 
-def _t2_cleanup(result: "EvalResult", ctx: TaskContext) -> None:
+def _t2_cleanup(result: EvalResult, ctx: TaskContext) -> None:
     del result
     target = ctx.extras["target_group_title"]
     groups = invoke_json(["group", "list", "--board", str(ctx.board_id)])
@@ -165,7 +164,7 @@ def _t3_setup(ctx: TaskContext) -> None:
     ctx.extras["item_id"] = item_id
 
 
-def _t3_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t3_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     item_id = ctx.extras["item_id"]
     col_id = ctx.extras["status_col_id"]
@@ -206,7 +205,7 @@ def _t4_setup(ctx: TaskContext) -> None:
     ctx.extras["update_marker"] = f"reviewed-{ctx.suffix}"
 
 
-def _t4_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t4_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     marker = ctx.extras["update_marker"]
     updates = invoke_json(["update", "list", "--item", str(ctx.extras["item_id"])])
@@ -236,7 +235,7 @@ def _t5_setup(ctx: TaskContext) -> None:
     ctx.extras["csv_path"] = f"/tmp/eval-pm-{ctx.suffix}.csv"
 
 
-def _t5_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t5_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     import csv
     import os.path
@@ -248,15 +247,14 @@ def _t5_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
     return len(rows) >= 1
 
 
-def _t5_cleanup(result: "EvalResult", ctx: TaskContext) -> None:
+def _t5_cleanup(result: EvalResult, ctx: TaskContext) -> None:
     del result
+    import contextlib
     import os.path
     csv_path = ctx.extras["csv_path"]
     if os.path.exists(csv_path):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(csv_path)
-        except OSError:
-            pass
 
 
 task_export_csv = Task(
@@ -281,7 +279,7 @@ def _t6_setup(ctx: TaskContext) -> None:
     ctx.extras["board_url"] = f"https://playground.monday.com/boards/{ctx.board_id}"
 
 
-def _t6_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t6_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     saw_board_get = any(
         re.search(r"\bmondo\s+board\s+get\b", c) and str(ctx.board_id) in c
         for c in result.bash_calls

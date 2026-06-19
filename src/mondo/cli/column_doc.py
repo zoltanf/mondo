@@ -30,7 +30,11 @@ from mondo.api.queries import (
     DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
 )
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    handle_mondo_error_or_exit,
+    usage_error_or_exit,
+)
 from mondo.cli.context import GlobalOpts
 from mondo.docs import (
     blocks_to_markdown,
@@ -247,8 +251,7 @@ def set_cmd(
     md = _read_markdown_source(markdown, from_file, from_stdin)
     blocks = markdown_to_blocks(md)
     if not blocks:
-        typer.secho("error: no content to write.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+        usage_error_or_exit("no content to write.")
 
     client = client_or_exit(opts)
     try:
@@ -340,8 +343,7 @@ def append_cmd(
     md = _read_markdown_source(markdown, from_file, from_stdin)
     blocks = markdown_to_blocks(md)
     if not blocks:
-        typer.secho("error: no content to append.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+        usage_error_or_exit("no content to append.")
 
     client = client_or_exit(opts)
     try:
@@ -349,12 +351,9 @@ def append_cmd(
             _board_id, raw_value = _fetch_doc_column_value(client, item_id, column_id)
             object_ids = extract_doc_ids_from_column_value(raw_value)
             if not object_ids:
-                typer.secho(
-                    "error: doc column is empty. Use `mondo column doc set` first.",
-                    fg=typer.colors.RED,
-                    err=True,
+                usage_error_or_exit(
+                    "doc column is empty. Use `mondo column doc set` first."
                 )
-                raise typer.Exit(code=2)
             doc = _fetch_doc_blocks(client, object_ids[0])
             doc_id = doc.get("id")
             if not doc_id:
@@ -433,19 +432,11 @@ def _read_markdown_source(inline: str | None, path: Path | None, from_stdin: boo
     sources = [inline is not None, path is not None, from_stdin]
     count = sum(sources)
     if count == 0:
-        typer.secho(
-            "error: provide --markdown, --from-file, or --from-stdin.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --markdown, --from-file, or --from-stdin.")
     if count > 1:
-        typer.secho(
-            "error: --markdown, --from-file, and --from-stdin are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--markdown, --from-file, and --from-stdin are mutually exclusive."
         )
-        raise typer.Exit(code=2)
     if path is not None:
         return path.read_text()
     if from_stdin:

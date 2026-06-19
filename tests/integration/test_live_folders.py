@@ -207,8 +207,8 @@ def test_live_folder_update_name_changes_listing(
         assert got.get("name") == updated_name, f"folder name={got.get('name')!r}"
         listing = _list_folders_in_workspace(live_workspace_id)
         names = {f.get("name") for f in listing}
-        assert updated_name in names, f"updated name not in listing"
-        assert original_name not in names, f"old name still in listing"
+        assert updated_name in names, "updated name not in listing"
+        assert original_name not in names, "old name still in listing"
 
     wait_for("rename visible", _rename_visible)
 

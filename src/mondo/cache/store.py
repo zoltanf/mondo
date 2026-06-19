@@ -180,10 +180,14 @@ class CacheStore:
             entries=entries_raw,
             from_cache=True,
         )
-        if not cached.is_fresh():
+        # Freshness is decided by the CURRENT configured TTL, not the TTL the
+        # envelope was written under. The stored `ttl_seconds` is provenance
+        # metadata only — lowering/raising the configured TTL must take effect
+        # on already-written files.
+        if cached.age.total_seconds() > self._ttl_seconds:
             logger.debug(
                 f"cache[{self._entity_type}]: expired "
-                f"(age={cached.age}, ttl={ttl_seconds}s)"
+                f"(age={cached.age}, ttl={self._ttl_seconds}s)"
             )
             return None
         return cached

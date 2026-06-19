@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import ColumnValueError, MondoError, NotFoundError, UsageError
+from mondo.api.errors import (
+    ColumnValueError,
+    MondoError,
+    NotFoundError,
+    UsageError,
+    ValidationError,
+)
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
     ITEM_ARCHIVE,
@@ -44,6 +50,7 @@ from mondo.cli._exec import (
     execute,
     handle_mondo_error_or_exit,
     poll_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli._url import MondayIdParam
@@ -331,26 +338,19 @@ def get_cmd(
     reject_mutually_exclusive(no_cache, refresh_cache)
     item_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="item")
     if include_updates and include_subitems:
-        typer.secho(
-            "error: --include-updates and --include-subitems are mutually exclusive for now.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--include-updates and --include-subitems are mutually exclusive for now."
         )
-        raise typer.Exit(code=2)
     if columns_sel is not None and (include_updates or include_subitems):
-        typer.secho(
-            "error: --columns cannot be combined with --include-updates / --include-subitems.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--columns cannot be combined with --include-updates / --include-subitems."
         )
-        raise typer.Exit(code=2)
     variables: dict[str, Any] = {"id": item_id}
     if columns_sel is not None:
         try:
             variables["cols"] = _parse_columns_csv(columns_sel)
         except UsageError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+            usage_error_or_exit(str(e))
         query = ITEM_GET_WITH_COLUMNS
     elif include_updates:
         query = ITEM_GET_WITH_UPDATES
@@ -408,8 +408,7 @@ def get_cmd(
             handle_mondo_error_or_exit(e)
 
     if item is None:
-        typer.secho(f"item {item_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"item {item_id} not found."))
     if not with_url:
         item.pop("url", None)
     from mondo.cli._field_sets import item_get_fields
@@ -550,17 +549,15 @@ def _list_items_impl(
     # both commands return identical shapes.
     if parent_id is not None:
         if columns_sel is not None:
-            typer.secho(
-                "error: --columns is not supported with --parent (subitem listing).",
-                fg=typer.colors.RED,
-                err=True,
+            usage_error_or_exit(
+                "--columns is not supported with --parent (subitem listing)."
             )
-            raise typer.Exit(code=2)
         data = execute(opts, SUBITEMS_LIST, {"parent": parent_id})
         items = data.get("items") or []
         if not items:
-            typer.secho(f"parent item {parent_id} not found.", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=6)
+            handle_mondo_error_or_exit(
+                NotFoundError(f"parent item {parent_id} not found.")
+            )
         opts.emit(items[0].get("subitems") or [])
         return
 
@@ -583,8 +580,7 @@ def _list_items_impl(
         try:
             parsed_filters = [_split_filter_expr(f) for f in filter_expr]
         except UsageError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+            usage_error_or_exit(str(e))
 
     # Server-side column_values narrowing: an explicit `--columns` wins;
     # otherwise drop column_values entirely when `--fields` provably never
@@ -597,8 +593,7 @@ def _list_items_impl(
         try:
             extra_vars = {"cols": _parse_columns_csv(columns_sel)}
         except UsageError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+            usage_error_or_exit(str(e))
         query_initial, query_next = build_items_page_queries(column_values="ids")
     else:
         slim = poll_until is None and _can_slim_column_values(opts)
@@ -716,8 +711,7 @@ def _list_items_impl(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     from mondo.cli._field_sets import item_list_fields
 
@@ -909,22 +903,17 @@ def create_cmd(
             or position_relative_method is not None or relative_to is not None
         )
         if single_item_flags:
-            typer.secho(
-                "error: --batch is mutually exclusive with --name / --group / "
+            usage_error_or_exit(
+                "--batch is mutually exclusive with --name / --group / "
                 "--column / --position-* / --relative-to. Move per-row "
-                "settings into the JSON array.",
-                fg=typer.colors.RED,
-                err=True,
+                "settings into the JSON array."
             )
-            raise typer.Exit(code=2)
         try:
             rows = _read_batch_input(batch)
         except UsageError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+            usage_error_or_exit(str(e))
         if chunk_size < 1:
-            typer.secho("error: --chunk-size must be >= 1.", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
+            usage_error_or_exit("--chunk-size must be >= 1.")
         _run_batch(
             opts,
             board_id,
@@ -937,12 +926,9 @@ def create_cmd(
         return
 
     if not name:
-        typer.secho(
-            "error: --name is required (or pass --batch <path|-> for bulk).",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--name is required (or pass --batch <path|-> for bulk)."
         )
-        raise typer.Exit(code=2)
 
     # Build the ITEM_CREATE variables via the same helper that the batch path
     # uses, so any future addition to the create shape lands in one place.
@@ -977,8 +963,7 @@ def create_cmd(
                 create_labels_default=create_labels_if_missing,
             )
     except ValueError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=5) from e
+        handle_mondo_error_or_exit(ValidationError(str(e)))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -1089,8 +1074,7 @@ def _run_batch(
                         parse_aliased_response(response, row_chunk, base_index=base)
                     )
         except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=5) from e
+            handle_mondo_error_or_exit(ValidationError(str(e)))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -1349,8 +1333,7 @@ def move_to_board_cmd(
         columns = _parse_column_mapping(column_mapping or [])
         subitem_columns = _parse_column_mapping(subitem_column_mapping or [])
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
     variables: dict[str, Any] = {
         "id": item_id,
         "board": board_id,

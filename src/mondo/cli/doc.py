@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import typer
 
-from mondo.api.errors import MondoError, NotFoundError
+from mondo.api.errors import MondoError, NotFoundError, ValidationError
 from mondo.api.queries import (
     ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
     CREATE_DOC_BLOCK,
@@ -51,6 +51,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
@@ -113,19 +114,11 @@ DocObjectIdOpt = Annotated[
 def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> str:
     sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
     if sources == 0:
-        typer.secho(
-            "error: provide --markdown, --from-file @path, or --from-stdin",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --markdown, --from-file @path, or --from-stdin")
     if sources > 1:
-        typer.secho(
-            "error: --markdown, --from-file, and --from-stdin are mutually exclusive",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--markdown, --from-file, and --from-stdin are mutually exclusive"
         )
-        raise typer.Exit(code=2)
     if path is not None:
         return path.read_text()
     if from_stdin:
@@ -137,19 +130,11 @@ def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> s
 def _load_html(inline: str | None, path: Path | None, from_stdin: bool) -> str:
     sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
     if sources == 0:
-        typer.secho(
-            "error: provide --html, --from-file @path, or --from-stdin",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --html, --from-file @path, or --from-stdin")
     if sources > 1:
-        typer.secho(
-            "error: --html, --from-file, and --from-stdin are mutually exclusive",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--html, --from-file, and --from-stdin are mutually exclusive"
         )
-        raise typer.Exit(code=2)
     if path is not None:
         return path.read_text()
     if from_stdin:
@@ -344,8 +329,7 @@ def list_cmd(
             name_contains, name_matches, name_fuzzy
         )
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
     if prefs.use_cache:
@@ -599,12 +583,7 @@ def get_cmd(
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
-        typer.secho(
-            "error: pass exactly one of --id or --object-id.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("pass exactly one of --id or --object-id.")
 
     if doc_id is not None:
         query = DOC_GET_BY_ID_BLOCKS_PAGE
@@ -791,12 +770,8 @@ def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | Non
     mutation-level 500 ("Fetcher response returned NON-OK status=500") —
     probe before giving up.
     """
-    line = f"error: {err_line}"
     hint = _object_id_hint(opts, doc_id) if doc_id is not None else None
-    if hint:
-        line = f"{line}\n{hint}"
-    typer.secho(line, fg=typer.colors.RED, err=True)
-    raise typer.Exit(code=5)
+    handle_mondo_error_or_exit(ValidationError(err_line), human_suffix=hint)
 
 
 def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
@@ -814,12 +789,7 @@ def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
 def _require_one_doc_flag(doc_id: int | None, object_id: int | None) -> None:
     """Usage gate for commands taking `--doc` XOR `--object-id`."""
     if (doc_id is None) == (object_id is None):
-        typer.secho(
-            "error: pass exactly one of --doc or --object-id.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("pass exactly one of --doc or --object-id.")
 
 
 def _resolve_doc_in_client(
@@ -844,8 +814,7 @@ def _resolve_doc_in_client(
     if resolved is None:
         resolved = _resolve_object_id_live(client, object_id)
     if resolved is None:
-        typer.secho(f"doc object_id={object_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"doc object_id={object_id} not found."))
     return resolved
 
 
@@ -1008,12 +977,9 @@ def add_content_cmd(
     md = _load_markdown(markdown, from_file, from_stdin)
     blocks = markdown_to_blocks(md)
     if not blocks:
-        typer.secho(
-            "error: input produced no blocks (empty or unsupported markdown).",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            ValidationError("input produced no blocks (empty or unsupported markdown).")
         )
-        raise typer.Exit(code=5)
     if doc_id is not None and opts.dry_run:
         dry_run_and_exit(
             opts,
@@ -1158,22 +1124,16 @@ def duplicate_cmd(
         _fail_with_object_id_hint(opts, result.get("error") or "duplicate_doc failed", doc_id)
     new_object_id = result.get("id")
     if new_object_id is None:
-        typer.secho(
-            "error: duplicate_doc returned no id",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=5)
+        handle_mondo_error_or_exit(ValidationError("duplicate_doc returned no id"))
     lookup = execute(opts, DOC_HEAD_BY_OBJECT_ID, {"objs": [int(new_object_id)]})
     matches = lookup.get("docs") or []
     if not matches:
-        typer.secho(
-            f"error: duplicated doc with object_id={new_object_id} not "
-            "visible in workspace lookup",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            ValidationError(
+                f"duplicated doc with object_id={new_object_id} not "
+                "visible in workspace lookup"
+            )
         )
-        raise typer.Exit(code=5)
     new_doc = matches[0]
     opts.emit(
         {

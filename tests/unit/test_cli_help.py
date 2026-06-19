@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from mondo.cli._examples import EXAMPLES, _READ_SUFFIXES, epilog_for
+from mondo.cli._examples import _READ_SUFFIXES, EXAMPLES, epilog_for
 from mondo.cli.help import _list_topics, _read_topic
 from mondo.cli.main import app
 

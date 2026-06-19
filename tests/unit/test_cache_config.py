@@ -7,14 +7,24 @@ from pathlib import Path
 import pytest
 
 from mondo.cache.config import resolve_cache_config
+from mondo.cache.store import EntityType
 from mondo.config.schema import (
     DEFAULT_CACHE_FUZZY_THRESHOLD,
+    DEFAULT_CACHE_TTL_BOARD_DETAILS,
+    DEFAULT_CACHE_TTL_BOARD_ITEMS,
     DEFAULT_CACHE_TTL_BOARDS,
     DEFAULT_CACHE_TTL_COLUMNS,
     DEFAULT_CACHE_TTL_DOCS,
+    DEFAULT_CACHE_TTL_DOCS_BLOCKS,
     DEFAULT_CACHE_TTL_FOLDERS,
     DEFAULT_CACHE_TTL_GROUPS,
+    DEFAULT_CACHE_TTL_ITEMS,
+    DEFAULT_CACHE_TTL_SUBITEMS,
+    DEFAULT_CACHE_TTL_TAGS,
+    DEFAULT_CACHE_TTL_TEAMS,
+    DEFAULT_CACHE_TTL_UPDATES,
     DEFAULT_CACHE_TTL_USERS,
+    DEFAULT_CACHE_TTL_WEBHOOKS,
     DEFAULT_CACHE_TTL_WORKSPACES,
     CacheConfig,
     CacheFuzzyConfig,
@@ -22,6 +32,28 @@ from mondo.config.schema import (
     Config,
     Profile,
 )
+
+# One row per cache EntityType. The same key names the `CacheTTLConfig` field,
+# the `ResolvedCacheConfig.ttl_<key>` attribute, and (uppercased) the
+# `MONDO_CACHE_TTL_<KEY>` env var. `default` is the built-in TTL constant.
+CACHE_TTL_CASES: list[tuple[EntityType, int]] = [
+    ("boards", DEFAULT_CACHE_TTL_BOARDS),
+    ("workspaces", DEFAULT_CACHE_TTL_WORKSPACES),
+    ("users", DEFAULT_CACHE_TTL_USERS),
+    ("teams", DEFAULT_CACHE_TTL_TEAMS),
+    ("columns", DEFAULT_CACHE_TTL_COLUMNS),
+    ("groups", DEFAULT_CACHE_TTL_GROUPS),
+    ("docs", DEFAULT_CACHE_TTL_DOCS),
+    ("folders", DEFAULT_CACHE_TTL_FOLDERS),
+    ("tags", DEFAULT_CACHE_TTL_TAGS),
+    ("webhooks", DEFAULT_CACHE_TTL_WEBHOOKS),
+    ("board_details", DEFAULT_CACHE_TTL_BOARD_DETAILS),
+    ("items", DEFAULT_CACHE_TTL_ITEMS),
+    ("board_items", DEFAULT_CACHE_TTL_BOARD_ITEMS),
+    ("subitems", DEFAULT_CACHE_TTL_SUBITEMS),
+    ("updates", DEFAULT_CACHE_TTL_UPDATES),
+    ("docs_blocks", DEFAULT_CACHE_TTL_DOCS_BLOCKS),
+]
 
 
 def test_built_in_defaults_when_config_is_empty() -> None:
@@ -129,91 +161,58 @@ def test_default_profile_cache_picked_up_when_name_omitted() -> None:
     assert resolved.fuzzy_threshold == 42
 
 
-def test_ttl_for_method() -> None:
+@pytest.mark.parametrize(("entity", "default"), CACHE_TTL_CASES)
+def test_ttl_default(entity: EntityType, default: int) -> None:
+    """Every EntityType resolves to its built-in default TTL on an empty config."""
     resolved = resolve_cache_config(Config(), profile_name=None, env={})
-    assert resolved.ttl_for("boards") == resolved.ttl_boards
-    assert resolved.ttl_for("workspaces") == resolved.ttl_workspaces
-    assert resolved.ttl_for("users") == resolved.ttl_users
-    assert resolved.ttl_for("teams") == resolved.ttl_teams
-    assert resolved.ttl_for("columns") == resolved.ttl_columns
-    assert resolved.ttl_for("groups") == resolved.ttl_groups
-    assert resolved.ttl_for("docs") == resolved.ttl_docs
-    assert resolved.ttl_for("folders") == resolved.ttl_folders
+    assert resolved.ttl_for(entity) == default
+
+
+@pytest.mark.parametrize(("entity", "default"), CACHE_TTL_CASES)
+def test_ttl_for_matches_attribute(entity: EntityType, default: int) -> None:
+    """`ttl_for(entity)` mirrors the flat `ttl_<entity>` attribute."""
+    resolved = resolve_cache_config(Config(), profile_name=None, env={})
+    assert resolved.ttl_for(entity) == getattr(resolved, f"ttl_{entity}")
+
+
+def test_ttl_for_rejects_unknown_entity() -> None:
+    resolved = resolve_cache_config(Config(), profile_name=None, env={})
     with pytest.raises(ValueError):
         resolved.ttl_for("nonsense")  # type: ignore[arg-type]
 
 
-def test_columns_ttl_env_override() -> None:
-    resolved = resolve_cache_config(
-        Config(), profile_name=None, env={"MONDO_CACHE_TTL_COLUMNS": "77"}
-    )
-    assert resolved.ttl_columns == 77
+@pytest.mark.parametrize(("entity", "default"), CACHE_TTL_CASES)
+def test_ttl_env_override(entity: EntityType, default: int) -> None:
+    """`MONDO_CACHE_TTL_<ENTITY>` overrides the default for each EntityType."""
+    env_key = f"MONDO_CACHE_TTL_{entity.upper()}"
+    resolved = resolve_cache_config(Config(), profile_name=None, env={env_key: "77"})
+    assert resolved.ttl_for(entity) == 77
 
 
-def test_columns_ttl_profile_overrides_global() -> None:
+@pytest.mark.parametrize(("entity", "default"), CACHE_TTL_CASES)
+def test_ttl_profile_overrides_global(entity: EntityType, default: int) -> None:
+    """A profile-level TTL beats the global `cache:` block for each EntityType."""
     cfg = Config(
         default_profile="acme",
-        cache=CacheConfig(ttl=CacheTTLConfig(columns=600)),
+        cache=CacheConfig(ttl=CacheTTLConfig(**{entity: 600})),
         profiles={
-            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(columns=120))),
+            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(**{entity: 120}))),
         },
     )
     resolved = resolve_cache_config(cfg, profile_name="acme", env={})
-    assert resolved.ttl_columns == 120
+    assert resolved.ttl_for(entity) == 120
 
 
-def test_groups_ttl_env_override() -> None:
-    resolved = resolve_cache_config(
-        Config(), profile_name=None, env={"MONDO_CACHE_TTL_GROUPS": "77"}
-    )
-    assert resolved.ttl_groups == 77
-
-
-def test_groups_ttl_profile_overrides_global() -> None:
+@pytest.mark.parametrize(("entity", "default"), CACHE_TTL_CASES)
+def test_ttl_env_overrides_profile(entity: EntityType, default: int) -> None:
+    """Env var wins over both global and profile TTLs for each EntityType."""
+    env_key = f"MONDO_CACHE_TTL_{entity.upper()}"
     cfg = Config(
         default_profile="acme",
-        cache=CacheConfig(ttl=CacheTTLConfig(groups=600)),
+        cache=CacheConfig(ttl=CacheTTLConfig(**{entity: 600})),
         profiles={
-            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(groups=120))),
+            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(**{entity: 120}))),
         },
     )
-    resolved = resolve_cache_config(cfg, profile_name="acme", env={})
-    assert resolved.ttl_groups == 120
-
-
-def test_docs_ttl_env_override() -> None:
-    resolved = resolve_cache_config(
-        Config(), profile_name=None, env={"MONDO_CACHE_TTL_DOCS": "77"}
-    )
-    assert resolved.ttl_docs == 77
-
-
-def test_docs_ttl_profile_overrides_global() -> None:
-    cfg = Config(
-        default_profile="acme",
-        cache=CacheConfig(ttl=CacheTTLConfig(docs=600)),
-        profiles={
-            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(docs=120))),
-        },
-    )
-    resolved = resolve_cache_config(cfg, profile_name="acme", env={})
-    assert resolved.ttl_docs == 120
-
-
-def test_folders_ttl_env_override() -> None:
-    resolved = resolve_cache_config(
-        Config(), profile_name=None, env={"MONDO_CACHE_TTL_FOLDERS": "77"}
-    )
-    assert resolved.ttl_folders == 77
-
-
-def test_folders_ttl_profile_overrides_global() -> None:
-    cfg = Config(
-        default_profile="acme",
-        cache=CacheConfig(ttl=CacheTTLConfig(folders=600)),
-        profiles={
-            "acme": Profile(cache=CacheConfig(ttl=CacheTTLConfig(folders=120))),
-        },
-    )
-    resolved = resolve_cache_config(cfg, profile_name="acme", env={})
-    assert resolved.ttl_folders == 120
+    resolved = resolve_cache_config(cfg, profile_name="acme", env={env_key: "55"})
+    assert resolved.ttl_for(entity) == 55

@@ -32,7 +32,11 @@ from mondo.api.queries import (
 )
 from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    handle_mondo_error_or_exit,
+    usage_error_or_exit,
+)
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -222,8 +226,7 @@ def board_cmd(
     try:
         mapping = _load_mapping(mapping_path)
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     name_col = mapping.get("name_column", name_column) or name_column
     group_col = mapping.get("group_column", group_column) or group_column
@@ -238,12 +241,9 @@ def board_cmd(
             reader = csv.DictReader(fh, delimiter=delimiter)
             headers = list(reader.fieldnames or [])
             if name_col not in headers:
-                typer.secho(
-                    f"error: --name-column {name_col!r} missing from CSV headers {headers}.",
-                    fg=typer.colors.RED,
-                    err=True,
+                usage_error_or_exit(
+                    f"--name-column {name_col!r} missing from CSV headers {headers}."
                 )
-                raise typer.Exit(code=2)
 
             board_columns = _fetch_board_columns(opts, client, board_id)
             col_defs = {c["id"]: c for c in board_columns if c.get("id")}
@@ -311,8 +311,7 @@ def board_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     except FileNotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     if create_labels_if_missing and created > 0:
         # Batch may have minted status/dropdown labels in settings_str; a

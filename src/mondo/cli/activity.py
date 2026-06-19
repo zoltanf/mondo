@@ -13,7 +13,7 @@ from typing import Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import BOARD_ACTIVITY_LOGS
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, exec_or_exit, handle_mondo_error_or_exit
@@ -89,12 +89,9 @@ def board_cmd(
                 boards = data.get("boards") or []
                 if not boards:
                     if page == 1:
-                        typer.secho(
-                            f"board {board_id} not found.",
-                            fg=typer.colors.RED,
-                            err=True,
+                        handle_mondo_error_or_exit(
+                            NotFoundError(f"board {board_id} not found.")
                         )
-                        raise typer.Exit(code=6)
                     break
                 logs = boards[0].get("activity_logs") or []
                 if not logs:

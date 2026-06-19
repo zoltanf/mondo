@@ -19,6 +19,8 @@ re-classes nodes to our subclasses; it's used by the lazy loader in
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
+from typing import cast
 
 import click
 import typer.core
@@ -61,7 +63,7 @@ def _global_option_clones(ctx: click.Context) -> list[click.Option]:
     for param in root_cmd.params:
         if not is_global_param(param):
             continue
-        clone = copy.copy(param)
+        clone = cast(click.Option, copy.copy(param))
         setattr(clone, _PANEL_ATTR, _panel_for(param))
         out.append(clone)
     return out
@@ -73,7 +75,11 @@ def _assert_output_params_exist(root_cmd: click.Command) -> None:
     Otherwise the Output / Query panel silently empties out when a flag is
     renamed in `main.py`, with no test signal until someone runs `--help`.
     """
-    declared = {p.name for p in root_cmd.params if isinstance(p, click.Option)}
+    declared = {
+        p.name
+        for p in root_cmd.params
+        if isinstance(p, click.Option) and p.name is not None
+    }
     missing = _OUTPUT_PARAM_NAMES - declared
     if missing:
         raise AssertionError(
@@ -86,14 +92,14 @@ def _format_help_with_globals(
     cmd: click.Command,
     ctx: click.Context,
     formatter: click.HelpFormatter,
-    base_format_help,
+    base_format_help: Callable[[click.Context, click.HelpFormatter], None],
 ) -> None:
     if ctx.parent is None:
         base_format_help(ctx, formatter)
         return
     extras = _global_option_clones(ctx)
     original = cmd.params
-    cmd.params = list(original) + extras
+    cmd.params = [*original, *extras]
     try:
         base_format_help(ctx, formatter)
     finally:
@@ -147,20 +153,6 @@ class MondoCommand(typer.core.TyperCommand):
         guesses don't cost a failed round-trip.
         """
         return super().parse_args(ctx, rewrite_id_aliases(self, args))
-
-
-def _assert_output_params_exist(root_cmd: click.Command) -> None:
-    """Fail loudly if `_OUTPUT_PARAM_NAMES` drifts from the root's option names.
-
-    Otherwise the Output / Query panel silently empties out when a flag is
-    renamed in `main.py`, with no test signal until someone runs `--help`.
-    """
-    declared = {p.name for p in root_cmd.params if isinstance(p, click.Option)}
-    missing = _OUTPUT_PARAM_NAMES - declared
-    assert not missing, (
-        f"_OUTPUT_PARAM_NAMES references param(s) not on the root command: "
-        f"{sorted(missing)}. Root declares: {sorted(declared)}."
-    )
 
 
 def patch_help_classes(cmd: click.Command) -> None:

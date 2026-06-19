@@ -12,7 +12,6 @@ from ._helpers import (
     CleanupPlan,
     invoke,
     invoke_json,
-    wait_for,
 )
 from .conftest import PmBoard
 
@@ -60,7 +59,7 @@ def test_live_file_upload_to_column_and_download(
 
     # Deterministic content + filename.
     src_file = tmp_path / f"e2e-upload-{suffix}.txt"
-    payload = f"hello-monday-{suffix}\n".encode("utf-8")
+    payload = f"hello-monday-{suffix}\n".encode()
     src_file.write_bytes(payload)
 
     upload_result = invoke_json(
@@ -101,7 +100,7 @@ def _extract_asset_id(payload: Any) -> int | None:
     """Pull an asset id out of the upload response, tolerant of nested shapes."""
     if isinstance(payload, dict):
         for key in ("asset_id", "id"):
-            if key in payload and payload[key]:
+            if payload.get(key):
                 try:
                     return int(payload[key])
                 except (TypeError, ValueError):

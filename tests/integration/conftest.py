@@ -16,18 +16,18 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from dotenv import load_dotenv
 
 from ._helpers import (
     API_VERSION,
-    CleanupPlan,
     MONDO_TEST_BOARD_ID_ENV,
     MONDO_TEST_DOC_ID_ENV,
+    CleanupPlan,
     invoke,
     invoke_json,
     playground_workspace_id,

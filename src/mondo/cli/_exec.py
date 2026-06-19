@@ -177,12 +177,10 @@ def poll_or_exit(
         interval_s = parse_duration(interval)
         timeout_s = parse_duration(timeout)
     except ValueError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
     try:
         return poll_until_jmespath(
             fetch, expression, interval_s=interval_s, timeout_s=timeout_s,
         )
     except ValueError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))

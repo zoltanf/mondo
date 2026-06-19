@@ -6,8 +6,6 @@ Runs *before* --query (JMESPath) so a typical pipeline is:
 """
 from __future__ import annotations
 
-import pytest
-
 from mondo.output.fields import apply_fields
 
 
