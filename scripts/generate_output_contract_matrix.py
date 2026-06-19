@@ -207,7 +207,7 @@ MANUAL_ROWS: dict[str, Row] = {
             "Emits monday's update_board payload directly. Legacy stringified JSON is parsed "
             "before emit; non-JSON scalars pass through unchanged."
         ),
-        source='_decode_json_string_payload(data.get("update_board"))',
+        source='decode_json_string_payload(data.get("update_board"))',
     ),
     "cache clear": Row(
         command="cache clear",

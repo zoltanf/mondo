@@ -57,6 +57,12 @@ from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.services.docs import (
+    last_block_id,
+    object_id_hint,
+    object_id_hint_with_client,
+    resolve_doc_id_from_object_id,
+)
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -196,17 +202,6 @@ def _fetch_doc_by_object_id_all_blocks(
         query=DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
         identity={"objs": [object_id]},
     )
-
-
-def _last_block_id(doc: dict[str, Any]) -> str | None:
-    blocks = doc.get("blocks") or []
-    if not blocks:
-        return None
-    last = blocks[-1]
-    if not isinstance(last, dict):
-        return None
-    last_id = last.get("id")
-    return str(last_id) if last_id else None
 
 
 # ----- read commands -----
@@ -608,7 +603,7 @@ def get_cmd(
                 resolved_doc_id = (
                     doc_id
                     if doc_id is not None
-                    else _resolve_doc_id_from_object_id(opts, client, object_id or 0)
+                    else resolve_doc_id_from_object_id(opts, client, object_id or 0)
                 )
             else:
                 resolved_doc_id = None
@@ -646,31 +641,6 @@ def get_cmd(
         return
     doc = normalize_doc_entry(doc)
     opts.emit(doc)
-
-
-def _resolve_doc_id_from_object_id(
-    opts: GlobalOpts, client: MondayClient, object_id: int
-) -> int | None:
-    """Map a URL-visible `object_id` to its internal `doc_id` via the docs
-    directory cache (auto-populated on miss). Returns None when the
-    object_id isn't visible — the caller falls back to a live fetch.
-    """
-    from mondo.cache.directory import get_docs as _cache_get_docs
-
-    target = str(object_id)
-    store = opts.build_cache_store("docs")
-    try:
-        cached = _cache_get_docs(client, store=store, refresh=False)
-    except MondoError:
-        return None
-    for entry in cached.entries:
-        if str(entry.get("object_id")) == target:
-            raw = entry.get("id")
-            try:
-                return int(raw) if raw is not None else None
-            except TypeError, ValueError:
-                return None
-    return None
 
 
 def _emit_doc_not_found(
@@ -714,44 +684,15 @@ def _emit_doc_not_found(
 _OBJECT_ID_HINT_EXIT_CODES = frozenset({1, 5, 6, 7})
 
 
-def _object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
-    """Probe whether a failing `--doc` id is actually a URL-visible object_id
-    (the id a human copies out of a `/docs/<id>` URL). Returns the targeted
-    hint when it resolves; never raises — the probe must not mask the
-    original error.
-    """
-    try:
-        result = client.execute(DOC_HEAD_BY_OBJECT_ID, {"objs": [doc_id]})
-        docs = (result.get("data") or {}).get("docs") or []
-    except Exception:
-        return None
-    if not docs:
-        return None
-    return (
-        f"hint: {doc_id} looks like a URL-visible object id, not an internal "
-        f"doc id — retry with --object-id {doc_id}"
-    )
-
-
 def _emit_doc_id_not_found(client: MondayClient, doc_id: int, *, probe: bool) -> None:
     """Standard `doc id=X not found.` line, plus the object-id retry hint
     when the id was user-supplied via `--doc` (`probe=True`)."""
     line = f"doc id={doc_id} not found."
     if probe:
-        hint = _object_id_hint_with_client(client, doc_id)
+        hint = object_id_hint_with_client(client, doc_id)
         if hint is not None:
             line = f"{line}\n{hint}"
     typer.secho(line, fg=typer.colors.RED, err=True)
-
-
-def _object_id_hint(opts: GlobalOpts, doc_id: int) -> str | None:
-    """`_object_id_hint_with_client` with a fresh short-lived client."""
-    try:
-        client = opts.build_client()
-        with client:
-            return _object_id_hint_with_client(client, doc_id)
-    except Exception:
-        return None
 
 
 def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | None) -> NoReturn:
@@ -762,7 +703,7 @@ def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | Non
     mutation-level 500 ("Fetcher response returned NON-OK status=500") —
     probe before giving up.
     """
-    hint = _object_id_hint(opts, doc_id) if doc_id is not None else None
+    hint = object_id_hint(opts, doc_id) if doc_id is not None else None
     handle_mondo_error_or_exit(ValidationError(err_line), human_suffix=hint)
 
 
@@ -802,7 +743,7 @@ def _resolve_doc_in_client(
     assert object_id is not None
     resolved: int | None = None
     if opts.resolve_cache_config().enabled:
-        resolved = _resolve_doc_id_from_object_id(opts, client, object_id)
+        resolved = resolve_doc_id_from_object_id(opts, client, object_id)
     if resolved is None:
         resolved = _resolve_object_id_live(client, object_id)
     if resolved is None:
@@ -842,7 +783,7 @@ def _execute_doc_command(
             except MondoError as e:
                 suffix = None
                 if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
-                    suffix = _object_id_hint_with_client(client, doc_id)
+                    suffix = object_id_hint_with_client(client, doc_id)
                 handle_mondo_error_or_exit(e, human_suffix=suffix)
             return (result.get("data") or {}), resolved
     except MondoError as e:
@@ -931,7 +872,7 @@ def add_block_cmd(
                 if existing_doc is None:
                     _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                     raise typer.Exit(code=6)
-                effective_after = _last_block_id(existing_doc)
+                effective_after = last_block_id(existing_doc)
             data = exec_or_exit(client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
@@ -993,7 +934,7 @@ def add_content_cmd(
             if existing_doc is None:
                 _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                 raise typer.Exit(code=6)
-            prev_id = _last_block_id(existing_doc)
+            prev_id = last_block_id(existing_doc)
             created = create_blocks(client, resolved_doc, blocks, after_block_id=prev_id)
     except MondoError as e:
         handle_mondo_error_or_exit(e)

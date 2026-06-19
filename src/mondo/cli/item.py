@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import sys
 from contextlib import nullcontext
 from enum import StrEnum
 from pathlib import Path
@@ -36,8 +34,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
-from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
-from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
+from mondo.cli._column_cache import invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -52,9 +49,21 @@ from mondo.cli._exec import (
     poll_or_exit,
     usage_error_or_exit,
 )
-from mondo.cli._resolve import resolve_by_filters, resolve_required_id
+from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.services.items import (
+    PositionRelative,
+    build_create_variables_for_row,
+    build_query_params,
+    can_slim_column_values,
+    fetch_column_defs,
+    parse_column_mapping,
+    parse_columns_csv,
+    read_batch_input,
+    resolve_item_target,
+    split_filter_expr,
+)
 from mondo.util.kvparse import parse_column_kv
 
 if TYPE_CHECKING:
@@ -64,11 +73,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-class PositionRelative(StrEnum):
-    before_at = "before_at"
-    after_at = "after_at"
 
 
 class OrderDir(StrEnum):
@@ -98,171 +102,6 @@ def _execute_create_item(
         handle_mondo_error_or_exit(e, human_suffix=column_value_hint or None)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
-
-
-def _split_filter_expr(expr: str) -> tuple[str, str, str]:
-    """Return ``(column_id, raw_value, operator)`` for a `--filter` expression."""
-    if "!=" in expr:
-        col, _, raw = expr.partition("!=")
-        return col.strip(), raw, "not_any_of"
-    if "=" in expr:
-        col, _, raw = expr.partition("=")
-        return col.strip(), raw, "any_of"
-    raise UsageError(f"invalid --filter {expr!r}: expected COL=VAL or COL!=VAL")
-
-
-def _build_filter_rule(
-    parsed: tuple[str, str, str],
-    column_defs: dict[str, dict[str, Any]],
-    board_id: int | None = None,
-) -> dict[str, Any]:
-    """Build one `items_page.query_params.rule` from a parsed `(col, raw, op)`.
-
-    Dispatches by column type so status / dropdown filters end up with the
-    integer indices / option ids monday actually accepts (sending labels
-    returns 0 results silently). Falls back to a raw string list when the
-    column id isn't on the board (server will raise `Column not found`) or
-    when the column type has no codec.
-    """
-    from mondo.columns import UnknownColumnTypeError, parse_filter_value
-
-    col, raw, operator = parsed
-    definition = column_defs.get(col)
-    if definition is None:
-        compare_value: list[Any] = [v.strip() for v in raw.split(",")]
-    else:
-        col_type = definition["type"]
-        settings = parse_settings(definition.get("settings_str"))
-        try:
-            compare_value = parse_filter_value(col_type, raw, settings)
-        except UnknownColumnTypeError:
-            compare_value = [v.strip() for v in raw.split(",")]
-        except ValueError as e:
-            board_hint = f"--board {board_id} " if board_id is not None else ""
-            raise UsageError(
-                f"--filter {col}={raw!r}: {e}. "
-                f"Run `mondo column labels {board_hint}--column {col}` "
-                f"for the canonical list."
-            ) from e
-    return {"column_id": col, "compare_value": compare_value, "operator": operator}
-
-
-def _fetch_column_defs(
-    opts: GlobalOpts,
-    client: MondayClient,
-    board_id: int,
-    *,
-    no_cache: bool = False,
-    refresh: bool = False,
-) -> dict[str, dict[str, Any]]:
-    """One-shot fetch of `{col_id: {type, settings_str, ...}}` for a board.
-
-    Reads from the per-board columns cache when enabled; falls back to a live
-    query otherwise. Silently returns `{}` when the board isn't visible — the
-    caller's codec dispatch will treat unknown columns as raw passthroughs,
-    mirroring the previous behavior when the API returned no boards.
-    """
-    try:
-        columns = fetch_board_columns(opts, client, board_id, no_cache=no_cache, refresh=refresh)
-    except NotFoundError:
-        return {}
-    return {c["id"]: c for c in columns}
-
-
-def _build_column_values(
-    opts: GlobalOpts,
-    client: MondayClient,
-    board_id: int,
-    pairs: list[str],
-    *,
-    raw_mode: bool,
-    create_labels: bool = False,
-    tag_cache: dict[str, int] | None = None,
-    column_defs: dict[str, dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Apply codecs to `--column K=V` pairs, using live board column types.
-
-    raw_mode=True disables codec dispatch (user's value used as-is after JSON
-    parse-or-passthrough). Raw mode also skips the preflight query.
-
-    `tag_cache` and `column_defs`, when provided, dedupe work across rows
-    in a batch: a 50-row batch tagging "urgent" issues one
-    `create_or_get_tag` instead of fifty, and `_fetch_column_defs` runs
-    once per batch instead of once per row.
-    """
-    from mondo.columns import UnknownColumnTypeError, parse_value
-
-    parsed_pairs = [parse_column_kv(p) for p in pairs]
-
-    if raw_mode:
-        return dict(parsed_pairs)
-
-    defs = column_defs if column_defs is not None else _fetch_column_defs(opts, client, board_id)
-    out: dict[str, Any] = {}
-    for col_id, raw_value in parsed_pairs:
-        definition = defs.get(col_id)
-        # dict/list/None mean the user passed a structured JSON payload (or an
-        # explicit "clear" signal) — honor it as raw. Bare scalars (int, float,
-        # bool) are valid codec shorthand (e.g. people: `42`, numbers: `5`) and
-        # must be stringified back so the codec sees them.
-        if definition is None or isinstance(raw_value, (dict, list)) or raw_value is None:
-            out[col_id] = raw_value
-            continue
-        col_type = definition["type"]
-        settings = parse_settings(definition.get("settings_str"))
-        str_value = raw_value if isinstance(raw_value, str) else json.dumps(raw_value)
-        if col_type == "tags":
-            str_value = resolve_tag_names_to_ids(client, board_id, str_value, cache=tag_cache)
-        try:
-            out[col_id] = parse_value(col_type, str_value, settings, create_labels=create_labels)
-        except UnknownColumnTypeError:
-            # Unfamiliar column type → don't translate, send raw
-            out[col_id] = raw_value
-        except ValueError as e:
-            raise ValueError(f"--column {col_id}={raw_value!r}: {e}") from e
-    return out
-
-
-def _parse_columns_csv(spec: str) -> list[str]:
-    """Split a `--columns col1,col2` spec; raise `UsageError` when empty."""
-    col_ids = [c.strip() for c in spec.split(",") if c.strip()]
-    if not col_ids:
-        raise UsageError("--columns expects a comma-separated list of column ids.")
-    return col_ids
-
-
-def _can_slim_column_values(opts: GlobalOpts) -> bool:
-    """True when `--fields` provably never reads `column_values`, so the
-    GraphQL query can drop it (~3x cheaper per page on big boards).
-
-    Only `--fields` is inspected. A `-q` JMESPath cannot prove this: it
-    can read fields inside predicates / sort keys yet still return whole
-    rows (e.g. `[?contains(name, 'x')]`), so any `-q` — alone or combined
-    with `--fields` (it runs first, against the raw rows) — keeps the
-    full selection.
-    """
-    if opts.query is not None or not opts.fields:
-        return False
-    keys = [k.strip() for k in opts.fields.split(",") if k.strip()]
-    return bool(keys) and all(k.split(".")[0] != "column_values" for k in keys)
-
-
-def _build_query_params(
-    parsed_filters: list[tuple[str, str, str]] | None,
-    order_by: str | None,
-    column_defs: dict[str, dict[str, Any]] | None = None,
-    board_id: int | None = None,
-) -> dict[str, Any] | None:
-    qp: dict[str, Any] = {}
-    if parsed_filters:
-        defs = column_defs or {}
-        qp["rules"] = [_build_filter_rule(f, defs, board_id=board_id) for f in parsed_filters]
-        qp["operator"] = "and"
-    if order_by:
-        # Syntax: "column_id" or "column_id,asc" / "column_id,desc"
-        col, _, direction = order_by.partition(",")
-        qp["order_by"] = [{"column_id": col.strip(), "direction": (direction or "asc").strip()}]
-    return qp or None
 
 
 # ----- read commands -----
@@ -346,7 +185,7 @@ def get_cmd(
     variables: dict[str, Any] = {"id": item_id}
     if columns_sel is not None:
         try:
-            variables["cols"] = _parse_columns_csv(columns_sel)
+            variables["cols"] = parse_columns_csv(columns_sel)
         except UsageError as e:
             usage_error_or_exit(str(e))
         query = ITEM_GET_WITH_COLUMNS
@@ -568,7 +407,7 @@ def _list_items_impl(
     parsed_filters: list[tuple[str, str, str]] = []
     if filter_expr:
         try:
-            parsed_filters = [_split_filter_expr(f) for f in filter_expr]
+            parsed_filters = [split_filter_expr(f) for f in filter_expr]
         except UsageError as e:
             usage_error_or_exit(str(e))
 
@@ -581,12 +420,12 @@ def _list_items_impl(
     slim = False
     if columns_sel is not None:
         try:
-            extra_vars = {"cols": _parse_columns_csv(columns_sel)}
+            extra_vars = {"cols": parse_columns_csv(columns_sel)}
         except UsageError as e:
             usage_error_or_exit(str(e))
         query_initial, query_next = build_items_page_queries(column_values="ids")
     else:
-        slim = poll_until is None and _can_slim_column_values(opts)
+        slim = poll_until is None and can_slim_column_values(opts)
         query_initial, query_next = build_items_page_queries(
             column_values="none" if slim else "full"
         )
@@ -643,14 +482,14 @@ def _list_items_impl(
             # indices/ids.
             column_defs: dict[str, dict[str, Any]] = {}
             if parsed_filters:
-                column_defs = _fetch_column_defs(
+                column_defs = fetch_column_defs(
                     opts,
                     client,
                     board_id,
                     no_cache=no_cache,
                     refresh=refresh_cache,
                 )
-            qp = _build_query_params(parsed_filters, order_by, column_defs, board_id=board_id)
+            qp = build_query_params(parsed_filters, order_by, column_defs, board_id=board_id)
 
             if opts.dry_run:
                 opts.emit(
@@ -731,79 +570,6 @@ def find_cmd(
 
 
 # ----- write commands -----
-
-
-def _build_create_variables_for_row(
-    opts: GlobalOpts,
-    client: MondayClient | None,
-    board_id: int,
-    row: dict[str, Any],
-    *,
-    raw_columns: bool,
-    create_labels_default: bool,
-    tag_cache: dict[str, int] | None = None,
-    column_defs: dict[str, dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Render one batch row into the `ITEM_CREATE` variable dict.
-
-    Reuses `_build_column_values` for codec dispatch — `client` is required
-    when codec preflight is needed (`raw_columns=False` and the row carries
-    `columns`). Raises `ValueError` (exit 5) for malformed column values
-    and `MondoError` for upstream codec failures.
-    """
-    raw_columns_field = row.get("columns") or []
-    if not isinstance(raw_columns_field, list):
-        raise ValueError(f"row {row.get('name', '?')!r}: 'columns' must be a list of K=V strings.")
-    create_labels = bool(row.get("create_labels", create_labels_default))
-    col_values: dict[str, Any] = {}
-    if raw_columns_field:
-        if raw_columns:
-            col_values = dict(parse_column_kv(p) for p in raw_columns_field)
-        else:
-            assert client is not None, "preflight requires a client"
-            col_values = _build_column_values(
-                opts,
-                client,
-                board_id,
-                list(raw_columns_field),
-                raw_mode=False,
-                create_labels=create_labels,
-                tag_cache=tag_cache,
-                column_defs=column_defs,
-            )
-    prm = row.get("position_relative_method")
-    if prm is not None:
-        prm = PositionRelative(prm).value
-    return {
-        "board": board_id,
-        "name": str(row["name"]),
-        "group": row.get("group_id"),
-        # monday's column_values wants a JSON-*string*, not a JSON object (§11.4).
-        "values": json.dumps(col_values) if col_values else None,
-        "create_labels": create_labels if create_labels else None,
-        "prm": prm,
-        "relto": row.get("relative_to"),
-    }
-
-
-def _read_batch_input(source: Path) -> list[dict[str, Any]]:
-    """Read the `--batch` source and validate it's a JSON array of objects
-    each carrying a `name`. Use `Path("-")` for stdin."""
-    text = sys.stdin.read() if str(source) == "-" else source.read_text(encoding="utf-8")
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise UsageError(f"--batch input is not valid JSON: {e}") from e
-    if not isinstance(parsed, list):
-        raise UsageError("--batch input must be a JSON array of objects.")
-    if not parsed:
-        raise UsageError("--batch input is an empty array — nothing to do.")
-    for i, row in enumerate(parsed):
-        if not isinstance(row, dict):
-            raise UsageError(f"--batch row {i}: expected object, got {type(row).__name__}.")
-        if not row.get("name"):
-            raise UsageError(f"--batch row {i}: missing required 'name' field.")
-    return parsed
 
 
 @app.command("create", epilog=epilog_for("item create"))
@@ -892,7 +658,7 @@ def create_cmd(
                 "settings into the JSON array."
             )
         try:
-            rows = _read_batch_input(batch)
+            rows = read_batch_input(batch)
         except UsageError as e:
             usage_error_or_exit(str(e))
         if chunk_size < 1:
@@ -935,7 +701,7 @@ def create_cmd(
     ctx_mgr: Any = client_for_preflight if client_for_preflight is not None else nullcontext()
     try:
         with ctx_mgr:
-            variables = _build_create_variables_for_row(
+            variables = build_create_variables_for_row(
                 opts,
                 client_for_preflight,
                 board_id,
@@ -995,7 +761,7 @@ def _run_batch(
         column_defs: dict[str, dict[str, Any]] | None = None
         tag_cache: dict[str, int] = {}
         if needs_preflight and client is not None:
-            column_defs = _fetch_column_defs(opts, client, board_id)
+            column_defs = fetch_column_defs(opts, client, board_id)
 
         ctx_mgr: Any = client if client is not None else nullcontext()
         per_row_vars: list[dict[str, Any]] = []
@@ -1003,7 +769,7 @@ def _run_batch(
             with ctx_mgr:
                 for row in rows:
                     per_row_vars.append(
-                        _build_create_variables_for_row(
+                        build_create_variables_for_row(
                             opts,
                             client,
                             board_id,
@@ -1074,38 +840,6 @@ def _run_batch(
         raise typer.Exit(code=1)
 
 
-def _resolve_item_target(
-    client: MondayClient,
-    board_id: int,
-    *,
-    item_id: int | None,
-    name_contains: str | None,
-    name_matches_re: str | None,
-    name_fuzzy: str | None,
-    first: bool,
-    fuzzy_threshold: int,
-) -> int:
-    """Pick a single item id for the mutation. The filter path streams
-    `items_page` live and matches client-side — it deliberately skips the
-    short-TTL board_items cache so name filters never resolve a mutation
-    target against stale rows."""
-    if item_id is not None and not (name_contains or name_matches_re or name_fuzzy):
-        return item_id
-    items = list(iter_items_page(client, board_id=board_id))
-    chosen = resolve_by_filters(
-        items,
-        explicit_id=item_id,
-        name_contains=name_contains,
-        name_matches_re=name_matches_re,
-        name_fuzzy=name_fuzzy,
-        first=first,
-        fuzzy_threshold=fuzzy_threshold,
-        key="name",
-        resource="item",
-    )
-    return int(chosen["id"])
-
-
 @app.command("rename", epilog=epilog_for("item rename"))
 def rename_cmd(
     ctx: typer.Context,
@@ -1144,7 +878,7 @@ def rename_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            resolved_item = _resolve_item_target(
+            resolved_item = resolve_item_target(
                 client,
                 board_id,
                 item_id=explicit_id,
@@ -1241,33 +975,6 @@ def move_cmd(
     opts.emit(data.get("move_item_to_group") or {})
 
 
-def _parse_column_mapping(tokens: list[str]) -> list[dict[str, Any]]:
-    """Parse `source[=target]` tokens into ColumnMappingInput dicts.
-
-    `src=dst` maps source column `src` to dest column `dst`.
-    `src=` (empty target) or bare `src` drops the column on the destination
-    (monday treats a null `target` as "don't carry this column over").
-    """
-    out: list[dict[str, Any]] = []
-    for tok in tokens:
-        raw = tok.strip()
-        if not raw:
-            continue
-        if "=" in raw:
-            src, _, tgt = raw.partition("=")
-            src = src.strip()
-            tgt = tgt.strip()
-        else:
-            src, tgt = raw, ""
-        if not src:
-            raise UsageError(
-                f"--column-mapping {tok!r}: source column id is required "
-                "(use 'src=dst' or 'src=' to drop)."
-            )
-        out.append({"source": src, "target": tgt or None})
-    return out
-
-
 @app.command("move-to-board", epilog=epilog_for("item move-to-board"))
 def move_to_board_cmd(
     ctx: typer.Context,
@@ -1303,8 +1010,8 @@ def move_to_board_cmd(
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     try:
-        columns = _parse_column_mapping(column_mapping or [])
-        subitem_columns = _parse_column_mapping(subitem_column_mapping or [])
+        columns = parse_column_mapping(column_mapping or [])
+        subitem_columns = parse_column_mapping(subitem_column_mapping or [])
     except UsageError as e:
         usage_error_or_exit(str(e))
     variables: dict[str, Any] = {
