@@ -36,4 +36,4 @@ jobs:
         run: uv run pytest -m "not integration and not eval"
 
       - name: Repo hygiene (no gitignored tracked files)
-        run: test -z "$(git ls-files -i --exclude-standard)"
+        run: test -z "$(git ls-files -i -c --exclude-standard)"
