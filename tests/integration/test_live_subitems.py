@@ -6,6 +6,7 @@ up — never touches the original 5 fixture items.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -169,6 +170,99 @@ def test_live_subitem_set_and_get_column_value(
         assert values.get(text_col_id) == text_value, f"text col={values.get(text_col_id)!r}"
 
     wait_for("subitem text column landed", _value_landed)
+
+
+@pytest.mark.integration
+def test_live_subitem_create_with_tags_codec_resolves_names(
+    pm_board_session: PmBoard, cleanup_plan: CleanupPlan
+) -> None:
+    """`subitem create --subitems-board --column <tags>=name` resolves the tag
+    name to an id via create_or_get_tag, matching `item create`.
+
+    Regression for the subitem path that previously skipped tag resolution:
+    a bare name hit the tags codec and exited 5. The successful create alone
+    proves the fix (the old path would have errored); the round-trip confirms
+    the resolved tag actually landed on the subitem.
+    """
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    parent_id = _scratch_parent(pm, cleanup_plan, suffix)
+
+    # Materialize the subitems board via a throwaway name-only subitem.
+    seed = invoke_json(
+        ["subitem", "create", "--parent", str(parent_id), "--name", f"E2E Seed {suffix}"]
+    )
+    seed_id = int(seed["id"])
+    cleanup_plan.add(f"subitem seed {seed_id}", "subitem", "delete", "--id", str(seed_id), "--hard")
+
+    sub_listing = wait_for(
+        "seed subitem listed",
+        lambda: invoke_json(["subitem", "list", "--parent", str(parent_id)]),
+    )
+    sub_board_id = None
+    for s in sub_listing:
+        if int(s["id"]) == seed_id:
+            sub_board_id = (s.get("board") or {}).get("id")
+            break
+    assert sub_board_id, "could not resolve subitems board id"
+
+    # Ensure a tags column exists on the subitems board (default boards have none).
+    sub_columns = invoke_json(["column", "list", "--board", str(sub_board_id)])
+    tags_col = next((c for c in sub_columns if c.get("type") == "tags"), None)
+    if tags_col is None:
+        created = invoke_json(
+            [
+                "column",
+                "create",
+                "--board",
+                str(sub_board_id),
+                "--title",
+                "E2E Sub Tags",
+                "--type",
+                "tags",
+                "--id",
+                "e2e_sub_tags",
+            ]
+        )
+        tags_col_id = created["id"]
+    else:
+        tags_col_id = tags_col["id"]
+
+    # The actual fix under test: a bare tag NAME on subitem create.
+    tag_name = f"E2ETag{suffix}"
+    sub = invoke_json(
+        [
+            "subitem",
+            "create",
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Sub Tags {suffix}",
+            "--subitems-board",
+            str(sub_board_id),
+            "--column",
+            f"{tags_col_id}={tag_name}",
+        ]
+    )
+    sub_id = int(sub["id"])
+    cleanup_plan.add(f"subitem tags {sub_id}", "subitem", "delete", "--id", str(sub_id), "--hard")
+
+    def _tag_landed() -> None:
+        got = invoke_json(["subitem", "get", "--id", str(sub_id)])
+        cv = {v["id"]: v for v in got.get("column_values") or []}
+        col = cv.get(tags_col_id)
+        assert col is not None, f"tags column {tags_col_id} missing: {list(cv)}"
+        text = col.get("text") or ""
+        ids: list[int] = []
+        raw_value = col.get("value")
+        if raw_value:
+            try:
+                ids = (json.loads(raw_value) or {}).get("tag_ids") or []
+            except json.JSONDecodeError, TypeError:
+                ids = []
+        assert tag_name in text or ids, f"tag not resolved: text={text!r} value={raw_value!r}"
+
+    wait_for("subitem tag column landed", _tag_landed)
 
 
 @pytest.mark.integration
