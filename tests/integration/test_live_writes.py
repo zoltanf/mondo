@@ -35,7 +35,9 @@ from .conftest import PmBoard
 runner = CliRunner()
 
 
-def _probe_board(board_id: int, *, workspace_id: int, folder_id: int, board_name: str) -> dict[str, Any]:
+def _probe_board(
+    board_id: int, *, workspace_id: int, folder_id: int, board_name: str
+) -> dict[str, Any]:
     result = invoke(["board", "get", "--id", str(board_id)], expect_exit=None)
     assert result.exit_code == 0, format_failure(["board", "get", "--id", str(board_id)], result)
     board = json_output(result)
@@ -47,7 +49,9 @@ def _probe_board(board_id: int, *, workspace_id: int, folder_id: int, board_name
 
 def _probe_group(board_id: int, group_id: str, group_name: str) -> list[dict[str, Any]]:
     result = invoke(["group", "list", "--board", str(board_id)], expect_exit=None)
-    assert result.exit_code == 0, format_failure(["group", "list", "--board", str(board_id)], result)
+    assert result.exit_code == 0, format_failure(
+        ["group", "list", "--board", str(board_id)], result
+    )
     groups = json_output(result)
     match = next((group for group in groups if group["id"] == group_id), None)
     assert match is not None, f"group {group_id} not visible on board {board_id}"
@@ -57,7 +61,9 @@ def _probe_group(board_id: int, group_id: str, group_name: str) -> list[dict[str
 
 def _probe_columns(board_id: int, expected: dict[str, str]) -> list[dict[str, Any]]:
     result = invoke(["column", "list", "--board", str(board_id)], expect_exit=None)
-    assert result.exit_code == 0, format_failure(["column", "list", "--board", str(board_id)], result)
+    assert result.exit_code == 0, format_failure(
+        ["column", "list", "--board", str(board_id)], result
+    )
     columns = json_output(result)
     by_id = {column["id"]: column for column in columns}
     for column_id, column_type in expected.items():
@@ -248,14 +254,10 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
         ),
     )
 
-    rendered_text = invoke_json(
-        ["column", "get", "--item", str(item_id), "--column", "e2e_text"]
-    )
+    rendered_text = invoke_json(["column", "get", "--item", str(item_id), "--column", "e2e_text"])
     assert rendered_text == text_value
 
-    rendered_note = invoke_json(
-        ["column", "get", "--item", str(item_id), "--column", "e2e_note"]
-    )
+    rendered_note = invoke_json(["column", "get", "--item", str(item_id), "--column", "e2e_note"])
     assert rendered_note == note_value
 
 
@@ -269,9 +271,7 @@ def test_live_cli_writes_folder_board_group_columns_and_item(
 
 
 @pytest.mark.integration
-def test_live_name_selectors_and_first(
-    live_test_board_id: int, cleanup_plan: CleanupPlan
-) -> None:
+def test_live_name_selectors_and_first(live_test_board_id: int, cleanup_plan: CleanupPlan) -> None:
     """Phase 3.1 — --name-contains / --name-fuzzy / --first on group rename + update."""
     suffix = uuid.uuid4().hex[:8]
     # Two titles that share the suffix-prefix `<suffix>-Alpha` — `Alphabet`
@@ -288,8 +288,14 @@ def test_live_name_selectors_and_first(
     )
     alpha_id = alpha["id"]
     cleanup_plan.add(
-        f"group {alpha_title}", "group", "delete", "--board",
-        str(live_test_board_id), "--id", alpha_id, "--hard",
+        f"group {alpha_title}",
+        "group",
+        "delete",
+        "--board",
+        str(live_test_board_id),
+        "--id",
+        alpha_id,
+        "--hard",
     )
 
     alphabet = invoke_json(
@@ -297,8 +303,14 @@ def test_live_name_selectors_and_first(
     )
     alphabet_id = alphabet["id"]
     cleanup_plan.add(
-        f"group {alphabet_title}", "group", "delete", "--board",
-        str(live_test_board_id), "--id", alphabet_id, "--hard",
+        f"group {alphabet_title}",
+        "group",
+        "delete",
+        "--board",
+        str(live_test_board_id),
+        "--id",
+        alphabet_id,
+        "--hard",
     )
 
     def _both_groups_visible() -> list[dict[str, Any]]:
@@ -312,10 +324,14 @@ def test_live_name_selectors_and_first(
     # Ambiguous filter without --first should exit 2 (UsageError).
     ambiguous = invoke(
         [
-            "group", "rename",
-            "--board", str(live_test_board_id),
-            "--name-contains", common_needle,
-            "--title", renamed_title,
+            "group",
+            "rename",
+            "--board",
+            str(live_test_board_id),
+            "--name-contains",
+            common_needle,
+            "--title",
+            renamed_title,
         ],
         expect_exit=None,
     )
@@ -324,11 +340,15 @@ def test_live_name_selectors_and_first(
     # Same filter + --first picks one of them deterministically (lowest position).
     invoke_json(
         [
-            "group", "rename",
-            "--board", str(live_test_board_id),
-            "--name-contains", common_needle,
+            "group",
+            "rename",
+            "--board",
+            str(live_test_board_id),
+            "--name-contains",
+            common_needle,
             "--first",
-            "--title", renamed_title,
+            "--title",
+            renamed_title,
         ]
     )
 
@@ -350,11 +370,16 @@ def test_live_name_selectors_and_first(
     needle = "Allphabet" if untouched_title == alphabet_title else "Allpha"
     invoke_json(
         [
-            "group", "update",
-            "--board", str(live_test_board_id),
-            "--name-fuzzy", f"{suffix}-{needle}",
-            "--attribute", "title",
-            "--value", fuzzy_renamed_title,
+            "group",
+            "update",
+            "--board",
+            str(live_test_board_id),
+            "--name-fuzzy",
+            f"{suffix}-{needle}",
+            "--attribute",
+            "title",
+            "--value",
+            fuzzy_renamed_title,
         ]
     )
 
@@ -379,18 +404,18 @@ def test_live_item_create_batch_success(
     assert groups, "test board has no groups"
     target_group_id = groups[0]["id"]
 
-    rows = [
-        {"name": f"E2E Batch {suffix} #{i}", "group_id": target_group_id}
-        for i in range(3)
-    ]
+    rows = [{"name": f"E2E Batch {suffix} #{i}", "group_id": target_group_id} for i in range(3)]
     batch_path = tmp_path / "batch_ok.json"
     batch_path.write_text(json.dumps(rows), encoding="utf-8")
 
     envelope = invoke_json(
         [
-            "item", "create",
-            "--board", str(live_test_board_id),
-            "--batch", str(batch_path),
+            "item",
+            "create",
+            "--board",
+            str(live_test_board_id),
+            "--batch",
+            str(batch_path),
         ]
     )
 
@@ -405,7 +430,11 @@ def test_live_item_create_batch_success(
         item_id_str = str(result["id"])
         cleanup_plan.add(
             f"batch item {result['name']}",
-            "item", "delete", "--id", item_id_str, "--hard",
+            "item",
+            "delete",
+            "--id",
+            item_id_str,
+            "--hard",
         )
 
     sample_id = int(envelope["results"][0]["id"])
@@ -445,9 +474,12 @@ def test_live_item_create_batch_partial_failure(
 
     result = invoke(
         [
-            "item", "create",
-            "--board", str(live_test_board_id),
-            "--batch", str(batch_path),
+            "item",
+            "create",
+            "--board",
+            str(live_test_board_id),
+            "--batch",
+            str(batch_path),
         ],
         expect_exit=None,
     )
@@ -470,7 +502,11 @@ def test_live_item_create_batch_partial_failure(
     # Clean up the row that did land.
     cleanup_plan.add(
         f"batch ok item {ok_results[0]['name']}",
-        "item", "delete", "--id", str(ok_results[0]["id"]), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(ok_results[0]["id"]),
+        "--hard",
     )
 
 
@@ -492,24 +528,35 @@ def test_live_item_create_with_people_column_shorthand(
 
     created = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--name", item_name,
-            "--column", f"{pm.column_ids['person']}={pm.person_id}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--name",
+            item_name,
+            "--column",
+            f"{pm.column_ids['person']}={pm.person_id}",
         ]
     )
     item_id = int(created["id"])
     cleanup_plan.add(
         f"item #4 codec {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
 
     def _person_set() -> None:
         raw = invoke_json(
             [
-                "column", "get",
-                "--item", str(item_id),
-                "--column", pm.column_ids["person"],
+                "column",
+                "get",
+                "--item",
+                str(item_id),
+                "--column",
+                pm.column_ids["person"],
                 "--raw",
             ]
         )
@@ -561,9 +608,7 @@ def test_live_json_error_envelope_for_server_errors(live_test_board_id: int) -> 
         (e for e in parsed_envelopes if "exit_code" in e and "error" in e),
         None,
     )
-    assert envelope is not None, (
-        f"no Phase 5.1 envelope on stderr; got: {stderr_text!r}"
-    )
+    assert envelope is not None, f"no Phase 5.1 envelope on stderr; got: {stderr_text!r}"
 
     allowed_keys = {"error", "code", "exit_code", "request_id", "retry_in_seconds", "suggestion"}
     assert set(envelope.keys()) <= allowed_keys, f"unexpected keys: {envelope}"
@@ -584,9 +629,12 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
     """
     doc = invoke_json(
         [
-            "doc", "get",
-            "--object-id", str(live_test_doc_id),
-            "--format", "json",
+            "doc",
+            "get",
+            "--object-id",
+            str(live_test_doc_id),
+            "--format",
+            "json",
         ]
     )
     assert "id" in doc and "object_id" in doc, doc
@@ -605,8 +653,10 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
 
     md_result = invoke(
         [
-            "doc", "export-markdown",
-            "--doc", str(int(doc["id"])),
+            "doc",
+            "export-markdown",
+            "--doc",
+            str(int(doc["id"])),
         ]
     )
     assert md_result.stdout.strip(), "export-markdown produced no output"
@@ -620,16 +670,16 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
     assert needle, "doc name is too short to derive a search needle"
     listing = invoke_json(
         [
-            "doc", "list",
+            "doc",
+            "list",
             "--no-cache",
-            "--workspace", str(workspace_id),
-            "--name-contains", needle,
+            "--workspace",
+            str(workspace_id),
+            "--name-contains",
+            needle,
         ]
     )
-    matched = [
-        entry for entry in listing
-        if int(entry.get("object_id", 0)) == live_test_doc_id
-    ]
+    matched = [entry for entry in listing if int(entry.get("object_id", 0)) == live_test_doc_id]
     assert matched, f"prepared doc not found by name-contains {needle!r}: {listing}"
 
 
@@ -650,9 +700,12 @@ def test_live_doc_export_markdown_object_id(live_test_doc_id: int) -> None:
 
     both = invoke(
         [
-            "doc", "export-markdown",
-            "--doc", str(live_test_doc_id),
-            "--object-id", str(live_test_doc_id),
+            "doc",
+            "export-markdown",
+            "--doc",
+            str(live_test_doc_id),
+            "--object-id",
+            str(live_test_doc_id),
         ],
         expect_exit=2,
     )
@@ -669,40 +722,51 @@ def test_live_doc_create_add_blocks_delete(
 
     created = invoke_json(
         [
-            "doc", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", doc_name,
+            "doc",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            doc_name,
         ]
     )
     assert created.get("id"), created
     doc_id = int(created["id"])
     cleanup_plan.add(
         f"doc {doc_name}",
-        "doc", "delete", "--doc", str(doc_id),
+        "doc",
+        "delete",
+        "--doc",
+        str(doc_id),
     )
 
     block_content = json.dumps({"deltaFormat": [{"insert": "hello from e2e"}]})
     invoke_json(
         [
-            "doc", "add-block",
-            "--doc", str(doc_id),
-            "--type", "normal_text",
-            "--content", block_content,
+            "doc",
+            "add-block",
+            "--doc",
+            str(doc_id),
+            "--type",
+            "normal_text",
+            "--content",
+            block_content,
         ]
     )
 
     invoke(
         [
-            "doc", "add-content",
-            "--doc", str(doc_id),
-            "--markdown", "## E2E Heading\n\n- e2e bullet 1\n- e2e bullet 2\n",
+            "doc",
+            "add-content",
+            "--doc",
+            str(doc_id),
+            "--markdown",
+            "## E2E Heading\n\n- e2e bullet 1\n- e2e bullet 2\n",
         ]
     )
 
     def _blocks_landed() -> list[dict[str, Any]]:
-        fetched = invoke_json(
-            ["doc", "get", "--id", str(doc_id), "--format", "json"]
-        )
+        fetched = invoke_json(["doc", "get", "--id", str(doc_id), "--format", "json"])
         blocks = fetched.get("blocks") or []
         # Monday's read API normalises types to space-separated form
         # (`normal text`) even though the create mutation accepts both
@@ -726,10 +790,14 @@ def test_live_board_and_doc_create_with_url(
 
     board = invoke_json(
         [
-            "board", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", f"E2E WithUrl Board {suffix}",
-            "--kind", "private",
+            "board",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            f"E2E WithUrl Board {suffix}",
+            "--kind",
+            "private",
             "--empty",
             "--with-url",
         ]
@@ -741,9 +809,12 @@ def test_live_board_and_doc_create_with_url(
 
     doc = invoke_json(
         [
-            "doc", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", f"E2E WithUrl Doc {suffix}",
+            "doc",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            f"E2E WithUrl Doc {suffix}",
             "--with-url",
         ]
     )

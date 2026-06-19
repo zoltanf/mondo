@@ -49,9 +49,7 @@ def build_aliased_mutation(template: str, count: int) -> tuple[str, list[str]]:
         raise ValueError("count must be >= 1")
     m = _HEADER_RE.match(template.strip())
     if not m:
-        raise ValueError(
-            "template must be a single `mutation (...) { ... }` document"
-        )
+        raise ValueError("template must be a single `mutation (...) { ... }` document")
     var_decls = _VAR_DECL_RE.findall(m.group("vars"))
     if not var_decls:
         raise ValueError("template has no $variables")

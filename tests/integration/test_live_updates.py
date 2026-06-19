@@ -17,16 +17,24 @@ from .conftest import PmBoard
 def _scratch_item(pm: PmBoard, cleanup_plan: CleanupPlan, suffix: str) -> int:
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", f"E2E Update Item {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            f"E2E Update Item {suffix}",
         ]
     )
     item_id = int(item["id"])
     cleanup_plan.add(
         f"update item {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
     return item_id
 
@@ -54,9 +62,12 @@ def test_live_update_create_reply_edit_delete(
     top_body = f"e2e top-level marker {suffix}"
     top = invoke_json(
         [
-            "update", "create",
-            "--item", str(item_id),
-            "--body", top_body,
+            "update",
+            "create",
+            "--item",
+            str(item_id),
+            "--body",
+            top_body,
         ]
     )
     top_id = int(top["id"])
@@ -64,9 +75,12 @@ def test_live_update_create_reply_edit_delete(
     reply_original = f"e2e reply original {suffix}"
     reply = invoke_json(
         [
-            "update", "reply",
-            "--parent", str(top_id),
-            "--body", reply_original,
+            "update",
+            "reply",
+            "--parent",
+            str(top_id),
+            "--body",
+            reply_original,
         ]
     )
     reply_id = int(reply["id"])
@@ -82,8 +96,11 @@ def test_live_update_create_reply_edit_delete(
     reply_edited = f"e2e reply EDITED {suffix}"
     invoke_json(
         [
-            "update", "edit", str(reply_id),
-            "--body", reply_edited,
+            "update",
+            "edit",
+            str(reply_id),
+            "--body",
+            reply_edited,
         ]
     )
 
@@ -118,9 +135,12 @@ def test_live_update_pin_and_like_lifecycle(
     body = f"e2e pin/like marker {suffix}"
     posted = invoke_json(
         [
-            "update", "create",
-            "--item", str(item_id),
-            "--body", body,
+            "update",
+            "create",
+            "--item",
+            str(item_id),
+            "--body",
+            body,
         ]
     )
     update_id = int(posted["id"])

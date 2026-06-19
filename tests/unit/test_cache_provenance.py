@@ -37,7 +37,15 @@ def _cached(*, from_cache: bool, age_seconds: int = 90) -> CachedDirectory:
 class TestFormatAge:
     @pytest.mark.parametrize(
         "seconds, expected",
-        [(0, "0s"), (45, "45s"), (60, "1m"), (3599, "59m"), (3600, "1h"), (86400, "1d"), (86400 * 3, "3d")],
+        [
+            (0, "0s"),
+            (45, "45s"),
+            (60, "1m"),
+            (3599, "59m"),
+            (3600, "1h"),
+            (86400, "1d"),
+            (86400 * 3, "3d"),
+        ],
     )
     def test_compact_format(self, seconds: int, expected: str) -> None:
         assert _format_age(seconds) == expected
@@ -51,25 +59,19 @@ class TestEmitCacheProvenance:
         # covered by TestBenignNoticeGating below.
         monkeypatch.setenv("MONDO_VERBOSE", "1")
 
-    def test_emits_when_from_cache(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_emits_when_from_cache(self, capsys: pytest.CaptureFixture[str]) -> None:
         emit_cache_provenance(_opts(), _cached(from_cache=True))
         captured = capsys.readouterr()
         assert "cache: hit" in captured.err
         assert "entity=boards" in captured.err
         assert "count=2" in captured.err
 
-    def test_silent_when_freshly_fetched(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_silent_when_freshly_fetched(self, capsys: pytest.CaptureFixture[str]) -> None:
         emit_cache_provenance(_opts(), _cached(from_cache=False))
         captured = capsys.readouterr()
         assert captured.err == ""
 
-    def test_silent_in_table_mode(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_silent_in_table_mode(self, capsys: pytest.CaptureFixture[str]) -> None:
         emit_cache_provenance(_opts(output="table"), _cached(from_cache=True))
         captured = capsys.readouterr()
         assert captured.err == ""
@@ -97,9 +99,7 @@ class TestEmitCacheProvenance:
             api_endpoint="https://api.monday.com/v2",
             ttl_seconds=900,
         )
-        emit_cache_provenance(
-            _opts(), _cached(from_cache=True), store=store, explain=True
-        )
+        emit_cache_provenance(_opts(), _cached(from_cache=True), store=store, explain=True)
         captured = capsys.readouterr()
         assert "cache: hit" in captured.err
         assert "ttl=900s" in captured.err
@@ -126,9 +126,7 @@ class TestEmitCacheProvenance:
         captured = capsys.readouterr()
         assert "cache: hit" in captured.err
 
-    def test_compact_form_is_one_line(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_compact_form_is_one_line(self, capsys: pytest.CaptureFixture[str]) -> None:
         emit_cache_provenance(_opts(), _cached(from_cache=True))
         captured = capsys.readouterr()
         assert captured.err.count("\n") == 1
@@ -152,9 +150,7 @@ class TestBenignNoticeGating:
         monkeypatch.setattr("sys.stderr.isatty", lambda: False)
         monkeypatch.delenv("MONDO_VERBOSE", raising=False)
 
-    def test_suppressed_when_stderr_not_a_tty(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_suppressed_when_stderr_not_a_tty(self, capsys: pytest.CaptureFixture[str]) -> None:
         emit_cache_provenance(_opts(), _cached(from_cache=True))
         assert capsys.readouterr().err == ""
 
@@ -167,9 +163,7 @@ class TestBenignNoticeGating:
         emit_cache_provenance(_opts(), _cached(from_cache=True))
         assert "cache: hit" in capsys.readouterr().err
 
-    def test_verbose_flag_restores_notice(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_verbose_flag_restores_notice(self, capsys: pytest.CaptureFixture[str]) -> None:
         opts = _opts()
         opts.verbose = True
         emit_cache_provenance(opts, _cached(from_cache=True))
@@ -184,9 +178,7 @@ class TestBenignNoticeGating:
             api_endpoint="https://api.monday.com/v2",
             ttl_seconds=900,
         )
-        emit_cache_provenance(
-            _opts(), _cached(from_cache=True), store=store, explain=True
-        )
+        emit_cache_provenance(_opts(), _cached(from_cache=True), store=store, explain=True)
         assert "cache: hit" in capsys.readouterr().err
 
 

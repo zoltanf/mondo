@@ -351,9 +351,7 @@ def append_cmd(
             _board_id, raw_value = _fetch_doc_column_value(client, item_id, column_id)
             object_ids = extract_doc_ids_from_column_value(raw_value)
             if not object_ids:
-                usage_error_or_exit(
-                    "doc column is empty. Use `mondo column doc set` first."
-                )
+                usage_error_or_exit("doc column is empty. Use `mondo column doc set` first.")
             doc = _fetch_doc_blocks(client, object_ids[0])
             doc_id = doc.get("id")
             if not doc_id:
@@ -434,9 +432,7 @@ def _read_markdown_source(inline: str | None, path: Path | None, from_stdin: boo
     if count == 0:
         usage_error_or_exit("provide --markdown, --from-file, or --from-stdin.")
     if count > 1:
-        usage_error_or_exit(
-            "--markdown, --from-file, and --from-stdin are mutually exclusive."
-        )
+        usage_error_or_exit("--markdown, --from-file, and --from-stdin are mutually exclusive.")
     if path is not None:
         return path.read_text()
     if from_stdin:

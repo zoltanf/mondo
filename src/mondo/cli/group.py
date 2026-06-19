@@ -387,9 +387,7 @@ def reorder_cmd(
     sources = [after, before, position]
     provided = [s for s in sources if s is not None]
     if len(provided) != 1:
-        usage_error_or_exit(
-            "provide exactly one of --after, --before, or --position."
-        )
+        usage_error_or_exit("provide exactly one of --after, --before, or --position.")
     if after is not None:
         attribute = GroupAttribute.relative_position_after.value
         value = after

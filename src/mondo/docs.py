@@ -342,11 +342,7 @@ def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
         parent = b.get("parent_block_id")
         # Treat as root when: no parent set, parent missing from this list
         # (orphan — render at top so we don't silently drop), or self-cycle.
-        if (
-            parent is None
-            or str(parent) == str(bid)
-            or str(parent) not in by_id
-        ):
+        if parent is None or str(parent) == str(bid) or str(parent) not in by_id:
             roots.append(b)
         else:
             children_of.setdefault(str(parent), []).append(b)

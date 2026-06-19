@@ -9,14 +9,13 @@ cleanly. Projection itself is client-side, but `item list` also inspects
 the spec up front and drops `column_values` from its GraphQL request when
 no key reads them (see `_can_slim_column_values` in mondo.cli.item).
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 
-def _project_one(
-    record: dict[str, Any], split_keys: list[tuple[str, list[str]]]
-) -> dict[str, Any]:
+def _project_one(record: dict[str, Any], split_keys: list[tuple[str, list[str]]]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, parts in split_keys:
         if len(parts) == 1:
@@ -48,10 +47,7 @@ def apply_fields(data: Any, spec: str | None) -> Any:
     # Pre-split dotted keys once so a list of N rows doesn't re-split per row.
     split_keys = [(k, k.split(".")) for k in keys]
     if isinstance(data, list):
-        return [
-            _project_one(item, split_keys) if isinstance(item, dict) else item
-            for item in data
-        ]
+        return [_project_one(item, split_keys) if isinstance(item, dict) else item for item in data]
     if isinstance(data, dict):
         return _project_one(data, split_keys)
     return data

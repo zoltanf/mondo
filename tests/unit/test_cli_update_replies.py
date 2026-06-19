@@ -5,6 +5,7 @@ fetch `updates { replies { ... } }` because they didn't realise the
 top-level get returned replies. This locks in default-on behavior so a
 future query trim doesn't silently drop replies again.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,6 +34,7 @@ def test_update_get_query_selects_replies() -> None:
     This is the contract: agents shouldn't have to remember a --with-replies
     flag."""
     from mondo.api.queries import UPDATE_GET
+
     assert "replies" in UPDATE_GET
     # Each reply must carry enough to be useful (id, body, creator).
     assert "replies { id body" in UPDATE_GET
@@ -44,26 +46,36 @@ def test_update_get_output_includes_replies_array(httpx_mock: HTTPXMock) -> None
         url=ENDPOINT,
         method="POST",
         json={
-            "data": {"updates": [{
-                "id": "555",
-                "body": "<p>Top-level</p>",
-                "text_body": "Top-level",
-                "creator": {"id": "1", "name": "Alice"},
-                "item_id": "999",
-                "created_at": "2026-05-18T10:00:00Z",
-                "updated_at": "2026-05-18T10:00:00Z",
-                "replies": [
-                    {"id": "556", "body": "First reply",
-                     "creator": {"id": "2", "name": "Bob"},
-                     "created_at": "2026-05-18T11:00:00Z"},
-                    {"id": "557", "body": "Second reply",
-                     "creator": {"id": "3", "name": "Carol"},
-                     "created_at": "2026-05-18T12:00:00Z"},
-                ],
-                "assets": [],
-                "likes": [],
-                "pinned_to_top": [],
-            }]},
+            "data": {
+                "updates": [
+                    {
+                        "id": "555",
+                        "body": "<p>Top-level</p>",
+                        "text_body": "Top-level",
+                        "creator": {"id": "1", "name": "Alice"},
+                        "item_id": "999",
+                        "created_at": "2026-05-18T10:00:00Z",
+                        "updated_at": "2026-05-18T10:00:00Z",
+                        "replies": [
+                            {
+                                "id": "556",
+                                "body": "First reply",
+                                "creator": {"id": "2", "name": "Bob"},
+                                "created_at": "2026-05-18T11:00:00Z",
+                            },
+                            {
+                                "id": "557",
+                                "body": "Second reply",
+                                "creator": {"id": "3", "name": "Carol"},
+                                "created_at": "2026-05-18T12:00:00Z",
+                            },
+                        ],
+                        "assets": [],
+                        "likes": [],
+                        "pinned_to_top": [],
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
@@ -82,26 +94,36 @@ def test_update_get_query_replies_via_jmespath(httpx_mock: HTTPXMock) -> None:
         url=ENDPOINT,
         method="POST",
         json={
-            "data": {"updates": [{
-                "id": "555",
-                "body": "p",
-                "text_body": "p",
-                "creator": {"id": "1", "name": "A"},
-                "item_id": "999",
-                "created_at": "2026-05-18T10:00:00Z",
-                "updated_at": "2026-05-18T10:00:00Z",
-                "replies": [
-                    {"id": "556", "body": "r",
-                     "creator": {"id": "2", "name": "B"},
-                     "created_at": "2026-05-18T11:00:00Z"},
-                ],
-                "assets": [], "likes": [], "pinned_to_top": [],
-            }]},
+            "data": {
+                "updates": [
+                    {
+                        "id": "555",
+                        "body": "p",
+                        "text_body": "p",
+                        "creator": {"id": "1", "name": "A"},
+                        "item_id": "999",
+                        "created_at": "2026-05-18T10:00:00Z",
+                        "updated_at": "2026-05-18T10:00:00Z",
+                        "replies": [
+                            {
+                                "id": "556",
+                                "body": "r",
+                                "creator": {"id": "2", "name": "B"},
+                                "created_at": "2026-05-18T11:00:00Z",
+                            },
+                        ],
+                        "assets": [],
+                        "likes": [],
+                        "pinned_to_top": [],
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
     result = runner.invoke(
-        app, ["-q", "replies", "-o", "json", "update", "get", "--id", "555"],
+        app,
+        ["-q", "replies", "-o", "json", "update", "get", "--id", "555"],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)

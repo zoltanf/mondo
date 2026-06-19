@@ -45,17 +45,27 @@ def test_live_board_duplicate_with_structure_only(
 
     duplicated = invoke_json(
         [
-            "board", "duplicate", str(pm.board_id),
-            "--type", "duplicate_board_with_structure",
-            "--name", f"E2E Dup Structure {suffix}",
-            "--workspace", str(pm.workspace_id),
-            "--folder", str(pm.folder_id),
+            "board",
+            "duplicate",
+            str(pm.board_id),
+            "--type",
+            "duplicate_board_with_structure",
+            "--name",
+            f"E2E Dup Structure {suffix}",
+            "--workspace",
+            str(pm.workspace_id),
+            "--folder",
+            str(pm.folder_id),
         ]
     )
     new_board_id = _board_id_from_duplicate(duplicated)
     cleanup_plan.add(
         f"dup-structure {new_board_id}",
-        "board", "delete", "--id", str(new_board_id), "--hard",
+        "board",
+        "delete",
+        "--id",
+        str(new_board_id),
+        "--hard",
     )
 
     _wait_for_board_get(new_board_id)
@@ -71,7 +81,9 @@ def test_live_board_duplicate_with_structure_only(
     new_groups = invoke_json(["group", "list", "--board", str(new_board_id)])
     src_g_titles = sorted(g["title"] for g in src_groups)
     new_g_titles = sorted(g["title"] for g in new_groups)
-    assert src_g_titles == new_g_titles, f"group titles mismatch: src={src_g_titles}, new={new_g_titles}"
+    assert src_g_titles == new_g_titles, (
+        f"group titles mismatch: src={src_g_titles}, new={new_g_titles}"
+    )
 
     # Zero items.
     new_items = invoke_json(["item", "list", "--board", str(new_board_id)])
@@ -88,18 +100,28 @@ def test_live_board_duplicate_with_pulses(
 
     duplicated = invoke_json(
         [
-            "board", "duplicate", str(pm.board_id),
-            "--type", "duplicate_board_with_pulses",
-            "--name", f"E2E Dup Pulses {suffix}",
-            "--workspace", str(pm.workspace_id),
-            "--folder", str(pm.folder_id),
+            "board",
+            "duplicate",
+            str(pm.board_id),
+            "--type",
+            "duplicate_board_with_pulses",
+            "--name",
+            f"E2E Dup Pulses {suffix}",
+            "--workspace",
+            str(pm.workspace_id),
+            "--folder",
+            str(pm.folder_id),
             "--wait",
         ]
     )
     new_board_id = _board_id_from_duplicate(duplicated)
     cleanup_plan.add(
         f"dup-pulses {new_board_id}",
-        "board", "delete", "--id", str(new_board_id), "--hard",
+        "board",
+        "delete",
+        "--id",
+        str(new_board_id),
+        "--hard",
     )
 
     def _items_landed() -> list[dict[str, Any]]:
@@ -127,41 +149,62 @@ def test_live_board_duplicate_with_pulses_and_updates(
     scratch_name = f"E2E Dup Update Source {suffix}"
     scratch = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", scratch_name,
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            scratch_name,
         ]
     )
     scratch_id = int(scratch["id"])
     cleanup_plan.add(
         f"scratch item {scratch_id}",
-        "item", "delete", "--id", str(scratch_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(scratch_id),
+        "--hard",
     )
 
     update_body = f"E2E duplicated update marker {suffix}"
     invoke_json(
         [
-            "update", "create",
-            "--item", str(scratch_id),
-            "--body", update_body,
+            "update",
+            "create",
+            "--item",
+            str(scratch_id),
+            "--body",
+            update_body,
         ]
     )
 
     duplicated = invoke_json(
         [
-            "board", "duplicate", str(pm.board_id),
-            "--type", "duplicate_board_with_pulses_and_updates",
-            "--name", f"E2E Dup Full {suffix}",
-            "--workspace", str(pm.workspace_id),
-            "--folder", str(pm.folder_id),
+            "board",
+            "duplicate",
+            str(pm.board_id),
+            "--type",
+            "duplicate_board_with_pulses_and_updates",
+            "--name",
+            f"E2E Dup Full {suffix}",
+            "--workspace",
+            str(pm.workspace_id),
+            "--folder",
+            str(pm.folder_id),
             "--wait",
         ]
     )
     new_board_id = _board_id_from_duplicate(duplicated)
     cleanup_plan.add(
         f"dup-full {new_board_id}",
-        "board", "delete", "--id", str(new_board_id), "--hard",
+        "board",
+        "delete",
+        "--id",
+        str(new_board_id),
+        "--hard",
     )
 
     def _scratch_clone_visible() -> int:
@@ -174,12 +217,11 @@ def test_live_board_duplicate_with_pulses_and_updates(
 
     def _updates_landed() -> list[dict[str, Any]]:
         ups = invoke_json(["update", "list", "--item", str(cloned_item_id)])
-        bodies = [
-            (u.get("text_body") or "") + str(u.get("body") or "")
-            for u in ups
-        ]
+        bodies = [(u.get("text_body") or "") + str(u.get("body") or "") for u in ups]
         joined = "\n".join(bodies)
-        assert update_body in joined, f"duplicate missing update body on cloned item: {joined[:300]}"
+        assert update_body in joined, (
+            f"duplicate missing update body on cloned item: {joined[:300]}"
+        )
         return ups
 
     wait_for("duplicate carries updates", _updates_landed)
@@ -195,44 +237,67 @@ def test_live_board_move_between_folders(
 
     folder_a = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(pm.workspace_id),
-            "--name", f"E2E Move A {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(pm.workspace_id),
+            "--name",
+            f"E2E Move A {suffix}",
         ]
     )
     folder_a_id = int(folder_a["id"])
     cleanup_plan.add(
         f"folder A {folder_a_id}",
-        "folder", "delete", "--id", str(folder_a_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(folder_a_id),
+        "--hard",
     )
 
     folder_b = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(pm.workspace_id),
-            "--name", f"E2E Move B {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(pm.workspace_id),
+            "--name",
+            f"E2E Move B {suffix}",
         ]
     )
     folder_b_id = int(folder_b["id"])
     cleanup_plan.add(
         f"folder B {folder_b_id}",
-        "folder", "delete", "--id", str(folder_b_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(folder_b_id),
+        "--hard",
     )
 
     board = invoke_json(
         [
-            "board", "create",
-            "--workspace", str(pm.workspace_id),
-            "--folder", str(folder_a_id),
-            "--name", f"E2E Mover {suffix}",
-            "--kind", "private",
+            "board",
+            "create",
+            "--workspace",
+            str(pm.workspace_id),
+            "--folder",
+            str(folder_a_id),
+            "--name",
+            f"E2E Mover {suffix}",
+            "--kind",
+            "private",
             "--empty",
         ]
     )
     board_id = int(board["id"])
     cleanup_plan.add(
         f"mover board {board_id}",
-        "board", "delete", "--id", str(board_id), "--hard",
+        "board",
+        "delete",
+        "--id",
+        str(board_id),
+        "--hard",
     )
 
     def _board_in_folder(expected_folder_id: int) -> dict[str, Any]:
@@ -245,8 +310,11 @@ def test_live_board_move_between_folders(
 
     invoke_json(
         [
-            "board", "move", str(board_id),
-            "--folder", str(folder_b_id),
+            "board",
+            "move",
+            str(board_id),
+            "--folder",
+            str(folder_b_id),
         ]
     )
 

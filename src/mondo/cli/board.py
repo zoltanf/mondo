@@ -133,16 +133,14 @@ def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
     boards = data.get("boards") or []
     if not boards:
         handle_mondo_error_or_exit(
-            MondoError(
-                f"source board {board_id} not found (cannot resolve workspace)."
-            )
+            MondoError(f"source board {board_id} not found (cannot resolve workspace).")
         )
     ws = boards[0].get("workspace_id")
     if ws in (None, ""):
         return None
     try:
         return int(ws)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -399,9 +397,7 @@ def list_cmd(
 
     opts.emit(
         boards,
-        selected_fields=board_list_fields(
-            with_item_counts=with_item_counts, with_tags=with_tags
-        ),
+        selected_fields=board_list_fields(with_item_counts=with_item_counts, with_tags=with_tags),
     )
 
 
@@ -583,9 +579,7 @@ def get_cmd(
     # `--poll-until` (caller wants live observation), plus any user-driven
     # `--no-cache`. Cache disabled in config also lands here.
     cfg = opts.resolve_cache_config()
-    bypass_cache = (
-        not cfg.enabled or no_cache or with_views or poll_until is not None
-    )
+    bypass_cache = not cfg.enabled or no_cache or with_views or poll_until is not None
 
     def _fetch_once() -> dict[str, Any] | None:
         data = execute(opts, query, {"id": board_id})
@@ -615,9 +609,7 @@ def get_cmd(
                 cached = get_board_details(
                     client, store=store, board_id=board_id, refresh=refresh_cache
                 )
-                emit_cache_provenance(
-                    opts, cached, store=store, explain=explain_cache
-                )
+                emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                 board = cached.entries[0] if cached.entries else None
                 if board is not None and _projection_wants_items_count(opts):
                     items_count = _fetch_items_count(client, board_id)
@@ -671,7 +663,7 @@ def _fetch_items_count(client: Any, board_id: int) -> int | None:
     raw = boards[0].get("items_count")
     try:
         return int(raw) if raw is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -947,19 +939,16 @@ def duplicate_cmd(
         dup_id_raw = board_payload.get("id")
         if dup_id_raw is None:
             handle_mondo_error_or_exit(
-                MondoError(
-                    "duplicate_board returned no board id — cannot poll for completion."
-                )
+                MondoError("duplicate_board returned no board id — cannot poll for completion.")
             )
         try:
             dup_id = int(dup_id_raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             handle_mondo_error_or_exit(
-                MondoError(
-                    f"duplicate_board returned non-integer id {dup_id_raw!r}."
-                )
+                MondoError(f"duplicate_board returned non-integer id {dup_id_raw!r}.")
             )
         from mondo.util.duration import parse_duration
+
         try:
             timeout_s = parse_duration(timeout)
             poll_interval_s = parse_duration(poll_interval)
@@ -1014,5 +1003,5 @@ def _items_count_or_none(opts: GlobalOpts, board_id: int) -> int | None:
         return None
     try:
         return int(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

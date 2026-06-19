@@ -159,9 +159,7 @@ def get_cmd(
             explain_cache=explain_cache,
         )
         if entry is None:
-            handle_mondo_error_or_exit(
-                NotFoundError(f"tag {tag_id} not found in account.")
-            )
+            handle_mondo_error_or_exit(NotFoundError(f"tag {tag_id} not found in account."))
         opts.emit(entry)
         return
 

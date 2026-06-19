@@ -51,11 +51,7 @@ def _folder_entry(
         "created_at": "2024-01-01T00:00:00Z",
         "owner_id": "10",
         "workspace": {"id": workspace_id, "name": workspace_name},
-        "parent": (
-            {"id": parent_id, "name": parent_name}
-            if parent_id is not None
-            else None
-        ),
+        "parent": ({"id": parent_id, "name": parent_name} if parent_id is not None else None),
     }
 
 
@@ -219,9 +215,7 @@ class TestFolderListCache:
             },
         ]
 
-    def test_cold_then_warm_cache(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_cold_then_warm_cache(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         """First call fetches from API and writes cache; second call is served from cache."""
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
@@ -251,32 +245,30 @@ class TestFolderListCache:
         prime_requests = len(httpx_mock.get_requests())
 
         # --no-cache must hit the API again.
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=self._folder_response([])
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._folder_response([]))
         result = runner.invoke(app, ["folder", "list", "--no-cache"])
         assert result.exit_code == 0, result.stdout
         assert len(httpx_mock.get_requests()) == prime_requests + 1
 
-    def test_refresh_cache_forces_refetch(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_refresh_cache_forces_refetch(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         """--refresh-cache discards stale cache and re-fetches."""
         # Prime with stale content.
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=self._folder_response([
-                {
-                    "id": "1",
-                    "name": "Stale",
-                    "color": None,
-                    "created_at": None,
-                    "owner_id": None,
-                    "workspace": None,
-                    "parent": None,
-                }
-            ]),
+            json=self._folder_response(
+                [
+                    {
+                        "id": "1",
+                        "name": "Stale",
+                        "color": None,
+                        "created_at": None,
+                        "owner_id": None,
+                        "workspace": None,
+                        "parent": None,
+                    }
+                ]
+            ),
         )
         runner.invoke(app, ["folder", "list"])
         prime_requests = len(httpx_mock.get_requests())
@@ -285,17 +277,19 @@ class TestFolderListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=self._folder_response([
-                {
-                    "id": "9",
-                    "name": "Fresh",
-                    "color": None,
-                    "created_at": None,
-                    "owner_id": None,
-                    "workspace": None,
-                    "parent": None,
-                }
-            ]),
+            json=self._folder_response(
+                [
+                    {
+                        "id": "9",
+                        "name": "Fresh",
+                        "color": None,
+                        "created_at": None,
+                        "owner_id": None,
+                        "workspace": None,
+                        "parent": None,
+                    }
+                ]
+            ),
         )
         result = runner.invoke(app, ["folder", "list", "--refresh-cache"])
         assert result.exit_code == 0, result.stdout
@@ -303,15 +297,11 @@ class TestFolderListCache:
         assert len(httpx_mock.get_requests()) == prime_requests + 1
 
     def test_no_cache_and_refresh_cache_mutually_exclusive(self) -> None:
-        result = runner.invoke(
-            app, ["folder", "list", "--no-cache", "--refresh-cache"]
-        )
+        result = runner.invoke(app, ["folder", "list", "--no-cache", "--refresh-cache"])
         assert result.exit_code == 2
         assert "mutually exclusive" in (result.stderr or result.stdout).lower()
 
-    def test_workspace_filter_applies_client_side(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_workspace_filter_applies_client_side(self, httpx_mock: HTTPXMock) -> None:
         """--workspace filters cache entries client-side without a new API call."""
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
@@ -321,9 +311,7 @@ class TestFolderListCache:
         parsed = json.loads(result.stdout)
         assert [f["id"] for f in parsed] == ["1"]
 
-    def test_workspace_filter_type_coercion(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_workspace_filter_type_coercion(self, httpx_mock: HTTPXMock) -> None:
         """workspace_id stored as string in cache still matches int --workspace arg."""
         # normalize_folder_entry stores workspace_id as the raw value from GraphQL
         # (a string like "42"). The --workspace flag is int. Both are compared as
@@ -349,9 +337,7 @@ class TestFolderListCache:
         parsed = json.loads(result.stdout)
         assert [f["id"] for f in parsed] == ["10"]
 
-    def test_max_items_truncates_cache_results(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_max_items_truncates_cache_results(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
         )
@@ -360,9 +346,7 @@ class TestFolderListCache:
         parsed = json.loads(result.stdout)
         assert len(parsed) == 1
 
-    def test_emitted_entries_have_flat_columns(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_emitted_entries_have_flat_columns(self, httpx_mock: HTTPXMock) -> None:
         """Entries must have flat workspace_id/name and parent_id/name, not nested dicts."""
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=self._folder_response(self._sample_folders())
@@ -463,7 +447,9 @@ class TestFolderTree:
         assert "Main Workspace" not in output
         assert "[42] Marketing" not in output
 
-    def test_tree_no_cache_forces_live_fetch(self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_tree_no_cache_forces_live_fetch(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """--no-cache bypasses cache and hits the API directly."""
         monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
         # Prime the cache with first response.
@@ -477,17 +463,19 @@ class TestFolderTree:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=self._folder_response([
-                {
-                    "id": "99",
-                    "name": "Live Only",
-                    "color": None,
-                    "created_at": None,
-                    "owner_id": None,
-                    "workspace": {"id": "1", "name": "WS1"},
-                    "parent": None,
-                }
-            ]),
+            json=self._folder_response(
+                [
+                    {
+                        "id": "99",
+                        "name": "Live Only",
+                        "color": None,
+                        "created_at": None,
+                        "owner_id": None,
+                        "workspace": {"id": "1", "name": "WS1"},
+                        "parent": None,
+                    }
+                ]
+            ),
         )
         result = runner.invoke(app, ["--output", "table", "folder", "tree", "--no-cache"])
         assert result.exit_code == 0, result.stdout
@@ -523,15 +511,11 @@ class TestFolderTree:
 
     def test_tree_empty_folders(self, httpx_mock: HTTPXMock) -> None:
         """Empty folder list → empty string (table) or [] (JSON)."""
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=self._folder_response([])
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._folder_response([]))
         result_table = runner.invoke(app, ["--output", "table", "folder", "tree"])
         assert result_table.exit_code == 0, result_table.stdout
 
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=self._folder_response([])
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._folder_response([]))
         result_json = runner.invoke(app, ["-o", "json", "folder", "tree"])
         assert result_json.exit_code == 0, result_json.stdout
         assert json.loads(result_json.stdout) == []

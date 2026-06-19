@@ -118,7 +118,6 @@ def poll_until_jmespath(
             return result
         if now() >= deadline:
             raise WaitTimeoutError(
-                f"--poll-until expression {expression!r} stayed falsy "
-                f"after {timeout_s:.1f}s"
+                f"--poll-until expression {expression!r} stayed falsy after {timeout_s:.1f}s"
             )
         sleep(interval_s)

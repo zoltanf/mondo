@@ -7,6 +7,7 @@ either silent 0-row responses or a terse error. We now error fast with
 the known labels and a pointer to `mondo column labels --board X --column
 status` so the agent can recover in one step.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,20 +39,24 @@ def _stub_columns(httpx_mock: HTTPXMock) -> None:
         url=ENDPOINT,
         method="POST",
         json={
-            "data": {"boards": [{
-                "id": "42",
-                "columns": [
+            "data": {
+                "boards": [
                     {
-                        "id": "status",
-                        "title": "Status",
-                        "type": "status",
-                        "settings_str": json.dumps({
-                            "labels": {"0": "Done", "1": "Working on it", "2": "Stuck"}
-                        }),
-                        "archived": False,
-                    },
-                ],
-            }]},
+                        "id": "42",
+                        "columns": [
+                            {
+                                "id": "status",
+                                "title": "Status",
+                                "type": "status",
+                                "settings_str": json.dumps(
+                                    {"labels": {"0": "Done", "1": "Working on it", "2": "Stuck"}}
+                                ),
+                                "archived": False,
+                            },
+                        ],
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
         is_optional=True,

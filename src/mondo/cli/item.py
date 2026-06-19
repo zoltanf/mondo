@@ -163,9 +163,7 @@ def _fetch_column_defs(
     mirroring the previous behavior when the API returned no boards.
     """
     try:
-        columns = fetch_board_columns(
-            opts, client, board_id, no_cache=no_cache, refresh=refresh
-        )
+        columns = fetch_board_columns(opts, client, board_id, no_cache=no_cache, refresh=refresh)
     except NotFoundError:
         return {}
     return {c["id"]: c for c in columns}
@@ -395,12 +393,8 @@ def get_cmd(
         store = opts.build_cache_store("items", scope=str(item_id))
         try:
             with client:
-                cached = get_item(
-                    client, store=store, item_id=item_id, refresh=refresh_cache
-                )
-                emit_cache_provenance(
-                    opts, cached, store=store, explain=explain_cache
-                )
+                cached = get_item(client, store=store, item_id=item_id, refresh=refresh_cache)
+                emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                 item = cached.entries[0] if cached.entries else None
         except NotFoundError:
             item = None
@@ -549,15 +543,11 @@ def _list_items_impl(
     # both commands return identical shapes.
     if parent_id is not None:
         if columns_sel is not None:
-            usage_error_or_exit(
-                "--columns is not supported with --parent (subitem listing)."
-            )
+            usage_error_or_exit("--columns is not supported with --parent (subitem listing).")
         data = execute(opts, SUBITEMS_LIST, {"parent": parent_id})
         items = data.get("items") or []
         if not items:
-            handle_mondo_error_or_exit(
-                NotFoundError(f"parent item {parent_id} not found.")
-            )
+            handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
         opts.emit(items[0].get("subitems") or [])
         return
 
@@ -624,11 +614,7 @@ def _list_items_impl(
             or (group_id is not None and "," in group_id)
         ),
     )
-    store = (
-        opts.build_cache_store("board_items", scope=str(board_id))
-        if prefs.use_cache
-        else None
-    )
+    store = opts.build_cache_store("board_items", scope=str(board_id)) if prefs.use_cache else None
     if store is not None and not refresh_cache:
         cached = store.read()
         if cached is not None:
@@ -638,9 +624,7 @@ def _list_items_impl(
             emit_cache_provenance(opts, cached, store=store)
             items = cached.entries
             if group_id is not None:
-                items = [
-                    it for it in items if (it.get("group") or {}).get("id") == group_id
-                ]
+                items = [it for it in items if (it.get("group") or {}).get("id") == group_id]
             if max_items is not None:
                 items = items[:max_items]
             opts.emit(items, selected_fields=item_list_fields())
@@ -648,10 +632,7 @@ def _list_items_impl(
     # Only the full-board, full-shape result may be written back — a group
     # slice, a max-items prefix, or a slimmed selection would poison the
     # cache for the next full reader.
-    cache_writable = (
-        store is not None and group_id is None and max_items is None and not slim
-    )
-
+    cache_writable = store is not None and group_id is None and max_items is None and not slim
 
     try:
         client = opts.build_client()
@@ -663,8 +644,11 @@ def _list_items_impl(
             column_defs: dict[str, dict[str, Any]] = {}
             if parsed_filters:
                 column_defs = _fetch_column_defs(
-                    opts, client, board_id,
-                    no_cache=no_cache, refresh=refresh_cache,
+                    opts,
+                    client,
+                    board_id,
+                    no_cache=no_cache,
+                    refresh=refresh_cache,
                 )
             qp = _build_query_params(parsed_filters, order_by, column_defs, board_id=board_id)
 
@@ -725,9 +709,7 @@ def find_cmd(
         None, metavar="[BOARD_ID]", help="Board ID (positional)."
     ),
     board_flag: int | None = typer.Option(None, "--board", help="Board ID (flag form)."),
-    column_id: str = typer.Option(
-        ..., "--column", help="Column ID to match on (e.g. 'status')."
-    ),
+    column_id: str = typer.Option(..., "--column", help="Column ID to match on (e.g. 'status')."),
     value: str = typer.Option(
         ..., "--value", help="Column value to match (label, index #N, or CSV)."
     ),
@@ -771,9 +753,7 @@ def _build_create_variables_for_row(
     """
     raw_columns_field = row.get("columns") or []
     if not isinstance(raw_columns_field, list):
-        raise ValueError(
-            f"row {row.get('name', '?')!r}: 'columns' must be a list of K=V strings."
-        )
+        raise ValueError(f"row {row.get('name', '?')!r}: 'columns' must be a list of K=V strings.")
     create_labels = bool(row.get("create_labels", create_labels_default))
     col_values: dict[str, Any] = {}
     if raw_columns_field:
@@ -899,8 +879,11 @@ def create_cmd(
 
     if batch is not None:
         single_item_flags = (
-            name is not None or group_id is not None or columns
-            or position_relative_method is not None or relative_to is not None
+            name is not None
+            or group_id is not None
+            or columns
+            or position_relative_method is not None
+            or relative_to is not None
         )
         if single_item_flags:
             usage_error_or_exit(
@@ -926,9 +909,7 @@ def create_cmd(
         return
 
     if not name:
-        usage_error_or_exit(
-            "--name is required (or pass --batch <path|-> for bulk)."
-        )
+        usage_error_or_exit("--name is required (or pass --batch <path|-> for bulk).")
 
     # Build the ITEM_CREATE variables via the same helper that the batch path
     # uses, so any future addition to the create shape lands in one place.
@@ -967,9 +948,7 @@ def create_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    col_ids = (
-        ", ".join(parse_column_kv(p)[0] for p in columns) if columns else ""
-    )
+    col_ids = ", ".join(parse_column_kv(p)[0] for p in columns) if columns else ""
     data = _execute_create_item(
         opts,
         ITEM_CREATE,
@@ -1066,13 +1045,9 @@ def _run_batch(
                     for i, vars_row in enumerate(vars_chunk):
                         for name_ in var_names:
                             flat[f"{name_}_{i}"] = vars_row[name_]
-                    response = client.execute(
-                        query, variables=flat, surface_partial_errors=True
-                    )
+                    response = client.execute(query, variables=flat, surface_partial_errors=True)
                     base = chunk_idx * chunk_size
-                    results.extend(
-                        parse_aliased_response(response, row_chunk, base_index=base)
-                    )
+                    results.extend(parse_aliased_response(response, row_chunk, base_index=base))
         except ValueError as e:
             handle_mondo_error_or_exit(ValidationError(str(e)))
     except MondoError as e:
@@ -1164,9 +1139,7 @@ def rename_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     explicit_id: int | None
     if id_pos is not None and id_flag is not None and id_pos != id_flag:
-        raise typer.BadParameter(
-            "pass the item ID as a positional argument or via --id, not both."
-        )
+        raise typer.BadParameter("pass the item ID as a positional argument or via --id, not both.")
     explicit_id = id_pos if id_pos is not None else id_flag
     client = client_or_exit(opts)
     try:

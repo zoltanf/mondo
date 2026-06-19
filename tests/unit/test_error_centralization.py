@@ -28,9 +28,7 @@ def _is_red_err_print(node: ast.stmt) -> bool:
     if not (isinstance(func, ast.Attribute) and func.attr in {"secho", "echo"}):
         return False
     has_err = any(
-        kw.arg == "err"
-        and isinstance(kw.value, ast.Constant)
-        and kw.value.value is True
+        kw.arg == "err" and isinstance(kw.value, ast.Constant) and kw.value.value is True
         for kw in node.value.keywords
     )
     is_red = any(

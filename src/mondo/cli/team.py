@@ -63,9 +63,7 @@ def list_cmd(
     fuzzy_score_flag: bool = typer.Option(
         False, "--fuzzy-score", help="Include `_fuzzy_score` field; sort by score desc."
     ),
-    max_items: int | None = typer.Option(
-        None, "--max-items", help="Stop after this many teams."
-    ),
+    max_items: int | None = typer.Option(None, "--max-items", help="Stop after this many teams."),
     no_cache: bool = typer.Option(
         False, "--no-cache", help="Skip the local directory cache; fetch live."
     ),

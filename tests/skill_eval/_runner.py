@@ -146,13 +146,17 @@ def run_skill_eval_via_claude(
     addendum = _build_system_prompt_addendum(skill_corpus)
     cmd = [
         CLAUDE_BIN,
-        "-p", user_prompt,
-        "--output-format", "stream-json",
+        "-p",
+        user_prompt,
+        "--output-format",
+        "stream-json",
         "--verbose",
         "--dangerously-skip-permissions",
         "--no-session-persistence",
-        "--model", model,
-        "--append-system-prompt", addendum,
+        "--model",
+        model,
+        "--append-system-prompt",
+        addendum,
     ]
     try:
         proc = subprocess.run(

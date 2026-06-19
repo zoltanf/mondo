@@ -547,6 +547,7 @@ mutation ($block: String!) {
 
 # --- workspace docs (3e) — distinct from the `doc` column type ---
 
+
 def build_docs_list_query(
     *,
     ids: list[int] | None = None,
@@ -934,6 +935,7 @@ query (
 
 
 # --- folders (3h) ---
+
 
 def build_folders_list_query(
     *,
@@ -1345,11 +1347,7 @@ _BOARD_GET_DEFAULT_FIELDS = (
 
 
 def _build_board_get_query(*fields: str) -> str:
-    return (
-        "query ($id: ID!) {\n"
-        f"  boards(ids: [$id]) {{\n    {' '.join(fields)}\n  }}\n"
-        "}"
-    )
+    return f"query ($id: ID!) {{\n  boards(ids: [$id]) {{\n    {' '.join(fields)}\n  }}\n}}"
 
 
 BOARD_GET = _build_board_get_query(*_BOARD_GET_DEFAULT_FIELDS)

@@ -7,6 +7,7 @@ hits Click's default fuzzy-only suggestion which says "Did you mean
 'duplicate'?" — actively misleading because the user wants 'update create'
 from a different namespace.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,9 +46,7 @@ def test_unknown_subcommand_lists_siblings_under_item() -> None:
     combined = (result.output or "") + (result.stderr or "")
     # All of these are real `item` subcommands.
     for sibling in ("create", "delete", "list", "get", "duplicate", "find"):
-        assert sibling in combined, (
-            f"missing item-sibling {sibling!r}: {combined}"
-        )
+        assert sibling in combined, f"missing item-sibling {sibling!r}: {combined}"
 
 
 def test_unknown_subcommand_under_column() -> None:
@@ -56,9 +55,7 @@ def test_unknown_subcommand_under_column() -> None:
     assert result.exit_code != 0
     combined = (result.output or "") + (result.stderr or "")
     for sibling in ("list", "get", "set"):
-        assert sibling in combined, (
-            f"missing column-sibling {sibling!r}: {combined}"
-        )
+        assert sibling in combined, f"missing column-sibling {sibling!r}: {combined}"
 
 
 def test_unknown_subcommand_keeps_fuzzy_hint_when_close() -> None:

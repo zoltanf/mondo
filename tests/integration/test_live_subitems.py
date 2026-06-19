@@ -19,29 +19,33 @@ from ._helpers import (
 from .conftest import PmBoard
 
 
-def _scratch_parent(
-    pm: PmBoard, cleanup_plan: CleanupPlan, suffix: str
-) -> int:
+def _scratch_parent(pm: PmBoard, cleanup_plan: CleanupPlan, suffix: str) -> int:
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", f"E2E Subitem Parent {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            f"E2E Subitem Parent {suffix}",
         ]
     )
     item_id = int(item["id"])
     cleanup_plan.add(
         f"subitem parent {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
     return item_id
 
 
 @pytest.mark.integration
-def test_live_subitem_create_and_list(
-    pm_board_session: PmBoard, cleanup_plan: CleanupPlan
-) -> None:
+def test_live_subitem_create_and_list(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
     """Create 3 subitems on a fresh parent; assert they list back."""
     pm = pm_board_session
     suffix = uuid.uuid4().hex[:8]
@@ -51,16 +55,23 @@ def test_live_subitem_create_and_list(
     for i in range(3):
         sub = invoke_json(
             [
-                "subitem", "create",
-                "--parent", str(parent_id),
-                "--name", f"E2E Sub {suffix} #{i}",
+                "subitem",
+                "create",
+                "--parent",
+                str(parent_id),
+                "--name",
+                f"E2E Sub {suffix} #{i}",
             ]
         )
         sub_id = int(sub["id"])
         created_ids.append(sub_id)
         cleanup_plan.add(
             f"subitem {sub_id}",
-            "subitem", "delete", "--id", str(sub_id), "--hard",
+            "subitem",
+            "delete",
+            "--id",
+            str(sub_id),
+            "--hard",
         )
 
     def _all_visible() -> list[dict[str, Any]]:
@@ -84,14 +95,22 @@ def test_live_subitem_set_and_get_column_value(
 
     sub = invoke_json(
         [
-            "subitem", "create",
-            "--parent", str(parent_id),
-            "--name", f"E2E Sub Col {suffix}",
+            "subitem",
+            "create",
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Sub Col {suffix}",
         ]
     )
     sub_id = int(sub["id"])
     cleanup_plan.add(
-        f"sub col {sub_id}", "subitem", "delete", "--id", str(sub_id), "--hard",
+        f"sub col {sub_id}",
+        "subitem",
+        "delete",
+        "--id",
+        str(sub_id),
+        "--hard",
     )
 
     # Subitems live on a separate auto-generated board with its own column ids.
@@ -114,11 +133,16 @@ def test_live_subitem_set_and_get_column_value(
         # column so we have somewhere to write.
         created = invoke_json(
             [
-                "column", "create",
-                "--board", str(sub_board_id),
-                "--title", "E2E Sub Text",
-                "--type", "text",
-                "--id", "e2e_sub_text",
+                "column",
+                "create",
+                "--board",
+                str(sub_board_id),
+                "--title",
+                "E2E Sub Text",
+                "--type",
+                "text",
+                "--id",
+                "e2e_sub_text",
             ]
         )
         text_col_id = created["id"]
@@ -128,10 +152,14 @@ def test_live_subitem_set_and_get_column_value(
     text_value = f"e2e text {suffix}"
     invoke_json(
         [
-            "column", "set",
-            "--item", str(sub_id),
-            "--column", text_col_id,
-            "--value", text_value,
+            "column",
+            "set",
+            "--item",
+            str(sub_id),
+            "--column",
+            text_col_id,
+            "--value",
+            text_value,
         ]
     )
 
@@ -144,9 +172,7 @@ def test_live_subitem_set_and_get_column_value(
 
 
 @pytest.mark.integration
-def test_live_subitem_delete_hard(
-    pm_board_session: PmBoard, cleanup_plan: CleanupPlan
-) -> None:
+def test_live_subitem_delete_hard(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
     """`subitem delete --hard` removes the subitem from the parent's listing."""
     pm = pm_board_session
     suffix = uuid.uuid4().hex[:8]
@@ -154,9 +180,12 @@ def test_live_subitem_delete_hard(
 
     sub = invoke_json(
         [
-            "subitem", "create",
-            "--parent", str(parent_id),
-            "--name", f"E2E Sub Delete {suffix}",
+            "subitem",
+            "create",
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Sub Delete {suffix}",
         ]
     )
     sub_id = int(sub["id"])

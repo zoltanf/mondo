@@ -1,5 +1,6 @@
 """poll_until_jmespath: re-call a fetcher until a JMESPath expression
 evaluates truthy against its result, or timeout."""
+
 from __future__ import annotations
 
 import pytest

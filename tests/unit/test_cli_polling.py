@@ -1,6 +1,7 @@
 """--poll-until on item list / item get / board get re-fetches until the
 JMESPath expression evaluates truthy, then emits the final payload.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,14 +29,18 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _item_response(state: str) -> dict:
     return {
-        "data": {"items": [{
-            "id": "987",
-            "name": "Probe",
-            "state": state,
-            "url": "https://example.monday.com/boards/1/pulses/987",
-            "group": {"id": "g1", "title": "T"},
-            "column_values": [],
-        }]},
+        "data": {
+            "items": [
+                {
+                    "id": "987",
+                    "name": "Probe",
+                    "state": state,
+                    "url": "https://example.monday.com/boards/1/pulses/987",
+                    "group": {"id": "g1", "title": "T"},
+                    "column_values": [],
+                }
+            ]
+        },
         "extensions": {"request_id": "r"},
     }
 
@@ -45,10 +50,20 @@ def test_item_get_poll_until_short_circuits_when_already_truthy(httpx_mock: HTTP
     httpx_mock.add_response(url=ENDPOINT, method="POST", json=_item_response("active"))
     result = runner.invoke(
         app,
-        ["-o", "json", "item", "get", "--id", "987",
-         "--poll-until", "state == 'active'",
-         "--poll-interval", "100ms",
-         "--poll-timeout", "5s"],
+        [
+            "-o",
+            "json",
+            "item",
+            "get",
+            "--id",
+            "987",
+            "--poll-until",
+            "state == 'active'",
+            "--poll-interval",
+            "100ms",
+            "--poll-timeout",
+            "5s",
+        ],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -62,10 +77,20 @@ def test_item_get_poll_until_polls_until_truthy(httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_item_response(state))
     result = runner.invoke(
         app,
-        ["-o", "json", "item", "get", "--id", "987",
-         "--poll-until", "state == 'active'",
-         "--poll-interval", "0s",
-         "--poll-timeout", "10s"],
+        [
+            "-o",
+            "json",
+            "item",
+            "get",
+            "--id",
+            "987",
+            "--poll-until",
+            "state == 'active'",
+            "--poll-interval",
+            "0s",
+            "--poll-timeout",
+            "10s",
+        ],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -79,15 +104,27 @@ def test_item_get_poll_until_timeout_exits_nonzero(httpx_mock: HTTPXMock) -> Non
     # all are consumed); use is_optional to satisfy the unused-response check.
     for _ in range(20):
         httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_item_response("inactive"),
+            url=ENDPOINT,
+            method="POST",
+            json=_item_response("inactive"),
             is_optional=True,
         )
     result = runner.invoke(
         app,
-        ["-o", "json", "item", "get", "--id", "987",
-         "--poll-until", "state == 'active'",
-         "--poll-interval", "0s",
-         "--poll-timeout", "0s"],  # immediate timeout
+        [
+            "-o",
+            "json",
+            "item",
+            "get",
+            "--id",
+            "987",
+            "--poll-until",
+            "state == 'active'",
+            "--poll-interval",
+            "0s",
+            "--poll-timeout",
+            "0s",
+        ],  # immediate timeout
     )
     assert result.exit_code != 0, result.output
 
@@ -103,33 +140,78 @@ def test_item_get_without_poll_runs_once(httpx_mock: HTTPXMock) -> None:
 def test_item_list_poll_until_waits_for_n_items(httpx_mock: HTTPXMock) -> None:
     """item list --poll-until 'length(@) >= `2`' waits for at least 2 items."""
     httpx_mock.add_response(
-        url=ENDPOINT, method="POST",
+        url=ENDPOINT,
+        method="POST",
         json={
-            "data": {"boards": [{"items_page": {"cursor": None, "items": [
-                {"id": "1", "name": "A", "state": "active",
-                 "group": {"id": "g1", "title": "T"}, "column_values": []},
-            ]}}]},
+            "data": {
+                "boards": [
+                    {
+                        "items_page": {
+                            "cursor": None,
+                            "items": [
+                                {
+                                    "id": "1",
+                                    "name": "A",
+                                    "state": "active",
+                                    "group": {"id": "g1", "title": "T"},
+                                    "column_values": [],
+                                },
+                            ],
+                        }
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
     httpx_mock.add_response(
-        url=ENDPOINT, method="POST",
+        url=ENDPOINT,
+        method="POST",
         json={
-            "data": {"boards": [{"items_page": {"cursor": None, "items": [
-                {"id": "1", "name": "A", "state": "active",
-                 "group": {"id": "g1", "title": "T"}, "column_values": []},
-                {"id": "2", "name": "B", "state": "active",
-                 "group": {"id": "g1", "title": "T"}, "column_values": []},
-            ]}}]},
+            "data": {
+                "boards": [
+                    {
+                        "items_page": {
+                            "cursor": None,
+                            "items": [
+                                {
+                                    "id": "1",
+                                    "name": "A",
+                                    "state": "active",
+                                    "group": {"id": "g1", "title": "T"},
+                                    "column_values": [],
+                                },
+                                {
+                                    "id": "2",
+                                    "name": "B",
+                                    "state": "active",
+                                    "group": {"id": "g1", "title": "T"},
+                                    "column_values": [],
+                                },
+                            ],
+                        }
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
     result = runner.invoke(
         app,
-        ["-o", "json", "item", "list", "--board", "42",
-         "--poll-until", "length(@) >= `2`",
-         "--poll-interval", "0s",
-         "--poll-timeout", "10s"],
+        [
+            "-o",
+            "json",
+            "item",
+            "list",
+            "--board",
+            "42",
+            "--poll-until",
+            "length(@) >= `2`",
+            "--poll-interval",
+            "0s",
+            "--poll-timeout",
+            "10s",
+        ],
     )
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -139,12 +221,22 @@ def test_item_list_poll_until_waits_for_n_items(httpx_mock: HTTPXMock) -> None:
 def test_invalid_poll_interval_errors(httpx_mock: HTTPXMock) -> None:
     """A bad --poll-interval value should error usage-style (exit 2)."""
     httpx_mock.add_response(
-        url=ENDPOINT, method="POST", json=_item_response("active"), is_optional=True,
+        url=ENDPOINT,
+        method="POST",
+        json=_item_response("active"),
+        is_optional=True,
     )
     result = runner.invoke(
         app,
-        ["item", "get", "--id", "987",
-         "--poll-until", "state == 'active'",
-         "--poll-interval", "forever"],
+        [
+            "item",
+            "get",
+            "--id",
+            "987",
+            "--poll-until",
+            "state == 'active'",
+            "--poll-interval",
+            "forever",
+        ],
     )
     assert result.exit_code == 2, result.output

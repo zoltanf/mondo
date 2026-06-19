@@ -172,9 +172,7 @@ def download_cmd(
         raise typer.Exit(0)
 
     if len(asset_ids) > 1 and out is not None and not out.is_dir():
-        usage_error_or_exit(
-            "--out must be an existing directory when downloading multiple assets."
-        )
+        usage_error_or_exit("--out must be an existing directory when downloading multiple assets.")
 
     client = client_or_exit(opts)
     results: list[dict[str, Any]] = []

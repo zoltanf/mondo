@@ -57,7 +57,10 @@ def list_cmd(
         None, "--max-items", help="Stop after this many folders total."
     ),
     no_cache: bool = typer.Option(
-        False, "--no-cache", help="Skip the local directory cache; fetch live.", rich_help_panel="Cache"
+        False,
+        "--no-cache",
+        help="Skip the local directory cache; fetch live.",
+        rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
@@ -194,10 +197,16 @@ def _build_tree_node(folder: FolderEntry, children_map: FolderChildrenMap) -> Fo
 def tree_cmd(
     ctx: typer.Context,
     workspace: list[int] | None = typer.Option(
-        None, "--workspace", help="Restrict to workspace IDs (repeatable).", rich_help_panel="Filters"
+        None,
+        "--workspace",
+        help="Restrict to workspace IDs (repeatable).",
+        rich_help_panel="Filters",
     ),
     no_cache: bool = typer.Option(
-        False, "--no-cache", help="Skip the local directory cache; fetch live.", rich_help_panel="Cache"
+        False,
+        "--no-cache",
+        help="Skip the local directory cache; fetch live.",
+        rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
@@ -225,11 +234,13 @@ def tree_cmd(
 
     if prefs.use_cache:
         if opts.dry_run:
-            opts.emit({
-                "cache": "folders",
-                "refresh": refresh_cache,
-                "filters": {"workspace_ids": workspace or None},
-            })
+            opts.emit(
+                {
+                    "cache": "folders",
+                    "refresh": refresh_cache,
+                    "filters": {"workspace_ids": workspace or None},
+                }
+            )
             raise typer.Exit(0)
 
         from mondo.cache.directory import get_folders as cache_get_folders
@@ -251,10 +262,12 @@ def tree_cmd(
 
         query, variables = build_folders_list_query(workspace_ids=workspace or None)
         if opts.dry_run:
-            opts.emit({
-                "query": query,
-                "variables": {**variables, "limit": 100},
-            })
+            opts.emit(
+                {
+                    "query": query,
+                    "variables": {**variables, "limit": 100},
+                }
+            )
             raise typer.Exit(0)
 
         client = client_or_exit(opts)

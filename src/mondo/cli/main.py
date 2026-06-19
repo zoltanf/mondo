@@ -388,9 +388,7 @@ def _root(
     # pipeline — emit it only when a human is plausibly watching stderr.
     from mondo.cli._notices import benign_notices_enabled
 
-    if not os.environ.get("PYTEST_CURRENT_TEST") and benign_notices_enabled(
-        verbose=verbose
-    ):
+    if not os.environ.get("PYTEST_CURRENT_TEST") and benign_notices_enabled(verbose=verbose):
         warn_if_skill_outdated()
     ctx.obj = GlobalOpts(
         profile_name=profile,

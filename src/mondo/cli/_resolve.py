@@ -85,8 +85,7 @@ def resolve_by_filters(
         )
     if explicit_id is None and filter_active == 0:
         raise typer.BadParameter(
-            f"provide a {resource} id or one of "
-            "--name-contains / --name-matches / --name-fuzzy."
+            f"provide a {resource} id or one of --name-contains / --name-matches / --name-fuzzy."
         )
 
     if explicit_id is not None:
@@ -104,18 +103,13 @@ def resolve_by_filters(
             key=key,
         )
     else:
-        needle_lower, pattern = compile_name_filter(
-            name_contains, name_matches_re, name_fuzzy=None
-        )
+        needle_lower, pattern = compile_name_filter(name_contains, name_matches_re, name_fuzzy=None)
         candidates = [
-            entry for entry in entries
-            if name_matches(entry, needle_lower, pattern, key=key)
+            entry for entry in entries if name_matches(entry, needle_lower, pattern, key=key)
         ]
 
     if not candidates:
-        raise NotFoundError(
-            f"no {resource} matched the filter (searched {len(entries)})."
-        )
+        raise NotFoundError(f"no {resource} matched the filter (searched {len(entries)}).")
     if len(candidates) > 1 and not first:
         sample = ", ".join(repr(c.get(key) or "") for c in candidates[:5])
         suffix = ", ..." if len(candidates) > 5 else ""

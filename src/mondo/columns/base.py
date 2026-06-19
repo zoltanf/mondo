@@ -80,8 +80,9 @@ class LabelAwareCodec(ColumnCodec):
     """
 
     @abstractmethod
-    def parse(self, value: str, settings: dict[str, Any], *, create_labels: bool = False) -> Any:
-        ...
+    def parse(
+        self, value: str, settings: dict[str, Any], *, create_labels: bool = False
+    ) -> Any: ...
 
     def _resolve_label_csv(
         self,
@@ -107,15 +108,13 @@ class LabelAwareCodec(ColumnCodec):
             if not token:
                 continue
             if token.lower().startswith(escape_prefix):
-                out.append(escape_resolver(token[len(escape_prefix):]))
+                out.append(escape_resolver(token[len(escape_prefix) :]))
                 continue
             if token in name_to_id:
                 out.append(name_to_id[token])
                 continue
             known = ", ".join(name_to_id) if name_to_id else "(no labels known)"
-            raise ValueError(
-                f"unknown {label_kind} label {token!r}. Known: {known}"
-            )
+            raise ValueError(f"unknown {label_kind} label {token!r}. Known: {known}")
         return out
 
 

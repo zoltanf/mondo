@@ -92,18 +92,28 @@ def test_profile_cache_overrides_global() -> None:
 
 def test_env_var_overrides_config() -> None:
     cfg = Config(cache=CacheConfig(ttl=CacheTTLConfig(boards=600)))
-    resolved = resolve_cache_config(
-        cfg, profile_name=None, env={"MONDO_CACHE_TTL_BOARDS": "99"}
-    )
+    resolved = resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_TTL_BOARDS": "99"})
     assert resolved.ttl_boards == 99
 
 
 def test_env_enabled_flag_parses_truthy_and_falsy() -> None:
     cfg = Config()
-    assert resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "false"}).enabled is False
-    assert resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "0"}).enabled is False
-    assert resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "true"}).enabled is True
-    assert resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "1"}).enabled is True
+    assert (
+        resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "false"}).enabled
+        is False
+    )
+    assert (
+        resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "0"}).enabled
+        is False
+    )
+    assert (
+        resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "true"}).enabled
+        is True
+    )
+    assert (
+        resolve_cache_config(cfg, profile_name=None, env={"MONDO_CACHE_ENABLED": "1"}).enabled
+        is True
+    )
 
 
 def test_env_garbage_ttl_falls_back_to_config() -> None:

@@ -31,19 +31,17 @@ def _parse_id_list(value: str, label: str) -> list[int]:
                 f"{label} codec: value looks like JSON but didn't parse — {e}. "
                 f"Accepted shapes: integer ID, CSV of integer IDs "
                 f"(e.g. '12345,67890'), or the GraphQL-native object "
-                f'\'{{"item_ids":[12345,67890]}}\'.'
+                f"'{{\"item_ids\":[12345,67890]}}'."
             ) from e
         if not isinstance(obj, dict) or "item_ids" not in obj:
             keys = list(obj) if isinstance(obj, dict) else type(obj).__name__
             raise ValueError(
-                f'{label} codec: JSON object must have shape '
-                f'\'{{"item_ids":[...]}}\' (got keys={keys}).'
+                f"{label} codec: JSON object must have shape "
+                f"'{{\"item_ids\":[...]}}' (got keys={keys})."
             )
         ids = obj["item_ids"]
         if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
-            raise ValueError(
-                f"{label} codec: item_ids must be a list of integers, got {ids!r}."
-            )
+            raise ValueError(f"{label} codec: item_ids must be a list of integers, got {ids!r}.")
         return list(ids)
 
     parts = [p.strip() for p in stripped.split(",") if p.strip()]
@@ -53,7 +51,7 @@ def _parse_id_list(value: str, label: str) -> list[int]:
         raise ValueError(
             f"{label} codec requires integer item IDs (got {value!r}). "
             f"Accepted shapes: '12345', CSV like '12345,67890', or the "
-            f'GraphQL-native object \'{{"item_ids":[12345,67890]}}\'.'
+            f"GraphQL-native object '{{\"item_ids\":[12345,67890]}}'."
         ) from e
 
 

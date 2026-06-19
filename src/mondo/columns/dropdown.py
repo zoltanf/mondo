@@ -61,9 +61,7 @@ class DropdownCodec(LabelAwareCodec):
             try:
                 return [int(x.strip()) for x in id_part.split(",") if x.strip()]
             except ValueError as e:
-                raise ValueError(
-                    f"dropdown ids must be integer, got {id_part!r}"
-                ) from e
+                raise ValueError(f"dropdown ids must be integer, got {id_part!r}") from e
         # name → id (only entries that carry a numeric id are usable here)
         name_to_id: dict[str, int] = {}
         for entry in iter_dropdown_labels(settings):
@@ -75,9 +73,7 @@ class DropdownCodec(LabelAwareCodec):
             try:
                 return int(id_str.strip())
             except ValueError as e:
-                raise ValueError(
-                    f"dropdown ids must be integer, got {id_str!r}"
-                ) from e
+                raise ValueError(f"dropdown ids must be integer, got {id_str!r}") from e
 
         return self._resolve_label_csv(
             value,

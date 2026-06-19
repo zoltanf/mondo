@@ -236,10 +236,10 @@ def _list_workspaces_via_cache(
 @app.command("get", epilog=epilog_for("workspace get"))
 def get_cmd(
     ctx: typer.Context,
-    id_pos: int | None = typer.Argument(
-        None, metavar="[ID]", help="Workspace ID (positional)."
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Workspace ID (positional)."),
+    id_flag: int | None = typer.Option(
+        None, "--id", "--workspace", help="Workspace ID (flag form)."
     ),
-    id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
@@ -319,10 +319,10 @@ def create_cmd(
 @app.command("update", epilog=epilog_for("workspace update"))
 def update_cmd(
     ctx: typer.Context,
-    id_pos: int | None = typer.Argument(
-        None, metavar="[ID]", help="Workspace ID (positional)."
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Workspace ID (positional)."),
+    id_flag: int | None = typer.Option(
+        None, "--id", "--workspace", help="Workspace ID (flag form)."
     ),
-    id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
     name: str | None = typer.Option(None, "--name", help="New name."),
     description: str | None = typer.Option(None, "--description", help="New description."),
     kind: WorkspaceKind | None = typer.Option(
@@ -352,10 +352,10 @@ def update_cmd(
 @app.command("delete", epilog=epilog_for("workspace delete"))
 def delete_cmd(
     ctx: typer.Context,
-    id_pos: int | None = typer.Argument(
-        None, metavar="[ID]", help="Workspace ID (positional)."
+    id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Workspace ID (positional)."),
+    id_flag: int | None = typer.Option(
+        None, "--id", "--workspace", help="Workspace ID (flag form)."
     ),
-    id_flag: int | None = typer.Option(None, "--id", "--workspace", help="Workspace ID (flag form)."),
     hard: bool = typer.Option(False, "--hard", help="Required for permanent deletion."),
 ) -> None:
     """Delete a workspace (permanent; Main Workspace cannot be deleted)."""

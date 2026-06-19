@@ -56,7 +56,7 @@ def _bundled_version() -> str | None:
 def _installed_version(path: Path) -> str | None:
     try:
         text = path.read_text(encoding="utf-8")
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return _parse_skill_version(text)
 

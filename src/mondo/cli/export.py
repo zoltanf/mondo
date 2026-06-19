@@ -58,9 +58,7 @@ META_FIELDS = ("id", "name", "state", "group")
 # ----- helpers -----
 
 
-def _fetch_columns(
-    opts: GlobalOpts, client: MondayClient, board_id: int
-) -> list[dict[str, Any]]:
+def _fetch_columns(opts: GlobalOpts, client: MondayClient, board_id: int) -> list[dict[str, Any]]:
     """Return [{id, title, type}] for the board, in display order."""
     try:
         cols = fetch_board_columns(opts, client, board_id)

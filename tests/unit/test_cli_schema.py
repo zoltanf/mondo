@@ -86,7 +86,20 @@ class TestSchemaCommand:
             assert known in result.stderr
 
     @pytest.mark.parametrize(
-        "resource", ["board", "item", "group", "update", "folder", "workspace", "user", "team", "doc", "subitem", "column"],
+        "resource",
+        [
+            "board",
+            "item",
+            "group",
+            "update",
+            "folder",
+            "workspace",
+            "user",
+            "team",
+            "doc",
+            "subitem",
+            "column",
+        ],
     )
     def test_each_resource_invocable(self, resource: str) -> None:
         result = runner.invoke(app, ["schema", resource])

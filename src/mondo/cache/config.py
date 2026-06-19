@@ -358,9 +358,17 @@ def _resolve_fuzzy_threshold(
     env: dict[str, str],
 ) -> int:
     value = DEFAULT_CACHE_FUZZY_THRESHOLD
-    if global_cfg is not None and global_cfg.fuzzy is not None and global_cfg.fuzzy.threshold is not None:
+    if (
+        global_cfg is not None
+        and global_cfg.fuzzy is not None
+        and global_cfg.fuzzy.threshold is not None
+    ):
         value = global_cfg.fuzzy.threshold
-    if profile_cfg is not None and profile_cfg.fuzzy is not None and profile_cfg.fuzzy.threshold is not None:
+    if (
+        profile_cfg is not None
+        and profile_cfg.fuzzy is not None
+        and profile_cfg.fuzzy.threshold is not None
+    ):
         value = profile_cfg.fuzzy.threshold
     env_raw = env.get("MONDO_CACHE_FUZZY_THRESHOLD")
     if env_raw is not None:

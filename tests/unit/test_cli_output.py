@@ -94,9 +94,7 @@ class TestGraphqlFormats:
 
     def test_invalid_query_json_mode_emits_error_envelope(self, httpx_mock: HTTPXMock) -> None:
         _graphql_ok(httpx_mock, {"me": {"id": "1"}})
-        result = runner.invoke(
-            app, ["-o", "json", "-q", "[", "graphql", "query { me { id } }"]
-        )
+        result = runner.invoke(app, ["-o", "json", "-q", "[", "graphql", "query { me { id } }"])
         assert result.exit_code == 2
         assert "Traceback (most recent call last)" not in result.output
         envelope = json.loads(result.output.strip().splitlines()[-1])

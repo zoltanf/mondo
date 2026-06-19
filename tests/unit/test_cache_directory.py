@@ -32,9 +32,7 @@ class FakeClient:
         self._responses = list(responses)
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
 
-    def execute(
-        self, query: str, variables: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def execute(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         self.calls.append((query, variables))
         if not self._responses:
             raise AssertionError("FakeClient: no more programmed responses")
@@ -56,9 +54,7 @@ class WorkspaceKeyedDocsClient:
         self._lock = threading.Lock()
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
 
-    def execute(
-        self, query: str, variables: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def execute(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
             self.calls.append((query, variables))
         if "docs(" in query:
@@ -81,10 +77,12 @@ def _store(tmp_path: Path, entity: str) -> CacheStore:
 
 def test_get_boards_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
     store = _store(tmp_path, "boards")
-    client = FakeClient([
-        {"data": {"boards": [{"id": "1", "name": "Alpha", "hierarchy_type": "multi_level"}]}},
-        {"data": {"boards": []}},  # stop signal
-    ])
+    client = FakeClient(
+        [
+            {"data": {"boards": [{"id": "1", "name": "Alpha", "hierarchy_type": "multi_level"}]}},
+            {"data": {"boards": []}},  # stop signal
+        ]
+    )
 
     result = get_boards(client, store=store)
 
@@ -108,10 +106,12 @@ def test_get_boards_warm_cache_skips_api(tmp_path: Path) -> None:
 def test_get_boards_refresh_overrides_cache(tmp_path: Path) -> None:
     store = _store(tmp_path, "boards")
     store.write([{"id": "1", "name": "Stale"}])
-    client = FakeClient([
-        {"data": {"boards": [{"id": "2", "name": "Fresh"}]}},
-        {"data": {"boards": []}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"boards": [{"id": "2", "name": "Fresh"}]}},
+            {"data": {"boards": []}},
+        ]
+    )
 
     result = get_boards(client, store=store, refresh=True)
 
@@ -135,10 +135,12 @@ def test_get_boards_uses_state_all_for_priming(tmp_path: Path) -> None:
 
 def test_get_workspaces_cold_then_warm(tmp_path: Path) -> None:
     store = _store(tmp_path, "workspaces")
-    client = FakeClient([
-        {"data": {"workspaces": [{"id": "10", "name": "Engineering"}]}},
-        {"data": {"workspaces": []}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"workspaces": [{"id": "10", "name": "Engineering"}]}},
+            {"data": {"workspaces": []}},
+        ]
+    )
 
     first = get_workspaces(client, store=store)
     assert [e["name"] for e in first.entries] == ["Engineering"]
@@ -154,10 +156,12 @@ def test_get_workspaces_cold_then_warm(tmp_path: Path) -> None:
 
 def test_get_users_covers_both_active_and_disabled(tmp_path: Path) -> None:
     store = _store(tmp_path, "users")
-    client = FakeClient([
-        {"data": {"users": [{"id": "1", "name": "Active Ann", "enabled": True}]}},
-        {"data": {"users": [{"id": "2", "name": "Disabled Dan", "enabled": False}]}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"users": [{"id": "1", "name": "Active Ann", "enabled": True}]}},
+            {"data": {"users": [{"id": "2", "name": "Disabled Dan", "enabled": False}]}},
+        ]
+    )
 
     result = get_users(client, store=store)
 
@@ -172,10 +176,12 @@ def test_get_users_covers_both_active_and_disabled(tmp_path: Path) -> None:
 def test_get_users_dedupes_when_apis_overlap(tmp_path: Path) -> None:
     store = _store(tmp_path, "users")
     duplicate = {"id": "1", "name": "Maybe Both"}
-    client = FakeClient([
-        {"data": {"users": [duplicate]}},
-        {"data": {"users": [duplicate]}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"users": [duplicate]}},
+            {"data": {"users": [duplicate]}},
+        ]
+    )
 
     result = get_users(client, store=store)
     assert len(result.entries) == 1
@@ -186,9 +192,11 @@ def test_get_users_dedupes_when_apis_overlap(tmp_path: Path) -> None:
 
 def test_get_teams_single_call_no_pagination(tmp_path: Path) -> None:
     store = _store(tmp_path, "teams")
-    client = FakeClient([
-        {"data": {"teams": [{"id": "1", "name": "Platform"}]}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"teams": [{"id": "1", "name": "Platform"}]}},
+        ]
+    )
 
     result = get_teams(client, store=store)
 
@@ -212,10 +220,12 @@ def test_get_teams_warm_cache(tmp_path: Path) -> None:
 
 def test_get_docs_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
     store = _store(tmp_path, "docs")
-    client = FakeClient([
-        {"data": {"workspaces": [{"id": "42"}]}},
-        {"data": {"docs": [{"id": "1", "object_id": "100", "name": "Spec"}]}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"workspaces": [{"id": "42"}]}},
+            {"data": {"docs": [{"id": "1", "object_id": "100", "name": "Spec"}]}},
+        ]
+    )
 
     result = get_docs(client, store=store)
 
@@ -238,10 +248,12 @@ def test_get_docs_warm_cache_skips_api(tmp_path: Path) -> None:
 def test_get_docs_refresh_overrides_cache(tmp_path: Path) -> None:
     store = _store(tmp_path, "docs")
     store.write([{"id": "1", "object_id": "100", "name": "Stale"}])
-    client = FakeClient([
-        {"data": {"workspaces": [{"id": "42"}]}},
-        {"data": {"docs": [{"id": "2", "object_id": "200", "name": "Fresh"}]}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"workspaces": [{"id": "42"}]}},
+            {"data": {"docs": [{"id": "2", "object_id": "200", "name": "Fresh"}]}},
+        ]
+    )
 
     result = get_docs(client, store=store, refresh=True)
 
@@ -293,15 +305,26 @@ def test_get_docs_dedupes_across_workspaces(tmp_path: Path) -> None:
 
 def test_get_folders_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
     store = _store(tmp_path, "folders")
-    client = FakeClient([
-        {"data": {"folders": [
-            {"id": "1", "name": "Design", "color": "blue",
-             "created_at": "2024-01-01", "owner_id": "99",
-             "workspace": {"id": "10", "name": "Engineering"},
-             "parent": None},
-        ]}},
-        {"data": {"folders": []}},  # stop signal
-    ])
+    client = FakeClient(
+        [
+            {
+                "data": {
+                    "folders": [
+                        {
+                            "id": "1",
+                            "name": "Design",
+                            "color": "blue",
+                            "created_at": "2024-01-01",
+                            "owner_id": "99",
+                            "workspace": {"id": "10", "name": "Engineering"},
+                            "parent": None,
+                        },
+                    ]
+                }
+            },
+            {"data": {"folders": []}},  # stop signal
+        ]
+    )
 
     result = get_folders(client, store=store)
 
@@ -312,8 +335,18 @@ def test_get_folders_cold_cache_fetches_and_writes(tmp_path: Path) -> None:
 
 def test_get_folders_warm_cache_skips_api(tmp_path: Path) -> None:
     store = _store(tmp_path, "folders")
-    store.write([{"id": "1", "name": "Cached", "workspace_id": "10",
-                  "workspace_name": "Engineering", "parent_id": None, "parent_name": None}])
+    store.write(
+        [
+            {
+                "id": "1",
+                "name": "Cached",
+                "workspace_id": "10",
+                "workspace_name": "Engineering",
+                "parent_id": None,
+                "parent_name": None,
+            }
+        ]
+    )
     client = FakeClient([])
 
     result = get_folders(client, store=store)
@@ -324,17 +357,38 @@ def test_get_folders_warm_cache_skips_api(tmp_path: Path) -> None:
 
 def test_get_folders_refresh_overrides_cache(tmp_path: Path) -> None:
     store = _store(tmp_path, "folders")
-    store.write([{"id": "1", "name": "Stale", "workspace_id": "10",
-                  "workspace_name": "Engineering", "parent_id": None, "parent_name": None}])
-    client = FakeClient([
-        {"data": {"folders": [
-            {"id": "2", "name": "Fresh", "color": None,
-             "created_at": "2024-06-01", "owner_id": "99",
-             "workspace": {"id": "10", "name": "Engineering"},
-             "parent": None},
-        ]}},
-        {"data": {"folders": []}},
-    ])
+    store.write(
+        [
+            {
+                "id": "1",
+                "name": "Stale",
+                "workspace_id": "10",
+                "workspace_name": "Engineering",
+                "parent_id": None,
+                "parent_name": None,
+            }
+        ]
+    )
+    client = FakeClient(
+        [
+            {
+                "data": {
+                    "folders": [
+                        {
+                            "id": "2",
+                            "name": "Fresh",
+                            "color": None,
+                            "created_at": "2024-06-01",
+                            "owner_id": "99",
+                            "workspace": {"id": "10", "name": "Engineering"},
+                            "parent": None,
+                        },
+                    ]
+                }
+            },
+            {"data": {"folders": []}},
+        ]
+    )
 
     result = get_folders(client, store=store, refresh=True)
 
@@ -345,15 +399,26 @@ def test_get_folders_refresh_overrides_cache(tmp_path: Path) -> None:
 def test_get_folders_entries_are_normalized(tmp_path: Path) -> None:
     """Fetched entries must be normalized: nested workspace/parent → scalar keys."""
     store = _store(tmp_path, "folders")
-    client = FakeClient([
-        {"data": {"folders": [
-            {"id": "5", "name": "Sub", "color": "red",
-             "created_at": "2024-03-01", "owner_id": "7",
-             "workspace": {"id": "10", "name": "Engineering"},
-             "parent": {"id": "3", "name": "Root"}},
-        ]}},
-        {"data": {"folders": []}},
-    ])
+    client = FakeClient(
+        [
+            {
+                "data": {
+                    "folders": [
+                        {
+                            "id": "5",
+                            "name": "Sub",
+                            "color": "red",
+                            "created_at": "2024-03-01",
+                            "owner_id": "7",
+                            "workspace": {"id": "10", "name": "Engineering"},
+                            "parent": {"id": "3", "name": "Root"},
+                        },
+                    ]
+                }
+            },
+            {"data": {"folders": []}},
+        ]
+    )
 
     result = get_folders(client, store=store)
 
@@ -399,9 +464,7 @@ def test_get_columns_cold_fetches_and_writes(tmp_path: Path) -> None:
         {"id": "status", "title": "Status", "type": "status"},
         {"id": "text", "title": "Text", "type": "text"},
     ]
-    client = FakeClient([
-        {"data": {"boards": [{"id": "1", "columns": columns_payload}]}}
-    ])
+    client = FakeClient([{"data": {"boards": [{"id": "1", "columns": columns_payload}]}}])
 
     result = get_columns(client, store=store, board_id=1)
 
@@ -424,9 +487,7 @@ def test_get_columns_warm_cache_skips_api(tmp_path: Path) -> None:
 def test_get_columns_refresh_ignores_cache(tmp_path: Path) -> None:
     store = _scoped_store(tmp_path, "1")
     store.write([{"id": "stale", "title": "Stale", "type": "text"}])
-    client = FakeClient([
-        {"data": {"boards": [{"id": "1", "columns": [{"id": "fresh"}]}]}}
-    ])
+    client = FakeClient([{"data": {"boards": [{"id": "1", "columns": [{"id": "fresh"}]}]}}])
 
     result = get_columns(client, store=store, board_id=1, refresh=True)
 
@@ -509,10 +570,12 @@ def test_get_groups_missing_board_raises_not_found(tmp_path: Path) -> None:
 
 def test_enrich_workspace_names_uses_warm_cache(tmp_path: Path) -> None:
     store = _store(tmp_path, "workspaces")
-    store.write([
-        {"id": "10", "name": "Engineering"},
-        {"id": "20", "name": "Sales"},
-    ])
+    store.write(
+        [
+            {"id": "10", "name": "Engineering"},
+            {"id": "20", "name": "Sales"},
+        ]
+    )
     client = FakeClient([])
     entries = [
         {"id": "A", "workspace_id": "10"},
@@ -528,9 +591,11 @@ def test_enrich_workspace_names_uses_warm_cache(tmp_path: Path) -> None:
 
 def test_enrich_workspace_names_populates_cold_cache(tmp_path: Path) -> None:
     store = _store(tmp_path, "workspaces")
-    client = FakeClient([
-        {"data": {"workspaces": [{"id": "10", "name": "Engineering"}]}},
-    ])
+    client = FakeClient(
+        [
+            {"data": {"workspaces": [{"id": "10", "name": "Engineering"}]}},
+        ]
+    )
     entries = [{"id": "A", "workspace_id": "10"}]
 
     enrich_workspace_names(entries, client=client, store=store)

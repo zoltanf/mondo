@@ -50,9 +50,7 @@ def fetch_board_columns(
         from mondo.cache.directory import get_columns as _cache_get_columns
 
         store = opts.build_cache_store("columns", scope=str(board_id))
-        cached = _cache_get_columns(
-            client, store=store, board_id=board_id, refresh=refresh
-        )
+        cached = _cache_get_columns(client, store=store, board_id=board_id, refresh=refresh)
         return list(cached.entries)
 
     # Live path — skip cache entirely (honors `--no-cache` and the

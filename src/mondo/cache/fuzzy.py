@@ -43,8 +43,7 @@ def fuzzy_score(
         return [(entry, 100) for entry in entries]
 
     indexed: list[tuple[str, dict[str, Any]]] = [
-        (str(entry.get(name_key) or ""), entry)
-        for entry in entries
+        (str(entry.get(name_key) or ""), entry) for entry in entries
     ]
     names = [name for name, _ in indexed]
 

@@ -93,7 +93,9 @@ class CacheStore:
         ttl_seconds: int,
         scope: str | None = None,
     ) -> None:
-        if scope is not None and (not scope or "/" in scope or "\\" in scope or scope in (".", "..")):
+        if scope is not None and (
+            not scope or "/" in scope or "\\" in scope or scope in (".", "..")
+        ):
             raise ValueError(f"invalid cache scope: {scope!r}")
         self._entity_type = entity_type
         self._cache_dir = cache_dir
@@ -127,7 +129,7 @@ class CacheStore:
             return None
         try:
             raw = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         return raw if isinstance(raw, dict) else None
 
@@ -186,8 +188,7 @@ class CacheStore:
         # on already-written files.
         if cached.age.total_seconds() > self._ttl_seconds:
             logger.debug(
-                f"cache[{self._entity_type}]: expired "
-                f"(age={cached.age}, ttl={self._ttl_seconds}s)"
+                f"cache[{self._entity_type}]: expired (age={cached.age}, ttl={self._ttl_seconds}s)"
             )
             return None
         return cached
@@ -234,7 +235,7 @@ class CacheStore:
             return None
         try:
             return _utcnow() - _parse_utc(raw["fetched_at"])
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             return None
 
     def _ensure_dir(self) -> None:

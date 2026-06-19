@@ -22,9 +22,7 @@ def _opts(*, query: str | None = None) -> GlobalOpts:
 
 
 class TestEmitProjectionWarning:
-    def test_warns_for_unselected_field(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_warns_for_unselected_field(self, capsys: pytest.CaptureFixture[str]) -> None:
         opts = _opts(query="{f:board_folder_id}")
         opts.emit(
             {"name": "X"},
@@ -34,9 +32,7 @@ class TestEmitProjectionWarning:
         captured = capsys.readouterr()
         assert "warning: field 'board_folder_id'" in captured.err
 
-    def test_no_warning_when_field_present(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_no_warning_when_field_present(self, capsys: pytest.CaptureFixture[str]) -> None:
         opts = _opts(query="{n:name}")
         opts.emit(
             {"name": "X"},
@@ -56,9 +52,7 @@ class TestEmitProjectionWarning:
         captured = capsys.readouterr()
         assert captured.err == ""
 
-    def test_no_warning_without_query(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_no_warning_without_query(self, capsys: pytest.CaptureFixture[str]) -> None:
         opts = _opts(query=None)
         opts.emit(
             {"name": "X"},
@@ -68,9 +62,7 @@ class TestEmitProjectionWarning:
         captured = capsys.readouterr()
         assert captured.err == ""
 
-    def test_multiple_missing_fields_each_warn(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_multiple_missing_fields_each_warn(self, capsys: pytest.CaptureFixture[str]) -> None:
         opts = _opts(query="{a:foo, b:bar}")
         opts.emit(
             {"foo": 1, "bar": 2},
@@ -85,9 +77,7 @@ class TestEmitProjectionWarning:
         # Sorted output — bar before foo.
         assert captured.err.index("'bar'") < captured.err.index("'foo'")
 
-    def test_aliases_do_not_false_positive(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_aliases_do_not_false_positive(self, capsys: pytest.CaptureFixture[str]) -> None:
         # `ws` is the alias; only `workspace.name` resolves to fields.
         opts = _opts(query="[*].{n:name, ws:workspace.name}")
         opts.emit(
@@ -113,9 +103,7 @@ class TestEmitProjectionWarning:
         captured = capsys.readouterr()
         assert captured.err == ""
 
-    def test_stdout_unchanged_with_warning(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_stdout_unchanged_with_warning(self, capsys: pytest.CaptureFixture[str]) -> None:
         # Warning is on stderr; stdout (the projected payload) must be byte-
         # identical to the no-warning case.
         buf_warn = io.StringIO()

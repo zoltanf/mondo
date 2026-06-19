@@ -170,9 +170,7 @@ def list_cmd(
                     refresh=refresh_cache,
                 )
         except _NotFoundError:
-            handle_mondo_error_or_exit(
-                NotFoundError(f"parent item {parent_id} not found.")
-            )
+            handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
         except MondoError as e:
             handle_mondo_error_or_exit(e)
         emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
@@ -183,9 +181,7 @@ def list_cmd(
     data = execute(opts, SUBITEMS_LIST, variables)
     items = data.get("items") or []
     if not items:
-        handle_mondo_error_or_exit(
-            NotFoundError(f"parent item {parent_id} not found.")
-        )
+        handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
     opts.emit(items[0].get("subitems") or [])
 
 
@@ -257,12 +253,8 @@ def get_cmd(
         store = opts.build_cache_store("items", scope=str(subitem_id))
         try:
             with client:
-                cached = get_item(
-                    client, store=store, item_id=subitem_id, refresh=refresh_cache
-                )
-                emit_cache_provenance(
-                    opts, cached, store=store, explain=explain_cache
-                )
+                cached = get_item(client, store=store, item_id=subitem_id, refresh=refresh_cache)
+                emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                 item = cached.entries[0] if cached.entries else None
         except _NotFoundError:
             item = None
@@ -274,9 +266,7 @@ def get_cmd(
         item = items[0] if items else None
 
     if item is None:
-        handle_mondo_error_or_exit(
-            NotFoundError(f"subitem {subitem_id} not found.")
-        )
+        handle_mondo_error_or_exit(NotFoundError(f"subitem {subitem_id} not found."))
     if not with_url:
         item.pop("url", None)
     opts.emit(item)

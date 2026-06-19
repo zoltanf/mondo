@@ -4,6 +4,7 @@ Handles list of records, single record, missing fields, dotted paths.
 Runs *before* --query (JMESPath) so a typical pipeline is:
     raw payload -> apply_fields(spec) -> apply_query(jmespath) -> formatter.
 """
+
 from __future__ import annotations
 
 from mondo.output.fields import apply_fields

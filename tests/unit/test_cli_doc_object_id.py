@@ -74,18 +74,14 @@ class TestExportMarkdownObjectId:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["doc", "export-markdown", "--object-id", OBJECT_ID]
-        )
+        result = runner.invoke(app, ["doc", "export-markdown", "--object-id", OBJECT_ID])
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "# Hello"
         head, export = _bodies(httpx_mock)
         assert head["variables"] == {"objs": [int(OBJECT_ID)]}
         assert export["variables"]["doc"] == int(INTERNAL_ID)
 
-    def test_doc_and_object_id_together_is_usage_error(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_doc_and_object_id_together_is_usage_error(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
             ["doc", "export-markdown", "--doc", INTERNAL_ID, "--object-id", OBJECT_ID],
@@ -100,15 +96,11 @@ class TestExportMarkdownObjectId:
 
     def test_object_id_miss_exits_6(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
-        result = runner.invoke(
-            app, ["doc", "export-markdown", "--object-id", OBJECT_ID]
-        )
+        result = runner.invoke(app, ["doc", "export-markdown", "--object-id", OBJECT_ID])
         assert result.exit_code == 6
         assert "not found" in result.stderr
 
-    def test_500_with_object_id_as_doc_gets_targeted_hint(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_500_with_object_id_as_doc_gets_targeted_hint(self, httpx_mock: HTTPXMock) -> None:
         # The observed failure: object id sent as --doc → mutation-level 500.
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -203,9 +195,7 @@ class TestAddMarkdownEnvelope:
         assert f"--object-id {OBJECT_ID}" in result.stderr
         assert "looks like a URL-visible object id" in result.stderr
 
-    def test_500_envelope_with_real_internal_id_no_hint(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_500_envelope_with_real_internal_id_no_hint(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -286,12 +276,8 @@ class TestUniformObjectIdSurface:
             ["doc", "version-diff", "--date", "d", "--prev-date", "p"],
         ],
     )
-    def test_both_flags_is_usage_error(
-        self, httpx_mock: HTTPXMock, args: list[str]
-    ) -> None:
-        result = runner.invoke(
-            app, [*args, "--doc", INTERNAL_ID, "--object-id", OBJECT_ID]
-        )
+    def test_both_flags_is_usage_error(self, httpx_mock: HTTPXMock, args: list[str]) -> None:
+        result = runner.invoke(app, [*args, "--doc", INTERNAL_ID, "--object-id", OBJECT_ID])
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
@@ -320,18 +306,20 @@ class TestUniformObjectIdSurface:
         result = runner.invoke(
             app,
             [
-                "doc", "add-block",
-                "--object-id", OBJECT_ID,
-                "--type", "normal_text",
-                "--content", '{"deltaFormat": [{"insert": "hi"}]}',
+                "doc",
+                "add-block",
+                "--object-id",
+                OBJECT_ID,
+                "--type",
+                "normal_text",
+                "--content",
+                '{"deltaFormat": [{"insert": "hi"}]}',
             ],
         )
         assert result.exit_code == 0, result.output
         assert _bodies(httpx_mock)[-1]["variables"]["doc"] == int(INTERNAL_ID)
 
-    def test_rename_doc_url_accepted_on_object_id(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_rename_doc_url_accepted_on_object_id(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_head_hit())
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -341,9 +329,12 @@ class TestUniformObjectIdSurface:
         result = runner.invoke(
             app,
             [
-                "doc", "rename",
-                "--object-id", f"https://acct.monday.com/docs/{OBJECT_ID}",
-                "--name", "renamed",
+                "doc",
+                "rename",
+                "--object-id",
+                f"https://acct.monday.com/docs/{OBJECT_ID}",
+                "--name",
+                "renamed",
             ],
         )
         assert result.exit_code == 0, result.output

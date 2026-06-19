@@ -60,7 +60,7 @@ def _canonicalize_line(line: str) -> str:
     m = _LIST_PREFIX_RE.match(line)
     if m:
         marker = m.group(2)
-        rest = line[m.end():].strip()
+        rest = line[m.end() :].strip()
         return f"{marker} {rest}"
     return re.sub(r"\s+", " ", stripped)
 
@@ -68,14 +68,21 @@ def _canonicalize_line(line: str) -> str:
 def _create_throwaway_doc(workspace_id: int, name: str, cleanup_plan: CleanupPlan) -> int:
     created = invoke_json(
         [
-            "doc", "create",
-            "--workspace", str(workspace_id),
-            "--name", name,
+            "doc",
+            "create",
+            "--workspace",
+            str(workspace_id),
+            "--name",
+            name,
         ]
     )
     doc_id = int(created["id"])
     cleanup_plan.add(
-        f"doc {doc_id}", "doc", "delete", "--doc", str(doc_id),
+        f"doc {doc_id}",
+        "doc",
+        "delete",
+        "--doc",
+        str(doc_id),
     )
     return doc_id
 
@@ -87,15 +94,16 @@ def test_live_doc_markdown_strict_roundtrip_equality(
     """Headings/lists/blockquote/code/hr round-trip with content-equivalence after normalisation."""
     suffix = uuid.uuid4().hex[:8]
     strict_md = (FIXTURES / "strict_input.md").read_text(encoding="utf-8")
-    doc_id = _create_throwaway_doc(
-        live_workspace_id, f"E2E Strict MD {suffix}", cleanup_plan
-    )
+    doc_id = _create_throwaway_doc(live_workspace_id, f"E2E Strict MD {suffix}", cleanup_plan)
 
     invoke_json(
         [
-            "doc", "add-markdown",
-            "--doc", str(doc_id),
-            "--markdown", strict_md,
+            "doc",
+            "add-markdown",
+            "--doc",
+            str(doc_id),
+            "--markdown",
+            strict_md,
         ]
     )
 
@@ -113,14 +121,10 @@ def test_live_doc_markdown_strict_roundtrip_equality(
     # Tolerant comparison: every non-blank input line must appear, in order,
     # in the export, after canonicalising whitespace + list-marker spacing.
     in_lines = [
-        _canonicalize_line(line)
-        for line in _normalize_md(strict_md).splitlines()
-        if line.strip()
+        _canonicalize_line(line) for line in _normalize_md(strict_md).splitlines() if line.strip()
     ]
     out_lines = [
-        _canonicalize_line(line)
-        for line in _normalize_md(exported).splitlines()
-        if line.strip()
+        _canonicalize_line(line) for line in _normalize_md(exported).splitlines() if line.strip()
     ]
     out_idx = 0
     missing: list[str] = []
@@ -151,14 +155,15 @@ def test_live_doc_markdown_rich_roundtrip_golden(
     rich_md = (FIXTURES / "rich_input.md").read_text(encoding="utf-8")
     golden_path = FIXTURES / "rich_expected_export.md"
 
-    doc_id = _create_throwaway_doc(
-        live_workspace_id, f"E2E Rich MD {suffix}", cleanup_plan
-    )
+    doc_id = _create_throwaway_doc(live_workspace_id, f"E2E Rich MD {suffix}", cleanup_plan)
     invoke_json(
         [
-            "doc", "add-markdown",
-            "--doc", str(doc_id),
-            "--markdown", rich_md,
+            "doc",
+            "add-markdown",
+            "--doc",
+            str(doc_id),
+            "--markdown",
+            rich_md,
         ]
     )
 
@@ -198,21 +203,20 @@ def test_live_doc_duplicate_preserves_content(
     """`mondo doc duplicate` carries blocks over."""
     suffix = uuid.uuid4().hex[:8]
     src_md = (FIXTURES / "strict_input.md").read_text(encoding="utf-8")
-    src_doc_id = _create_throwaway_doc(
-        live_workspace_id, f"E2E Doc Dup Src {suffix}", cleanup_plan
-    )
+    src_doc_id = _create_throwaway_doc(live_workspace_id, f"E2E Doc Dup Src {suffix}", cleanup_plan)
     invoke_json(
         [
-            "doc", "add-markdown",
-            "--doc", str(src_doc_id),
-            "--markdown", src_md,
+            "doc",
+            "add-markdown",
+            "--doc",
+            str(src_doc_id),
+            "--markdown",
+            src_md,
         ]
     )
 
     def _src_blocks_landed() -> list[dict[str, Any]]:
-        fetched = invoke_json(
-            ["doc", "get", "--id", str(src_doc_id), "--format", "json"]
-        )
+        fetched = invoke_json(["doc", "get", "--id", str(src_doc_id), "--format", "json"])
         blocks = fetched.get("blocks") or []
         assert blocks, "src doc has no blocks yet"
         return blocks
@@ -223,13 +227,15 @@ def test_live_doc_duplicate_preserves_content(
     duplicated = invoke_json(["doc", "duplicate", "--doc", str(src_doc_id)])
     dup_id = int(duplicated.get("id") or duplicated.get("doc", {}).get("id"))
     cleanup_plan.add(
-        f"dup doc {dup_id}", "doc", "delete", "--doc", str(dup_id),
+        f"dup doc {dup_id}",
+        "doc",
+        "delete",
+        "--doc",
+        str(dup_id),
     )
 
     def _dup_matches() -> None:
-        fetched = invoke_json(
-            ["doc", "get", "--id", str(dup_id), "--format", "json"]
-        )
+        fetched = invoke_json(["doc", "get", "--id", str(dup_id), "--format", "json"])
         blocks = fetched.get("blocks") or []
         assert len(blocks) == src_block_count, (
             f"duplicate has {len(blocks)} blocks; expected {src_block_count}"
@@ -254,10 +260,13 @@ def test_live_doc_rename_visible_in_listing(
         # name-contains lookup by the new-name needle.
         listing = invoke_json(
             [
-                "doc", "list",
+                "doc",
+                "list",
                 "--no-cache",
-                "--workspace", str(live_workspace_id),
-                "--name-contains", suffix,
+                "--workspace",
+                str(live_workspace_id),
+                "--name-contains",
+                suffix,
             ]
         )
         names = [d.get("name") for d in listing]

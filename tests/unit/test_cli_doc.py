@@ -25,11 +25,13 @@ def _prewarm_workspaces(tmp_path: Path) -> None:
         api_endpoint=ENDPOINT,
         ttl_seconds=3600,
     )
-    store.write([
-        {"id": "1", "name": "Main"},
-        {"id": "42", "name": "Engineering"},
-        {"id": "43", "name": "Sales"},
-    ])
+    store.write(
+        [
+            {"id": "1", "name": "Main"},
+            {"id": "42", "name": "Engineering"},
+            {"id": "43", "name": "Sales"},
+        ]
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -146,9 +148,7 @@ class TestList:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["doc", "list", "--name-matches", r"^rfc-\d+$"]
-        )
+        result = runner.invoke(app, ["doc", "list", "--name-matches", r"^rfc-\d+$"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [d["id"] for d in parsed] == ["1", "2"]
@@ -185,9 +185,7 @@ class TestList:
         parsed = json.loads(result.stdout)
         assert [d["id"] for d in parsed] == ["2", "3"]
 
-    def test_query_includes_doc_folder_id_and_updated_at(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_query_includes_doc_folder_id_and_updated_at(self, httpx_mock: HTTPXMock) -> None:
         """Both are native on Monday's `Doc` type and populate the
         `folder_id` / `updated_at` core shape fields."""
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
@@ -202,9 +200,7 @@ class TestList:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"docs": [{"id": "1", "name": "A", "doc_kind": "private"}]}
-            ),
+            json=_ok({"docs": [{"id": "1", "name": "A", "doc_kind": "private"}]}),
         )
         result = runner.invoke(app, ["doc", "list"])
         assert result.exit_code == 0, result.stdout
@@ -216,9 +212,7 @@ class TestList:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"docs": [{"id": "1", "name": "A", "doc_folder_id": "42"}]}
-            ),
+            json=_ok({"docs": [{"id": "1", "name": "A", "doc_folder_id": "42"}]}),
         )
         result = runner.invoke(app, ["doc", "list"])
         assert result.exit_code == 0, result.stdout
@@ -252,9 +246,7 @@ class TestList:
         assert "url" not in parsed[0]
         assert "relative_url" not in parsed[0]
 
-    def test_with_url_exposes_url_and_relative_url(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_with_url_exposes_url_and_relative_url(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -301,29 +293,39 @@ class TestListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"docs": [{
-                "id": "1",
-                "object_id": "100",
-                "name": "Alpha",
-                "workspace_id": "42",
-                "created_at": "2024-01-01T10:00:00Z",
-            }]}),
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "1",
+                            "object_id": "100",
+                            "name": "Alpha",
+                            "workspace_id": "42",
+                            "created_at": "2024-01-01T10:00:00Z",
+                        }
+                    ]
+                }
+            ),
         )
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"docs": [{
-                "id": "2",
-                "object_id": "200",
-                "name": "Beta",
-                "workspace_id": "43",
-                "created_at": "2024-02-01T10:00:00Z",
-            }]}),
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "2",
+                            "object_id": "200",
+                            "name": "Beta",
+                            "workspace_id": "43",
+                            "created_at": "2024-02-01T10:00:00Z",
+                        }
+                    ]
+                }
+            ),
         )
 
-    def test_cold_then_warm_cache(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_cold_then_warm_cache(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         self._queue_prime(httpx_mock)
         first = runner.invoke(app, ["doc", "list"])
         assert first.exit_code == 0, first.stdout
@@ -356,9 +358,7 @@ class TestListCache:
         assert result.exit_code == 0, result.stdout
         assert len(httpx_mock.get_requests()) == prime_requests + 1
 
-    def test_refresh_cache_forces_refetch(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_refresh_cache_forces_refetch(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         # Prime with stale content.
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -390,41 +390,27 @@ class TestListCache:
         assert len(httpx_mock.get_requests()) == prime_requests + 2
 
     def test_no_cache_and_refresh_cache_mutually_exclusive(self) -> None:
-        result = runner.invoke(
-            app, ["doc", "list", "--no-cache", "--refresh-cache"]
-        )
+        result = runner.invoke(app, ["doc", "list", "--no-cache", "--refresh-cache"])
         assert result.exit_code == 2
         assert "mutually exclusive" in (result.stderr or result.stdout).lower()
 
-    def test_workspace_filter_applies_client_side(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_workspace_filter_applies_client_side(self, httpx_mock: HTTPXMock) -> None:
         self._queue_prime(httpx_mock)
-        result = runner.invoke(
-            app, ["doc", "list", "--workspace", "42"]
-        )
+        result = runner.invoke(app, ["doc", "list", "--workspace", "42"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [d["id"] for d in parsed] == ["1"]
 
-    def test_object_id_filter_applies_client_side(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_object_id_filter_applies_client_side(self, httpx_mock: HTTPXMock) -> None:
         self._queue_prime(httpx_mock)
-        result = runner.invoke(
-            app, ["doc", "list", "--object-id", "200"]
-        )
+        result = runner.invoke(app, ["doc", "list", "--object-id", "200"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [d["id"] for d in parsed] == ["2"]
 
-    def test_order_by_created_at_sorts_newest_first(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_order_by_created_at_sorts_newest_first(self, httpx_mock: HTTPXMock) -> None:
         self._queue_prime(httpx_mock)
-        result = runner.invoke(
-            app, ["doc", "list", "--order-by", "created_at"]
-        )
+        result = runner.invoke(app, ["doc", "list", "--order-by", "created_at"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert [d["id"] for d in parsed] == ["2", "1"]
@@ -436,9 +422,7 @@ class TestListCache:
         assert len(json.loads(result.stdout)) == 1
 
     def test_dry_run_emits_cache_preview(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(
-            app, ["--dry-run", "doc", "list", "--workspace", "42"]
-        )
+        result = runner.invoke(app, ["--dry-run", "doc", "list", "--workspace", "42"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert parsed["cache"] == "docs"
@@ -528,9 +512,7 @@ class TestListCache:
         parsed = json.loads(result.stdout)
         assert sorted(d["id"] for d in parsed) == ["2", "4"]
 
-    def test_name_filters_mutually_exclusive_cache(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_name_filters_mutually_exclusive_cache(self, httpx_mock: HTTPXMock) -> None:
         # No priming required — validation happens before any cache read.
         result = runner.invoke(
             app,
@@ -539,9 +521,7 @@ class TestListCache:
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
-    def test_workspace_name_enriched_from_cache(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_workspace_name_enriched_from_cache(self, httpx_mock: HTTPXMock) -> None:
         """workspace_name is resolved from the workspaces cache
         (pre-warmed by autouse fixture: id=42 → 'Engineering')."""
         self._queue_prime(httpx_mock)
@@ -552,9 +532,7 @@ class TestListCache:
         assert by_id["1"]["workspace_name"] == "Engineering"
         assert by_id["2"]["workspace_name"] == "Sales"
 
-    def test_workspace_pair_adjacent_and_created_at_last(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_workspace_pair_adjacent_and_created_at_last(self, httpx_mock: HTTPXMock) -> None:
         self._queue_prime(httpx_mock)
         result = runner.invoke(app, ["doc", "list"])
         assert result.exit_code == 0, result.stdout
@@ -563,9 +541,7 @@ class TestListCache:
         assert keys[keys.index("workspace_id") + 1] == "workspace_name"
         assert keys[-1] == "created_at"
 
-    def test_main_workspace_name_synthesized_for_null_id(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_main_workspace_name_synthesized_for_null_id(self, httpx_mock: HTTPXMock) -> None:
         """monday returns workspace_id=null for docs in the Main workspace;
         the CLI fills in the synthetic 'Main workspace' label."""
         httpx_mock.add_response(
@@ -576,8 +552,13 @@ class TestListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"docs": [{"id": "1", "object_id": "100", "name": "Homeless",
-                                "workspace_id": None}]}),
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "object_id": "100", "name": "Homeless", "workspace_id": None}
+                    ]
+                }
+            ),
         )
         result = runner.invoke(app, ["doc", "list"])
         assert result.exit_code == 0, result.stdout
@@ -767,9 +748,7 @@ class TestGet:
         assert "regular board" in result.stderr
         assert "mondo board get 99" in result.stderr
 
-    def test_not_found_generic_when_board_also_missing(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_not_found_generic_when_board_also_missing(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"boards": []}))
         result = runner.invoke(app, ["doc", "get", "--object-id", "99"])
@@ -777,9 +756,7 @@ class TestGet:
         assert "not found" in result.stderr
         assert "regular board" not in result.stderr
 
-    def test_not_found_no_fallback_for_internal_id(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_not_found_no_fallback_for_internal_id(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
         # Object-id probe on the --id miss (the #24 guardrail) — misses too.
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
@@ -1143,7 +1120,11 @@ class TestBlocks:
 class TestDocPagination:
     def test_get_markdown_paginates_blocks(self, httpx_mock: HTTPXMock) -> None:
         first_page_blocks = [
-            {"id": f"b{i}", "type": "normal_text", "content": {"deltaFormat": [{"insert": f"L{i}"}]}}
+            {
+                "id": f"b{i}",
+                "type": "normal_text",
+                "content": {"deltaFormat": [{"insert": f"L{i}"}]},
+            }
             for i in range(1, 101)
         ]
         httpx_mock.add_response(
@@ -1181,7 +1162,9 @@ class TestDocPagination:
         assert reqs[0]["variables"]["limit"] == 100
 
     def test_add_block_seeds_after_from_last_paged_block(self, httpx_mock: HTTPXMock) -> None:
-        first_page_blocks = [{"id": f"b{i}", "type": "normal_text", "content": {}} for i in range(1, 101)]
+        first_page_blocks = [
+            {"id": f"b{i}", "type": "normal_text", "content": {}} for i in range(1, 101)
+        ]
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -1190,7 +1173,16 @@ class TestDocPagination:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "b101", "type": "normal_text", "content": {}}]}]}),
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "10",
+                            "blocks": [{"id": "b101", "type": "normal_text", "content": {}}],
+                        }
+                    ]
+                }
+            ),
         )
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -1222,7 +1214,9 @@ class TestDocNewOps:
         assert httpx_mock.get_requests() == []
 
     def test_rename(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"update_doc_name": "Renamed"}))
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"update_doc_name": "Renamed"})
+        )
         result = runner.invoke(app, ["doc", "rename", "--doc", "10", "--name", "Renamed"])
         assert result.exit_code == 0, result.stdout
         body = _last_body(httpx_mock)
@@ -1289,9 +1283,7 @@ class TestDocNewOps:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"docs": [{"id": "88", "object_id": "900", "name": "n", "url": "u"}]}
-            ),
+            json=_ok({"docs": [{"id": "88", "object_id": "900", "name": "n", "url": "u"}]}),
         )
         result = runner.invoke(app, ["doc", "duplicate", "--doc", "10"])
         assert result.exit_code == 0, result.stdout
@@ -1334,7 +1326,15 @@ class TestDocNewOps:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"export_markdown_from_doc": {"success": True, "error": None, "markdown": "# Title"}}),
+            json=_ok(
+                {
+                    "export_markdown_from_doc": {
+                        "success": True,
+                        "error": None,
+                        "markdown": "# Title",
+                    }
+                }
+            ),
         )
         result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
         assert result.exit_code == 0, result.stdout
@@ -1365,7 +1365,15 @@ class TestDocNewOps:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"add_content_to_doc_from_markdown": {"success": True, "block_ids": ["b1"], "error": None}}),
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["b1"],
+                        "error": None,
+                    }
+                }
+            ),
         )
         result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", "# Hi"])
         assert result.exit_code == 0, result.stdout

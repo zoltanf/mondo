@@ -6,6 +6,7 @@ special column-id (server-side), but `--filter` is undiscoverable. Agents
 reach for `--group` and get "No such option". This test locks in the
 alias and asserts the two forms produce identical GraphQL requests.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,18 +42,24 @@ def _stub_columns(httpx_mock: HTTPXMock) -> None:
         url=ENDPOINT,
         method="POST",
         json={
-            "data": {"boards": [{
-                "id": "42",
-                "columns": [{
-                    "id": "status",
-                    "title": "Status",
-                    "type": "status",
-                    "settings_str": json.dumps({
-                        "labels": {"0": "Done", "1": "Working on it", "2": "Stuck"}
-                    }),
-                    "archived": False,
-                }],
-            }]},
+            "data": {
+                "boards": [
+                    {
+                        "id": "42",
+                        "columns": [
+                            {
+                                "id": "status",
+                                "title": "Status",
+                                "type": "status",
+                                "settings_str": json.dumps(
+                                    {"labels": {"0": "Done", "1": "Working on it", "2": "Stuck"}}
+                                ),
+                                "archived": False,
+                            }
+                        ],
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
@@ -73,9 +80,7 @@ def test_group_flag_is_accepted(httpx_mock: HTTPXMock) -> None:
     """--group should parse without 'No such option'."""
     _stub_columns(httpx_mock)
     _stub_items_page(httpx_mock, [])
-    result = runner.invoke(
-        app, ["item", "list", "--board", "42", "--group", "topics"]
-    )
+    result = runner.invoke(app, ["item", "list", "--board", "42", "--group", "topics"])
     combined = (result.output or "") + (result.stderr or "")
     assert "No such option" not in combined, combined
 
@@ -88,13 +93,10 @@ def test_group_flag_produces_same_query_as_filter(httpx_mock: HTTPXMock) -> None
     _stub_columns(httpx_mock)
     _stub_items_page(httpx_mock, [])
 
-    r1 = runner.invoke(
-        app, ["-o", "json", "item", "list", "--board", "42", "--group", "topics"]
-    )
+    r1 = runner.invoke(app, ["-o", "json", "item", "list", "--board", "42", "--group", "topics"])
     assert r1.exit_code == 0, r1.output
     r2 = runner.invoke(
-        app, ["-o", "json", "item", "list", "--board", "42",
-              "--filter", "group=topics"]
+        app, ["-o", "json", "item", "list", "--board", "42", "--filter", "group=topics"]
     )
     assert r2.exit_code == 0, r2.output
 
@@ -117,8 +119,18 @@ def test_group_flag_combines_with_filter(httpx_mock: HTTPXMock) -> None:
     _stub_items_page(httpx_mock, [])
     result = runner.invoke(
         app,
-        ["-o", "json", "item", "list", "--board", "42",
-         "--group", "topics", "--filter", "status=Done"],
+        [
+            "-o",
+            "json",
+            "item",
+            "list",
+            "--board",
+            "42",
+            "--group",
+            "topics",
+            "--filter",
+            "status=Done",
+        ],
     )
     assert result.exit_code == 0, result.output
     # The items_page request is the second POST (after the columns preflight).

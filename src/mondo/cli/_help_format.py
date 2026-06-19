@@ -36,9 +36,7 @@ _OUTPUT_PARAM_NAMES: frozenset[str] = frozenset({"output", "query", "fields"})
 # Root-app params that aren't true globals: `--help` is context-sensitive and
 # `--install-completion`/`--show-completion` only work at the root by nature.
 # Mirror the carve-outs in `mondo.cli.argv`.
-_ROOT_PARAM_SKIP: frozenset[str] = frozenset(
-    {"help", "install_completion", "show_completion"}
-)
+_ROOT_PARAM_SKIP: frozenset[str] = frozenset({"help", "install_completion", "show_completion"})
 
 
 def is_global_param(param: click.Parameter) -> bool:
@@ -76,9 +74,7 @@ def _assert_output_params_exist(root_cmd: click.Command) -> None:
     renamed in `main.py`, with no test signal until someone runs `--help`.
     """
     declared = {
-        p.name
-        for p in root_cmd.params
-        if isinstance(p, click.Option) and p.name is not None
+        p.name for p in root_cmd.params if isinstance(p, click.Option) and p.name is not None
     }
     missing = _OUTPUT_PARAM_NAMES - declared
     if missing:
@@ -132,10 +128,7 @@ class MondoGroup(typer.core.TyperGroup):
                     close = get_close_matches(args[0], siblings)
                     parts = [exc.message.rstrip(".")]
                     if close:
-                        parts.append(
-                            "Did you mean "
-                            + ", ".join(repr(m) for m in close) + "?"
-                        )
+                        parts.append("Did you mean " + ", ".join(repr(m) for m in close) + "?")
                     parts.append("Available subcommands: " + ", ".join(siblings) + ".")
                     exc.message = " ".join(parts)
             raise

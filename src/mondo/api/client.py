@@ -153,9 +153,7 @@ class MondayClient:
                 last_exc = NetworkError(f"transport error: {e}")
                 logger.warning(f"attempt {attempt}: transport error — {e}")
             else:
-                exc = _classify_response(
-                    response, suppress_graphql_errors=surface_partial_errors
-                )
+                exc = _classify_response(response, suppress_graphql_errors=surface_partial_errors)
                 if exc is None:
                     parsed: dict[str, Any] = response.json()
                     logger.debug("GraphQL response: {}", parsed)

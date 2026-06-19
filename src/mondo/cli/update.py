@@ -147,10 +147,7 @@ def list_cmd(
     if item_id is not None:
         cfg = opts.resolve_cache_config()
         use_cache = (
-            cfg.enabled
-            and not no_cache
-            and max_items is None
-            and limit == MAX_UPDATES_PAGE_SIZE
+            cfg.enabled and not no_cache and max_items is None and limit == MAX_UPDATES_PAGE_SIZE
         )
         if use_cache:
             if opts.dry_run:
@@ -291,8 +288,7 @@ def create_cmd(
     body: str | None = typer.Option(
         None,
         "--body",
-        help="Update body (CommonMark markdown by default — pass --html to send HTML "
-        "verbatim).",
+        help="Update body (CommonMark markdown by default — pass --html to send HTML verbatim).",
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
@@ -329,8 +325,7 @@ def reply_cmd(
     body: str | None = typer.Option(
         None,
         "--body",
-        help="Reply body (CommonMark markdown by default — pass --html to send HTML "
-        "verbatim).",
+        help="Reply body (CommonMark markdown by default — pass --html to send HTML verbatim).",
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
@@ -365,8 +360,7 @@ def edit_cmd(
     body: str | None = typer.Option(
         None,
         "--body",
-        help="New body (CommonMark markdown by default — pass --html to send HTML "
-        "verbatim).",
+        help="New body (CommonMark markdown by default — pass --html to send HTML verbatim).",
     ),
     from_file: Path | None = typer.Option(
         None, "--from-file", help="Load the new body from a file."

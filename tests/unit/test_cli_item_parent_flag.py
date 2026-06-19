@@ -9,6 +9,7 @@ another scope filter.
 The implementation delegates to the same SUBITEMS_LIST query subitem list
 uses, so the returned shape is identical.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,24 +41,41 @@ def _stub_subitems(httpx_mock: HTTPXMock, subitems: list[dict]) -> None:
         url=ENDPOINT,
         method="POST",
         json={
-            "data": {"items": [{
-                "id": "111",
-                "name": "Parent",
-                "board": {"id": "42", "name": "B"},
-                "subitems": subitems,
-            }]},
+            "data": {
+                "items": [
+                    {
+                        "id": "111",
+                        "name": "Parent",
+                        "board": {"id": "42", "name": "B"},
+                        "subitems": subitems,
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
 
 
 def test_parent_flag_returns_subitems(httpx_mock: HTTPXMock) -> None:
-    _stub_subitems(httpx_mock, [
-        {"id": "201", "name": "Sub A", "state": "active",
-         "board": {"id": "777"}, "column_values": []},
-        {"id": "202", "name": "Sub B", "state": "active",
-         "board": {"id": "777"}, "column_values": []},
-    ])
+    _stub_subitems(
+        httpx_mock,
+        [
+            {
+                "id": "201",
+                "name": "Sub A",
+                "state": "active",
+                "board": {"id": "777"},
+                "column_values": [],
+            },
+            {
+                "id": "202",
+                "name": "Sub B",
+                "state": "active",
+                "board": {"id": "777"},
+                "column_values": [],
+            },
+        ],
+    )
     result = runner.invoke(
         app,
         ["-o", "json", "item", "list", "--parent", "111"],
@@ -91,7 +109,6 @@ def test_parent_flag_uses_same_query_as_subitem_list(httpx_mock: HTTPXMock) -> N
     body1 = json.loads(requests[0].content)
     body2 = json.loads(requests[1].content)
     assert body1["query"] == body2["query"], (
-        "item list --parent and subitem list --parent sent different "
-        "GraphQL queries"
+        "item list --parent and subitem list --parent sent different GraphQL queries"
     )
     assert body1["variables"] == body2["variables"]

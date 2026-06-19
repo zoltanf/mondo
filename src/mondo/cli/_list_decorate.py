@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from mondo.cli.context import GlobalOpts
 
 
-def enrich_workspaces_best_effort(
-    entries: list[dict[str, Any]], opts: GlobalOpts
-) -> None:
+def enrich_workspaces_best_effort(entries: list[dict[str, Any]], opts: GlobalOpts) -> None:
     """Add `workspace_name` to each entry; swallow MondoError silently."""
     from mondo.cache.directory import enrich_workspace_names
 
@@ -29,9 +27,7 @@ def enrich_workspaces_best_effort(
         pass
 
 
-def apply_board_urls(
-    entries: list[dict[str, Any]], opts: GlobalOpts
-) -> None:
+def apply_board_urls(entries: list[dict[str, Any]], opts: GlobalOpts) -> None:
     """Attach a synthesized monday `url` to each board entry."""
     from mondo.cli._url import board_url, get_tenant_slug
 
@@ -43,7 +39,7 @@ def apply_board_urls(
     for b in entries:
         try:
             bid = int(b.get("id"))  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         b["url"] = board_url(slug, bid)
 

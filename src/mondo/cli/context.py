@@ -152,9 +152,7 @@ class GlobalOpts:
         if self._cache_config is None:
             from mondo.cache import resolve_cache_config
 
-            self._cache_config = resolve_cache_config(
-                self._load(), profile_name=self.profile_name
-            )
+            self._cache_config = resolve_cache_config(self._load(), profile_name=self.profile_name)
         return self._cache_config
 
     def api_endpoint(self) -> str:
@@ -167,9 +165,7 @@ class GlobalOpts:
         profile = cfg.get_profile(self.profile_name)
         return profile.api_url
 
-    def build_cache_store(
-        self, entity_type: EntityType, *, scope: str | None = None
-    ) -> CacheStore:
+    def build_cache_store(self, entity_type: EntityType, *, scope: str | None = None) -> CacheStore:
         """Build a CacheStore for the given entity type, wired with the
         resolved TTL + endpoint + cache directory.
 

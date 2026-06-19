@@ -117,9 +117,7 @@ class TestColumnGetMeta:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["column", "get-meta", "--board", "42", "--column", "status"]
-        )
+        result = runner.invoke(app, ["column", "get-meta", "--board", "42", "--column", "status"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert parsed["id"] == "status"
@@ -154,9 +152,7 @@ class TestColumnGetMeta:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["column", "get-meta", "--board", "42", "--column", "missing"]
-        )
+        result = runner.invoke(app, ["column", "get-meta", "--board", "42", "--column", "missing"])
         assert result.exit_code == 6
         combined = (result.stdout or "") + (result.stderr or "")
         assert "missing" in combined.lower() and "not found" in combined.lower()
@@ -679,10 +675,14 @@ class TestColumnRename:
         result = runner.invoke(
             app,
             [
-                "column", "rename",
-                "--board", "42",
-                "--name-contains", "status",
-                "--title", "Workflow",
+                "column",
+                "rename",
+                "--board",
+                "42",
+                "--name-contains",
+                "status",
+                "--title",
+                "Workflow",
             ],
         )
         assert result.exit_code == 0, result.stdout

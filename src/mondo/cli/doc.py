@@ -116,9 +116,7 @@ def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> s
     if sources == 0:
         usage_error_or_exit("provide --markdown, --from-file @path, or --from-stdin")
     if sources > 1:
-        usage_error_or_exit(
-            "--markdown, --from-file, and --from-stdin are mutually exclusive"
-        )
+        usage_error_or_exit("--markdown, --from-file, and --from-stdin are mutually exclusive")
     if path is not None:
         return path.read_text()
     if from_stdin:
@@ -132,9 +130,7 @@ def _load_html(inline: str | None, path: Path | None, from_stdin: bool) -> str:
     if sources == 0:
         usage_error_or_exit("provide --html, --from-file @path, or --from-stdin")
     if sources > 1:
-        usage_error_or_exit(
-            "--html, --from-file, and --from-stdin are mutually exclusive"
-        )
+        usage_error_or_exit("--html, --from-file, and --from-stdin are mutually exclusive")
     if path is not None:
         return path.read_text()
     if from_stdin:
@@ -325,9 +321,7 @@ def list_cmd(
     reject_mutually_exclusive(no_cache, refresh_cache)
 
     try:
-        needle_lower, pattern = compile_name_filter(
-            name_contains, name_matches, name_fuzzy
-        )
+        needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
     except UsageError as e:
         usage_error_or_exit(str(e))
 
@@ -611,8 +605,10 @@ def get_cmd(
     try:
         with client:
             if use_cache:
-                resolved_doc_id = doc_id if doc_id is not None else _resolve_doc_id_from_object_id(
-                    opts, client, object_id or 0
+                resolved_doc_id = (
+                    doc_id
+                    if doc_id is not None
+                    else _resolve_doc_id_from_object_id(opts, client, object_id or 0)
                 )
             else:
                 resolved_doc_id = None
@@ -620,9 +616,7 @@ def get_cmd(
             if use_cache and resolved_doc_id is not None:
                 from mondo.cache.directory import get_doc_blocks
 
-                store = opts.build_cache_store(
-                    "docs_blocks", scope=str(resolved_doc_id)
-                )
+                store = opts.build_cache_store("docs_blocks", scope=str(resolved_doc_id))
                 try:
                     cached = get_doc_blocks(
                         client,
@@ -630,9 +624,7 @@ def get_cmd(
                         doc_id=resolved_doc_id,
                         refresh=refresh_cache,
                     )
-                    emit_cache_provenance(
-                        opts, cached, store=store, explain=explain_cache
-                    )
+                    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                     doc = cached.entries[0] if cached.entries else None
                 except NotFoundError:
                     doc = None
@@ -676,7 +668,7 @@ def _resolve_doc_id_from_object_id(
             raw = entry.get("id")
             try:
                 return int(raw) if raw is not None else None
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return None
     return None
 
@@ -782,7 +774,7 @@ def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
         return None
     try:
         return int(docs[0]["id"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return None
 
 
@@ -930,9 +922,7 @@ def add_block_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            resolved_doc = _resolve_doc_in_client(
-                opts, client, doc_id=doc_id, object_id=object_id
-            )
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
             if opts.dry_run:
                 dry_run_and_exit(opts, CREATE_DOC_BLOCK, _variables(resolved_doc, after))
             effective_after = after
@@ -942,9 +932,7 @@ def add_block_cmd(
                     _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                     raise typer.Exit(code=6)
                 effective_after = _last_block_id(existing_doc)
-            data = exec_or_exit(
-                client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after)
-            )
+            data = exec_or_exit(client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -992,9 +980,7 @@ def add_content_cmd(
     created: list[dict[str, Any]] = []
     try:
         with client:
-            resolved_doc = _resolve_doc_in_client(
-                opts, client, doc_id=doc_id, object_id=object_id
-            )
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
             if opts.dry_run:
                 dry_run_and_exit(
                     opts,
@@ -1130,8 +1116,7 @@ def duplicate_cmd(
     if not matches:
         handle_mondo_error_or_exit(
             ValidationError(
-                f"duplicated doc with object_id={new_object_id} not "
-                "visible in workspace lookup"
+                f"duplicated doc with object_id={new_object_id} not visible in workspace lookup"
             )
         )
     new_doc = matches[0]

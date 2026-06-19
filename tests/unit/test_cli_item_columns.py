@@ -49,9 +49,7 @@ def _bodies(httpx_mock: HTTPXMock) -> list[dict]:
 
 class TestItemListColumns:
     def test_columns_narrows_server_side(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(
             app, ["item", "list", "--board", "42", "--columns", "status, person"]
         )
@@ -69,18 +67,14 @@ class TestItemListColumns:
             method="POST",
             json=_ok({"next_items_page": {"cursor": None, "items": [{"id": "2"}]}}),
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--columns", "status"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--columns", "status"])
         assert result.exit_code == 0, result.output
         _first, second = _bodies(httpx_mock)
         assert "column_values(ids: $cols)" in second["query"]
         assert second["variables"]["cols"] == ["status"]
         assert second["variables"]["cursor"] == "C"
 
-    def test_columns_composes_with_filter_and_max_items(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_columns_composes_with_filter_and_max_items(self, httpx_mock: HTTPXMock) -> None:
         # --filter triggers a column-defs preflight before the items_page call.
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -91,9 +85,7 @@ class TestItemListColumns:
                         {
                             "id": "42",
                             "name": "B",
-                            "columns": [
-                                {"id": "text7", "title": "T", "type": "text"}
-                            ],
+                            "columns": [{"id": "text7", "title": "T", "type": "text"}],
                         }
                     ]
                 }
@@ -107,10 +99,16 @@ class TestItemListColumns:
         result = runner.invoke(
             app,
             [
-                "item", "list", "--board", "42",
-                "--columns", "status",
-                "--filter", "text7=x",
-                "--max-items", "1",
+                "item",
+                "list",
+                "--board",
+                "42",
+                "--columns",
+                "status",
+                "--filter",
+                "text7=x",
+                "--max-items",
+                "1",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -125,16 +123,12 @@ class TestItemListColumns:
         assert httpx_mock.get_requests() == []
 
     def test_columns_with_parent_is_usage_error(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(
-            app, ["item", "list", "--parent", "7", "--columns", "status"]
-        )
+        result = runner.invoke(app, ["item", "list", "--parent", "7", "--columns", "status"])
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
     def test_default_keeps_full_column_values(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(app, ["item", "list", "--board", "42"])
         assert result.exit_code == 0
         body = _bodies(httpx_mock)[-1]
@@ -148,29 +142,21 @@ class TestItemListAutoSlim:
             method="POST",
             json=_ok(_items_page([{"id": "1", "name": "A"}])),
         )
-        result = runner.invoke(
-            app, ["--fields", "id,name", "item", "list", "--board", "42"]
-        )
+        result = runner.invoke(app, ["--fields", "id,name", "item", "list", "--board", "42"])
         assert result.exit_code == 0, result.output
         assert "column_values" not in _bodies(httpx_mock)[-1]["query"]
         assert json.loads(result.stdout) == [{"id": "1", "name": "A"}]
 
     def test_fields_dotted_group_still_slims(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(
             app, ["--fields", "id,name,group.title", "item", "list", "--board", "42"]
         )
         assert result.exit_code == 0
         assert "column_values" not in _bodies(httpx_mock)[-1]["query"]
 
-    def test_fields_requesting_column_values_keeps_them(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+    def test_fields_requesting_column_values_keeps_them(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(
             app, ["--fields", "id,column_values", "item", "list", "--board", "42"]
         )
@@ -203,9 +189,7 @@ class TestItemListAutoSlim:
         assert "column_values { id type text value }" in _bodies(httpx_mock)[-1]["query"]
 
     def test_no_projection_keeps_full_shape(self, httpx_mock: HTTPXMock) -> None:
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(app, ["item", "list", "--board", "42"])
         assert result.exit_code == 0
         assert "column_values" in _bodies(httpx_mock)[-1]["query"]
@@ -213,15 +197,18 @@ class TestItemListAutoSlim:
     def test_safe_fields_with_query_keeps_them(self, httpx_mock: HTTPXMock) -> None:
         # -q runs before --fields against the raw rows; any -q disables
         # auto-slim even when --fields alone would qualify.
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(
             app,
             [
-                "--fields", "id,name",
-                "-q", "[?column_values[?text=='x']]",
-                "item", "list", "--board", "42",
+                "--fields",
+                "id,name",
+                "-q",
+                "[?column_values[?text=='x']]",
+                "item",
+                "list",
+                "--board",
+                "42",
             ],
         )
         assert result.exit_code == 0
@@ -230,15 +217,18 @@ class TestItemListAutoSlim:
     def test_poll_until_disables_auto_slim(self, httpx_mock: HTTPXMock) -> None:
         # --poll-until evaluates against the raw fetched rows, so its
         # expression may read column_values even when --fields doesn't.
-        httpx_mock.add_response(
-            url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}]))
-        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
         result = runner.invoke(
             app,
             [
-                "--fields", "id,name",
-                "item", "list", "--board", "42",
-                "--poll-until", "length(@) > `0`",
+                "--fields",
+                "id,name",
+                "item",
+                "list",
+                "--board",
+                "42",
+                "--poll-until",
+                "length(@) > `0`",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -281,9 +271,7 @@ class TestItemGetColumns:
         assert "column_values(ids: $cols)" in body["query"]
         assert body["variables"] == {"id": 1, "cols": ["status"]}
 
-    def test_get_columns_conflicts_with_include_updates(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_get_columns_conflicts_with_include_updates(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app, ["item", "get", "--id", "1", "--columns", "status", "--include-updates"]
         )

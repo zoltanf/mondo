@@ -78,9 +78,7 @@ def lookup_entity_in_directory(
             cached = fetcher(client, store=store, refresh=refresh)
             for entry in cached.entries:
                 if str(entry.get("id")) == target_key:
-                    emit_cache_provenance(
-                        opts, cached, store=store, explain=explain_cache
-                    )
+                    emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                     return entry
             # Present in cache freshness window but absent from entries.
             # Fall through to a single-entity live fetch so a just-created

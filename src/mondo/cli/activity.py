@@ -89,9 +89,7 @@ def board_cmd(
                 boards = data.get("boards") or []
                 if not boards:
                     if page == 1:
-                        handle_mondo_error_or_exit(
-                            NotFoundError(f"board {board_id} not found.")
-                        )
+                        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
                     break
                 logs = boards[0].get("activity_logs") or []
                 if not logs:

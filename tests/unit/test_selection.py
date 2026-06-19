@@ -55,9 +55,7 @@ class TestExtractSelectedFields:
           }
         }
         """
-        assert extract_selected_fields(q) == frozenset(
-            {"value", "__typename", "result", "another"}
-        )
+        assert extract_selected_fields(q) == frozenset({"value", "__typename", "result", "another"})
 
     def test_aggregate_board_query(self) -> None:
         # AGGREGATE_BOARD has nested inline fragments — verify TypeName tokens
@@ -80,7 +78,7 @@ class TestExtractSelectedFields:
     def test_field_with_args_still_counted(self) -> None:
         # `column_values(ids: $cols)` — the `column_values` field name is
         # before the parens and must be retained.
-        q = "{ items { id column_values(ids: [\"a\"]) { id type text } } }"
+        q = '{ items { id column_values(ids: ["a"]) { id type text } } }'
         assert extract_selected_fields(q) == frozenset(
             {"items", "id", "column_values", "type", "text"}
         )
@@ -94,11 +92,31 @@ class TestExtractSelectedFields:
     @pytest.mark.parametrize(
         "query, expected_present, expected_absent",
         [
-            (BOARD_GET, {"id", "name", "board_kind", "board_folder_id", "workspace"}, {"created_at", "url"}),
-            (ITEM_GET, {"items", "id", "name", "url", "column_values", "creator"}, {"updates", "subitems"}),
-            (GROUPS_LIST, {"groups", "id", "title", "color", "archived", "deleted"}, {"created_at"}),
-            (FOLDER_GET, {"folders", "id", "name", "color", "parent", "workspace"}, {"description"}),
-            (UPDATES_FOR_ITEM, {"items", "updates", "body", "text_body", "creator", "replies", "likes"}, {"description"}),
+            (
+                BOARD_GET,
+                {"id", "name", "board_kind", "board_folder_id", "workspace"},
+                {"created_at", "url"},
+            ),
+            (
+                ITEM_GET,
+                {"items", "id", "name", "url", "column_values", "creator"},
+                {"updates", "subitems"},
+            ),
+            (
+                GROUPS_LIST,
+                {"groups", "id", "title", "color", "archived", "deleted"},
+                {"created_at"},
+            ),
+            (
+                FOLDER_GET,
+                {"folders", "id", "name", "color", "parent", "workspace"},
+                {"description"},
+            ),
+            (
+                UPDATES_FOR_ITEM,
+                {"items", "updates", "body", "text_body", "creator", "replies", "likes"},
+                {"description"},
+            ),
         ],
     )
     def test_real_query_constants(

@@ -241,13 +241,9 @@ class TestItemList:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"boards": [{"items_page": {"cursor": None, "items": [{"id": "1"}]}}]}
-            ),
+            json=_ok({"boards": [{"items_page": {"cursor": None, "items": [{"id": "1"}]}}]}),
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--refresh-cache"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--refresh-cache"])
         assert result.exit_code == 0, (result.stdout or "") + (result.stderr or "")
 
     def test_no_cache_accepted_as_no_op(self, httpx_mock: HTTPXMock) -> None:
@@ -256,9 +252,7 @@ class TestItemList:
             method="POST",
             json=_ok({"boards": [{"items_page": {"cursor": None, "items": []}}]}),
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--no-cache"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--no-cache"])
         assert result.exit_code == 0, (result.stdout or "") + (result.stderr or "")
 
 
@@ -317,23 +311,17 @@ class TestItemListFilterCodec:
             httpx_mock,
             [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "status=Done"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "status=Done"])
         assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
-        assert qp["rules"] == [
-            {"column_id": "status", "compare_value": [1], "operator": "any_of"}
-        ]
+        assert qp["rules"] == [{"column_id": "status", "compare_value": [1], "operator": "any_of"}]
 
     def test_filter_status_accepts_index_syntax(self, httpx_mock: HTTPXMock) -> None:
         self._add_columns_then_items(
             httpx_mock,
             [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "status=#1"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "status=#1"])
         assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
         assert qp["rules"][0]["compare_value"] == [1]
@@ -355,9 +343,7 @@ class TestItemListFilterCodec:
             httpx_mock,
             [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}],
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "status!=Done"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "status!=Done"])
         assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
         assert qp["rules"] == [
@@ -372,9 +358,7 @@ class TestItemListFilterCodec:
                 [{"id": "status", "type": "status", "settings_str": _STATUS_SETTINGS}]
             ),
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "status=Nope"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "status=Nope"])
         assert result.exit_code != 0
         # Error should name the column id and known labels so the user can self-correct.
         assert "status" in result.stdout + (result.stderr or "")
@@ -389,23 +373,17 @@ class TestItemListFilterCodec:
             httpx_mock,
             [{"id": "dd", "type": "dropdown", "settings_str": _DROPDOWN_SETTINGS}],
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "dd=Cookie"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "dd=Cookie"])
         assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
-        assert qp["rules"] == [
-            {"column_id": "dd", "compare_value": [1], "operator": "any_of"}
-        ]
+        assert qp["rules"] == [{"column_id": "dd", "compare_value": [1], "operator": "any_of"}]
 
     def test_filter_text_passthrough(self, httpx_mock: HTTPXMock) -> None:
         self._add_columns_then_items(
             httpx_mock,
             [{"id": "txt", "type": "text", "settings_str": "{}"}],
         )
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "txt=hello"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "txt=hello"])
         assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
         assert qp["rules"] == [
@@ -416,9 +394,7 @@ class TestItemListFilterCodec:
         """Unknown column id → pass values through as strings, let the server
         surface 'Column not found' as before."""
         self._add_columns_then_items(httpx_mock, [])
-        result = runner.invoke(
-            app, ["item", "list", "--board", "42", "--filter", "missing=foo"]
-        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "missing=foo"])
         assert result.exit_code == 0, result.stdout
         qp = _last_body(httpx_mock)["variables"]["qp"]
         assert qp["rules"] == [
@@ -481,9 +457,7 @@ class TestItemCreate:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["item", "create", "--board", "42", "--name", "New"]
-        )
+        result = runner.invoke(app, ["item", "create", "--board", "42", "--name", "New"])
         assert result.exit_code == 0, result.stdout
         assert "url" not in json.loads(result.stdout)
 
@@ -790,10 +764,14 @@ class TestItemCreateBatch:
         result = runner.invoke(
             app,
             [
-                "item", "create",
-                "--board", "42",
-                "--batch", str(batch_file),
-                "--chunk-size", "2",
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--batch",
+                str(batch_file),
+                "--chunk-size",
+                "2",
             ],
         )
         assert result.exit_code == 0, result.stdout
@@ -837,9 +815,14 @@ class TestItemCreateBatch:
             app,
             [
                 "--dry-run",
-                "item", "create", "--board", "42",
-                "--batch", str(batch_file),
-                "--chunk-size", "2",
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--batch",
+                str(batch_file),
+                "--chunk-size",
+                "2",
             ],
         )
         assert result.exit_code == 0, result.stdout
@@ -860,17 +843,19 @@ class TestItemCreateBatch:
         result = runner.invoke(
             app,
             [
-                "item", "create",
-                "--board", "42",
-                "--name", "X",
-                "--batch", str(batch_file),
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--name",
+                "X",
+                "--batch",
+                str(batch_file),
             ],
         )
         assert result.exit_code == 2, result.stdout
 
-    def test_batch_bad_json_exits_2(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_batch_bad_json_exits_2(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         batch_file = tmp_path / "bad.json"
         batch_file.write_text('{"not": "an array"}')
         result = runner.invoke(
@@ -879,9 +864,7 @@ class TestItemCreateBatch:
         )
         assert result.exit_code == 2, result.stdout
 
-    def test_batch_missing_name_exits_2(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_batch_missing_name_exits_2(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         batch_file = tmp_path / "noname.json"
         batch_file.write_text(json.dumps([{"group_id": "topics"}]))
         result = runner.invoke(
@@ -890,9 +873,7 @@ class TestItemCreateBatch:
         )
         assert result.exit_code == 2, result.stdout
 
-    def test_batch_empty_array_exits_2(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_batch_empty_array_exits_2(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         batch_file = tmp_path / "empty.json"
         batch_file.write_text("[]")
         result = runner.invoke(
@@ -901,17 +882,13 @@ class TestItemCreateBatch:
         )
         assert result.exit_code == 2, result.stdout
 
-    def test_create_without_name_or_batch_exits_2(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_create_without_name_or_batch_exits_2(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(app, ["item", "create", "--board", "42"])
         assert result.exit_code == 2, result.stdout
 
 
 class TestItemRenameByName:
-    def test_name_contains_resolves_via_items_page(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_name_contains_resolves_via_items_page(self, httpx_mock: HTTPXMock) -> None:
         # First request: items_page lookup. Second: the rename mutation.
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -940,10 +917,14 @@ class TestItemRenameByName:
         result = runner.invoke(
             app,
             [
-                "item", "rename",
-                "--board", "42",
-                "--name-contains", "banana",
-                "--name", "Cherry",
+                "item",
+                "rename",
+                "--board",
+                "42",
+                "--name-contains",
+                "banana",
+                "--name",
+                "Cherry",
             ],
         )
         assert result.exit_code == 0, result.stdout

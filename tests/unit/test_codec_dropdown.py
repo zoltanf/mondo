@@ -51,9 +51,9 @@ class TestParse:
         }
 
     def test_create_labels_mixed_known_and_unknown(self) -> None:
-        assert parse_value(
-            "dropdown", "Cookie,Donut", SETTINGS, create_labels=True
-        ) == {"labels": ["Cookie", "Donut"]}
+        assert parse_value("dropdown", "Cookie,Donut", SETTINGS, create_labels=True) == {
+            "labels": ["Cookie", "Donut"]
+        }
 
 
 class TestRender:

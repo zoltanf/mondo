@@ -75,9 +75,7 @@ class TestTagListCache:
         parsed = json.loads(result.stdout)
         assert [t["id"] for t in parsed] == ["10", "11"]
 
-    def test_id_filter_on_cached_data(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_id_filter_on_cached_data(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="tags",
@@ -92,9 +90,7 @@ class TestTagListCache:
         parsed = json.loads(result.stdout)
         assert [t["id"] for t in parsed] == ["11"]
 
-    def test_no_cache_forces_live(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_no_cache_forces_live(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(tmp_path, entity_type="tags", entries=[{"id": "10", "name": "Stale"}])
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -105,9 +101,7 @@ class TestTagListCache:
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)[0]["name"] == "Live"
 
-    def test_dry_run_skips_cache_and_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_dry_run_skips_cache_and_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(tmp_path, entity_type="tags", entries=[{"id": "10", "name": "X"}])
         result = runner.invoke(app, ["--dry-run", "tag", "list"])
         assert result.exit_code == 0, result.stdout
@@ -126,9 +120,7 @@ class TestTagGetCache:
         assert httpx_mock.get_requests() == []
         assert json.loads(result.stdout)["name"] == "Bug"
 
-    def test_with_board_bypasses_cache(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_with_board_bypasses_cache(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="tags",
@@ -145,9 +137,7 @@ class TestTagGetCache:
 
 
 class TestTagCreateOrGetInvalidatesCache:
-    def test_create_drops_tags_cache(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_create_drops_tags_cache(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         cache_path = _prewarm(
             tmp_path,
             entity_type="tags",
@@ -159,9 +149,7 @@ class TestTagCreateOrGetInvalidatesCache:
             method="POST",
             json=_ok({"create_or_get_tag": {"id": "20", "name": "NewTag"}}),
         )
-        result = runner.invoke(
-            app, ["tag", "create-or-get", "--name", "NewTag", "--board", "42"]
-        )
+        result = runner.invoke(app, ["tag", "create-or-get", "--name", "NewTag", "--board", "42"])
         assert result.exit_code == 0, result.stdout
         assert not cache_path.exists()
 
@@ -196,23 +184,13 @@ class TestWebhookListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "webhooks": [
-                        {"id": "9", "board_id": "42", "event": "create_item"}
-                    ]
-                }
-            ),
+            json=_ok({"webhooks": [{"id": "9", "board_id": "42", "event": "create_item"}]}),
         )
-        result = runner.invoke(
-            app, ["webhook", "list", "--board", "42", "--no-cache"]
-        )
+        result = runner.invoke(app, ["webhook", "list", "--board", "42", "--no-cache"])
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)[0]["id"] == "9"
 
-    def test_app_only_bypasses_cache(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_app_only_bypasses_cache(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         # Even with a hot cache, --app-only must hit the wire — the cached
         # unscoped set can't be filtered down to app-only correctness.
         _prewarm(
@@ -224,25 +202,15 @@ class TestWebhookListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "webhooks": [
-                        {"id": "7", "board_id": "42", "event": "create_item"}
-                    ]
-                }
-            ),
+            json=_ok({"webhooks": [{"id": "7", "board_id": "42", "event": "create_item"}]}),
         )
-        result = runner.invoke(
-            app, ["webhook", "list", "--board", "42", "--app-only"]
-        )
+        result = runner.invoke(app, ["webhook", "list", "--board", "42", "--app-only"])
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)[0]["id"] == "7"
 
 
 class TestWebhookMutationInvalidations:
-    def test_create_drops_scope_file(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_create_drops_scope_file(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         scope_path = _prewarm(
             tmp_path,
             entity_type="webhooks",
@@ -253,9 +221,7 @@ class TestWebhookMutationInvalidations:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"create_webhook": {"id": "99", "board_id": "42", "event": "create_item"}}
-            ),
+            json=_ok({"create_webhook": {"id": "99", "board_id": "42", "event": "create_item"}}),
         )
         result = runner.invoke(
             app,
@@ -327,9 +293,7 @@ class TestCacheCliCoversNewEntities:
         assert rows[0]["board"] == "42"
 
     def test_clear_tags(self, tmp_path: Path) -> None:
-        cache_path = _prewarm(
-            tmp_path, entity_type="tags", entries=[{"id": "10", "name": "Bug"}]
-        )
+        cache_path = _prewarm(tmp_path, entity_type="tags", entries=[{"id": "10", "name": "Bug"}])
         assert cache_path.exists()
         result = runner.invoke(app, ["cache", "clear", "tags"])
         assert result.exit_code == 0, result.stdout

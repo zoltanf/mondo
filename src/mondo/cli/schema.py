@@ -44,10 +44,7 @@ def schema_command(
         return
 
     if resource not in schemas:
-        usage_error_or_exit(
-            f"unknown resource '{resource}'. "
-            f"Known: {', '.join(sorted(schemas))}."
-        )
+        usage_error_or_exit(f"unknown resource '{resource}'. Known: {', '.join(sorted(schemas))}.")
 
     opts.emit(schemas[resource])
 

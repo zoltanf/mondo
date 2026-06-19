@@ -263,9 +263,7 @@ def _list_users_via_cache(
         needle = name.lower()
         entries = [u for u in entries if needle in (u.get("name") or "").lower()]
     if newest_first:
-        entries = sorted(
-            entries, key=lambda u: u.get("created_at") or "", reverse=True
-        )
+        entries = sorted(entries, key=lambda u: u.get("created_at") or "", reverse=True)
 
     if name_fuzzy is not None:
         entries = apply_fuzzy(

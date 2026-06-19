@@ -37,9 +37,8 @@ def require_live_token() -> str:
 
 
 def playground_workspace_id() -> int:
-    raw = (
-        os.environ.get(MONDAY_TEST_WORKSPACE_ID_ENV)
-        or os.environ.get(MONDO_TEST_WORKSPACE_ID_ENV)
+    raw = os.environ.get(MONDAY_TEST_WORKSPACE_ID_ENV) or os.environ.get(
+        MONDO_TEST_WORKSPACE_ID_ENV
     )
     return int(raw) if raw else DEFAULT_PLAYGROUND_WORKSPACE_ID
 

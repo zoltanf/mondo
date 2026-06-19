@@ -99,7 +99,9 @@ def test_warns_for_both_locations_independently(
 
     _skill_freshness.warn_if_skill_outdated()
 
-    err_lines = [line for line in capsys.readouterr().err.splitlines() if line.startswith("warning:")]
+    err_lines = [
+        line for line in capsys.readouterr().err.splitlines() if line.startswith("warning:")
+    ]
     assert len(err_lines) == 2
     assert any("~/.claude/skills/mondo" in line for line in err_lines)
     assert any("./.claude/skills/mondo" in line for line in err_lines)
