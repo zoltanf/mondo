@@ -37,6 +37,8 @@ Three ways to pick the group to rename: by `--id`, by `--name-contains <substrin
 ```bash
 # By id (always unambiguous):
 mondo group rename --board 5094861043 --id group_42 --title "Doing Now"
+# --name is an alias for --title (matches `create`'s --name):
+mondo group rename --board 5094861043 --id group_42 --name "Doing Now"
 
 # By substring; if multiple groups match, this exits 2 unless --first is added:
 mondo group rename --board 5094861043 \

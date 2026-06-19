@@ -623,6 +623,143 @@ class TestColumnCreate:
         assert "create_column" in parsed["query"]
         assert httpx_mock.get_requests() == []
 
+    def test_labels_status_builds_defaults(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_column": {"id": "stage"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "Stage",
+                "--type",
+                "status",
+                "--labels",
+                "A,B,C",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert isinstance(v["defaults"], str)
+        assert json.loads(v["defaults"]) == {"labels": {"1": "A", "2": "B", "3": "C"}}
+
+    def test_labels_dropdown_builds_defaults(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_column": {"id": "stack"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "Stack",
+                "--type",
+                "dropdown",
+                "--labels",
+                "X,Y",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert json.loads(v["defaults"]) == {
+            "settings": {"labels": [{"id": 1, "name": "X"}, {"id": 2, "name": "Y"}]}
+        }
+
+    def test_labels_trims_and_drops_empty(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_column": {"id": "stage"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "Stage",
+                "--type",
+                "status",
+                "--labels",
+                " A , ,B ,,",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = json.loads(httpx_mock.get_requests()[-1].content)["variables"]
+        assert json.loads(v["defaults"]) == {"labels": {"1": "A", "2": "B"}}
+
+    def test_labels_wrong_type_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "P",
+                "--type",
+                "text",
+                "--labels",
+                "A,B",
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_labels_with_defaults_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "P",
+                "--type",
+                "status",
+                "--labels",
+                "A,B",
+                "--defaults",
+                '{"labels":{"1":"High"}}',
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
+    def test_labels_all_empty_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "column",
+                "create",
+                "--board",
+                "42",
+                "--title",
+                "P",
+                "--type",
+                "status",
+                "--labels",
+                " , ,",
+            ],
+        )
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
 
 class TestColumnRename:
     def test_basic(self, httpx_mock: HTTPXMock) -> None:

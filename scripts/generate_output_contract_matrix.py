@@ -342,6 +342,28 @@ MANUAL_ROWS: dict[str, Row] = {
         notes="Single created block payload.",
         source="CREATE_DOC_BLOCK.create_doc_block",
     ),
+    # `doc set` / `doc replace` share one handler (set_cmd), registered via
+    # `app.command(...)(set_cmd)` rather than a decorator, so the AST walk
+    # below cannot discover them — they live here as manual rows. The emit is
+    # the add_content_to_doc_from_markdown result spread with replaced_blocks
+    # appended.
+    "doc set": Row(
+        command="doc set",
+        output_type="object",
+        fields=["success", "block_ids", "error", "replaced_blocks"],
+        notes=(
+            "In-place full content replace. Adds the new markdown first, then deletes the prior "
+            "blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`."
+        ),
+        source="ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks",
+    ),
+    "doc replace": Row(
+        command="doc replace",
+        output_type="object",
+        fields=["success", "block_ids", "error", "replaced_blocks"],
+        notes="Alias of `doc set` (same handler / output).",
+        source="ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks",
+    ),
     "doc duplicate": Row(
         command="doc duplicate",
         output_type="object",
@@ -366,8 +388,25 @@ MANUAL_ROWS: dict[str, Row] = {
             "created_by{id,name}",
             "blocks{id,type,content,parent_block_id}",
         ],
-        notes="Default format is JSON object above. --format markdown prints markdown text instead.",
+        notes=(
+            "Default format is JSON object above. --format markdown prints markdown text "
+            "instead. With --format markdown --out FILE, writes the markdown to FILE and emits "
+            "{out, images} where images is the list of localized image filenames downloaded "
+            "beside it (empty with --no-images). --out requires --format markdown (exit 2 otherwise)."
+        ),
         source="DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]",
+    ),
+    "doc export-markdown": Row(
+        command="doc export-markdown",
+        output_type="string | object",
+        fields=["out?", "images?"],
+        notes=(
+            "Prints monday's server-rendered markdown to stdout by default. With --out FILE, "
+            "writes the markdown to FILE and emits {out, images} where images is the list of "
+            "localized image filenames downloaded beside it (empty with --no-images). Always "
+            "live (no per-doc cache): --no-cache / --refresh-cache are accepted as no-ops."
+        ),
+        source="EXPORT_MARKDOWN_FROM_DOC + localize_markdown_images",
     ),
     "doc list": Row(
         command="doc list",

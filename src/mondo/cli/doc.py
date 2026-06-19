@@ -532,6 +532,21 @@ def get_cmd(
         help="Emit raw JSON (blocks as-is) or render blocks to markdown.",
         case_sensitive=False,
     ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help=(
+            "Write markdown to this file and download embedded images into "
+            "the same folder, referenced by local filename (requires "
+            "--format markdown). Without it, markdown goes to stdout and "
+            "images keep their (browser-only) monday URLs."
+        ),
+    ),
+    no_images: bool = typer.Option(
+        False,
+        "--no-images",
+        help="With --out, skip downloading images; keep their monday URLs.",
+    ),
     with_url: bool = typer.Option(
         False,
         "--with-url",
@@ -570,6 +585,8 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
+    if out is not None and fmt is not DocFormat.markdown:
+        usage_error_or_exit("--out is only valid with --format markdown.")
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
         usage_error_or_exit("pass exactly one of --id or --object-id.")
@@ -637,6 +654,21 @@ def get_cmd(
 
     if fmt is DocFormat.markdown:
         blocks = doc.get("blocks") or []
+        if out is not None:
+            images: dict[str, tuple[str, str]] = {}
+            if not no_images:
+                from mondo.cli._doc_images import download_doc_images
+
+                images = download_doc_images(opts, blocks, out.parent)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(blocks_to_markdown(blocks, images=images))
+            opts.emit(
+                {
+                    "out": str(out),
+                    "images": [ref for _, ref in images.values()],
+                }
+            )
+            return
         typer.echo(blocks_to_markdown(blocks))
         return
     doc = normalize_doc_entry(doc)
@@ -801,13 +833,16 @@ def create_cmd(
     kind: DocKind | None = typer.Option(
         None, "--kind", help="public / private / share.", case_sensitive=False
     ),
+    folder_id: int | None = typer.Option(
+        None, "--folder", help="Place the new doc directly inside this folder ID."
+    ),
     with_url: bool = typer.Option(
         False,
         "--with-url",
         help="(No-op for docs — `url` is always present in the payload.)",
     ),
 ) -> None:
-    """Create a new doc inside a workspace."""
+    """Create a new doc inside a workspace (optionally inside a folder)."""
     from mondo.cli._normalize import normalize_doc_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
@@ -816,6 +851,7 @@ def create_cmd(
         "workspace": workspace,
         "name": name,
         "kind": kind.value if kind else None,
+        "folder": folder_id,
     }
     data = execute(opts, CREATE_DOC_IN_WORKSPACE, variables)
     opts.emit(normalize_doc_entry(data.get("create_doc") or {}))
@@ -973,6 +1009,81 @@ def add_markdown_cmd(
     opts.emit(result)
 
 
+def set_cmd(
+    ctx: typer.Context,
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
+    markdown: str | None = typer.Option(None, "--markdown", help="Markdown source."),
+    from_file: Path | None = typer.Option(None, "--from-file", help="Load markdown from a file."),
+    from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
+) -> None:
+    """Replace a doc's full content in place (alias: `doc replace`).
+
+    Writes the new markdown via monday's server-side parser, then removes the
+    doc's prior blocks. The new content is added *before* the old blocks are
+    deleted, so a failed write leaves the original content intact rather than
+    blanking the doc. The doc id / object_id / URL are preserved — only the
+    body changes. Mirrors `column doc set` overwrite semantics.
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    _require_one_doc_flag(doc_id, object_id)
+    md = _load_markdown(markdown, from_file, from_stdin)
+    if not md.strip():
+        usage_error_or_exit(
+            "refusing to replace doc content with empty markdown "
+            "(use `doc delete` to remove the doc itself)."
+        )
+
+    _plan = f"{ADD_CONTENT_TO_DOC_FROM_MARKDOWN} + {DELETE_DOC_BLOCK} (per prior block)"
+    if doc_id is not None and opts.dry_run:
+        dry_run_and_exit(opts, _plan, {"doc": doc_id, "md": md})
+
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
+            if opts.dry_run:
+                dry_run_and_exit(opts, _plan, {"doc": resolved_doc, "md": md})
+            existing_doc = _fetch_doc_by_id_all_blocks(client, resolved_doc)
+            if existing_doc is None:
+                _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
+                raise typer.Exit(code=6)
+            old_block_ids = [
+                str(b["id"])
+                for b in (existing_doc.get("blocks") or [])
+                if isinstance(b, dict) and b.get("id")
+            ]
+            # Add the new content first (after the current last block); only
+            # once it lands do we delete the prior blocks. A failed add leaves
+            # the doc untouched — no destructive half-state / data loss.
+            added = exec_or_exit(
+                client,
+                ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
+                {"doc": resolved_doc, "md": md, "after": last_block_id(existing_doc)},
+            )
+            result = added.get("add_content_to_doc_from_markdown") or {}
+            if not result.get("success"):
+                # Nothing deleted yet: the doc still holds its original content.
+                _fail_with_object_id_hint(
+                    opts,
+                    result.get("error") or "add_content_to_doc_from_markdown failed",
+                    doc_id,
+                )
+            # New content is in place; the doc is mutated now, so drop the cache
+            # even if a subsequent delete fails partway.
+            invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
+            for block_id in old_block_ids:
+                exec_or_exit(client, DELETE_DOC_BLOCK, {"block": block_id})
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+
+    opts.emit({**result, "replaced_blocks": len(old_block_ids)})
+
+
+app.command("set", epilog=epilog_for("doc set"))(set_cmd)
+app.command("replace", epilog=epilog_for("doc replace"))(set_cmd)
+
+
 @app.command("import-html", epilog=epilog_for("doc import-html"))
 def import_html_cmd(
     ctx: typer.Context,
@@ -1103,9 +1214,45 @@ def export_markdown_cmd(
         "--raw",
         help="Emit API JSON envelope instead of plain markdown text.",
     ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help=(
+            "Write the markdown to this file and download embedded images "
+            "into the same folder, rewriting their URLs to local filenames. "
+            "Without it, markdown goes to stdout with monday image URLs."
+        ),
+    ),
+    no_images: bool = typer.Option(
+        False,
+        "--no-images",
+        help="With --out, skip downloading images; keep their monday URLs.",
+    ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="No-op — export is always live (accepted for flag symmetry).",
+        rich_help_panel="Cache",
+    ),
+    refresh_cache: bool = typer.Option(
+        False,
+        "--refresh-cache",
+        help="No-op — export is always live (accepted for flag symmetry).",
+        rich_help_panel="Cache",
+    ),
 ) -> None:
-    """Export doc content as markdown."""
+    """Export doc content as markdown.
+
+    Always fetched live (no per-doc cache is involved), so `--no-cache` /
+    `--refresh-cache` are accepted as no-ops purely for symmetry with the
+    other doc commands.
+    """
+    from mondo.cli._cache_flags import reject_mutually_exclusive
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    reject_mutually_exclusive(no_cache, refresh_cache)
+    if raw and out is not None:
+        usage_error_or_exit("--raw and --out are mutually exclusive.")
     data, _ = _execute_doc_command(
         opts,
         EXPORT_MARKDOWN_FROM_DOC,
@@ -1121,7 +1268,18 @@ def export_markdown_cmd(
         _fail_with_object_id_hint(
             opts, result.get("error") or "export_markdown_from_doc failed", doc_id
         )
-    typer.echo(result.get("markdown") or "")
+    markdown = result.get("markdown") or ""
+    if out is not None:
+        from mondo.cli._doc_images import localize_markdown_images
+
+        images: list[str] = []
+        if not no_images:
+            markdown, images = localize_markdown_images(opts, markdown, out.parent)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown)
+        opts.emit({"out": str(out), "images": images})
+        return
+    typer.echo(markdown)
 
 
 @app.command("version-history", epilog=epilog_for("doc version-history"))

@@ -243,13 +243,14 @@ def rename_cmd(
     first: bool = typer.Option(
         False, "--first", help="If a filter matches >1 group, pick the first one."
     ),
-    title: str = typer.Option(..., "--title", help="New group title."),
+    title: str = typer.Option(..., "--title", "--name", help="New group title (alias: --name)."),
 ) -> None:
     """Rename a group (shortcut for update --attribute title).
 
     Pick the target by id (`--id`/`--group`) or by client-side title match
     (`--name-contains` / `--name-matches` / `--name-fuzzy`). Pass `--first`
-    to auto-pick the first match when the filter is ambiguous.
+    to auto-pick the first match when the filter is ambiguous. The new title
+    is set with `--title` (or its alias `--name`).
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     client = client_or_exit(opts)

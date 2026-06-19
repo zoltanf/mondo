@@ -602,12 +602,40 @@ EXAMPLES: dict[str, list[Example]] = {
             "Render the block tree as markdown",
             "mondo doc get --id 7 --format markdown",
         ),
+        Example(
+            "Save markdown to a file + download images beside it",
+            "mondo doc get --id 7 --format markdown --out ./doc.md",
+        ),
+        Example(
+            "Save to a file but keep image URLs (skip download)",
+            "mondo doc get --id 7 --format markdown --out ./doc.md --no-images",
+        ),
         Example("Just the doc name", "mondo doc get --id 7 -q name -o none"),
     ],
     "doc create": [
         Example(
             "Create a public doc in a workspace",
             'mondo doc create --workspace 42 --name "Spec" --kind public',
+        ),
+        Example(
+            "Create a doc directly inside a folder",
+            'mondo doc create --workspace 42 --name "Spec" --folder 123456',
+        ),
+    ],
+    "doc set": [
+        Example(
+            "Replace a doc's full content from a file",
+            "mondo doc set --doc 7 --from-file spec.md",
+        ),
+        Example(
+            "Replace by object_id (the URL-visible id)",
+            'mondo doc set --object-id 5098297247 --markdown "# Fresh body"',
+        ),
+    ],
+    "doc replace": [
+        Example(
+            "Replace a doc's full content from a file (alias of `doc set`)",
+            "mondo doc replace --doc 7 --from-file spec.md",
         ),
     ],
     "doc add-content": [
@@ -668,6 +696,14 @@ EXAMPLES: dict[str, list[Example]] = {
         Example(
             "Export specific blocks only",
             "mondo doc export-markdown --doc 7 --block <block-1> --block <block-2> --raw",
+        ),
+        Example(
+            "Save to a file + download images beside it (rewrites URLs to local files)",
+            "mondo doc export-markdown --doc 7 --out ./doc.md",
+        ),
+        Example(
+            "Save to a file but keep image URLs (skip download)",
+            "mondo doc export-markdown --doc 7 --out ./doc.md --no-images",
         ),
     ],
     "doc version-history": [
@@ -1097,7 +1133,17 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "column create": [
         Example(
-            "Add a status column with initial labels",
+            "Seed a status column's labels with --labels (builds --defaults for you)",
+            'mondo column create --board 1234567890 --title "Priority" '
+            '--type status --labels "High,Medium,Low"',
+        ),
+        Example(
+            "Seed a dropdown column's options the same way",
+            'mondo column create --board 1234567890 --title "Tech stack" '
+            '--type dropdown --labels "Node/Express,Python/FastAPI"',
+        ),
+        Example(
+            "Hand-craft labels via --defaults (status shape shown)",
             'mondo column create --board 1234567890 --title "Priority" '
             "--type status "
             '--defaults \'{"labels":{"1":"High","2":"Medium"}}\'',

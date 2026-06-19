@@ -580,20 +580,30 @@ mondo doc list           [--workspace 42] [--object-id 77] [--order-by used_at] 
 mondo doc get            --id 7           # internal id
 mondo doc get            --object-id 77   # URL-visible id
 mondo doc get            --id 7 --format markdown    # render blocks → markdown
-mondo doc create         --workspace 42 --name "Spec" --kind public
+mondo doc get            --id 7 --format markdown --out ./doc.md  # +download images beside the file
+mondo doc get            --id 7 --format markdown --out ./doc.md --no-images  # skip download, keep URLs
+mondo doc export-markdown --doc 7                    # always-live markdown export (--no-cache/--refresh-cache accepted as no-ops)
+mondo doc export-markdown --doc 7 --out ./doc.md     # +download images, rewrite URLs to local files
+mondo doc export-markdown --doc 7 --out ./doc.md --no-images  # skip download, keep URLs
+mondo doc create         --workspace 42 --name "Spec" --kind public [--folder 3042556]
 
-mondo doc add-content    --doc 7 --from-file spec.md         # bulk markdown → blocks
+mondo doc add-content    --doc 7 --from-file spec.md         # bulk markdown → blocks (append)
+mondo doc set            --doc 7 --from-file spec.md         # replace full content in place
+mondo doc replace        --object-id 77 --markdown "# Fresh" # alias of `doc set`
 mondo doc add-block      --doc 7 --type normal_text \
                          --content '{"deltaFormat":[{"insert":"hi"}]}' \
                          [--after <block-id>] [--parent-block <block-id>]
 mondo doc update-block   --id <block-id> --content '<json>'
 mondo doc delete-block   --id <block-id>
+mondo doc delete         --doc 7                             # delete the whole doc
 ```
 
 `add-content` reuses the Phase-1f markdown converter (headings h1-h3,
 paragraphs, bullet / numbered lists, blockquotes, fenced code, horizontal
-rules). monday has no top-level `delete_doc` mutation — delete individual
-blocks, or delete via the monday UI.
+rules). `doc set` (alias `doc replace`) overwrites the whole doc in place
+(preserving its id / object_id / URL) by writing the new content first, then
+deleting the prior blocks. `doc create --folder <id>` places the new doc
+directly inside a folder.
 
 ### Updates (item comments)
 
@@ -676,7 +686,7 @@ mondo workspace remove-team   --id 7 --team 11
 mondo group list       --board 1234567890
 mondo group create     --board 1234567890 --name "Planning" [--color "#00c875"] \
                        [--relative-to topics] [--position-relative-method after_at]
-mondo group rename     --board 1234567890 --id topics --title "Workstreams"
+mondo group rename     --board 1234567890 --id topics --title "Workstreams"   # --name is an alias for --title
 mondo group update     --board 1234567890 --id topics --attribute color --value "#ff007f"
 mondo group reorder    --board 1234567890 --id topics (--after g2 | --before g1 | --position 3)
 mondo group duplicate  --board 1234567890 --id topics [--title "Topics 2"] [--add-to-top]
@@ -738,8 +748,10 @@ mondo column clear    --item 987 --column status
 
 # Structural (2b)
 mondo column create          --board 1234567890 --title "Priority" --type status \
-                             --defaults '{"labels":{"1":"High","2":"Medium"}}' \
+                             --labels "High,Medium,Low" \   # builds --defaults for you (status/dropdown)
                              [--id priority] [--after status] [--description "…"]
+mondo column create          --board 1234567890 --title "Priority" --type status \
+                             --defaults '{"labels":{"1":"High","2":"Medium"}}'   # hand-crafted alternative
 mondo column rename          --board 1234567890 --id status --title "Workflow"
 mondo column change-metadata --board 1234567890 --id status --property description --value "…"
 mondo column delete          --board 1234567890 --id status --yes

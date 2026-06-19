@@ -41,7 +41,29 @@ mondo doc get --object-id 5098297247 --format json -o json
 # Render to Markdown (--object-id for the URL-visible id, --doc for the internal id):
 mondo doc export-markdown --object-id 5098297247
 mondo doc export-markdown --doc 5095668848
+
+# Client-side render via `doc get` (prints markdown to stdout):
+mondo doc get --object-id 5098297247 --format markdown
 ```
+
+Two markdown paths exist: `doc export-markdown` (monday's server-side renderer) and `doc get --format markdown` (mondo's client-side block renderer). Both print to stdout by default.
+
+*Note:* `export-markdown` is always live (it has no per-doc cache), so `--no-cache` / `--refresh-cache` are accepted as no-ops purely for symmetry with the other doc commands.
+
+### Write markdown to a file (and download embedded images)
+
+Add `--out FILE` to either command to write the markdown to a file. Embedded monday images are downloaded into the **same folder** and referenced by a local `<assetId>-<name>` filename — because the raw `protected_static` image URLs only resolve in a logged-in browser, so the bare markdown is useless off-platform.
+
+```bash
+mondo doc get --object-id 5098297247 --format markdown --out ./spec.md
+mondo doc export-markdown --object-id 5098297247 --out ./spec.md
+```
+
+```json
+{"out": "spec.md", "images": ["238776078-image-from-clipboard.png", "238776079-diagram.png"]}
+```
+
+*Gotchas:* `--out` requires `--format markdown` on `doc get` (it's rejected with exit 2 for JSON). Pass `--no-images` to skip the download and leave the original monday URLs in place. The `images` field lists the local filenames actually written next to the markdown (images inside table cells are downloaded too, so references aren't orphaned).
 
 ```json
 {
@@ -55,12 +77,13 @@ mondo doc export-markdown --doc 5095668848
 }
 ```
 
-*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. **Every** doc subcommand that targets a doc (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accepts `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
+*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. The doc-*targeting* subcommands (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `set`/`replace`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accept `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. The two *block*-scoped commands are the exception: `update-block` and `delete-block` operate on a globally-unique block id, so they take `--id`/`--block` (or the positional `BLOCK_ID`) and do **not** accept `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
 
 ## Create a doc
 
 ```bash
 mondo doc create --workspace 592446 --name "Spec — Q3 launch"
+mondo doc create --workspace 592446 --name "Spec — Q3 launch" --folder 123456  # inside a folder
 ```
 
 ```json
@@ -85,7 +108,14 @@ cat spec.md | mondo doc add-markdown --doc 5095668850 --from-stdin
 {"id": 5095668850, "blocks_added": 4}
 ```
 
-*Gotcha:* `add-markdown` (and the alias `add-content`) appends to the end. To overwrite, delete the doc and recreate, or fetch + diff blocks manually with `add-block` / `delete-block` for surgical edits.
+*Gotcha:* `add-markdown` (and the alias `add-content`) appends to the end. To overwrite the whole doc **in place** (preserving its id / object_id / URL), use `doc set` (alias `doc replace`) — it writes the new markdown first, then deletes the prior blocks, so a failed write leaves the original content intact (no half-blanked doc). Empty markdown is refused (use `doc delete` to remove the doc itself):
+
+```bash
+mondo doc set --doc 5095668850 --from-file spec.md
+mondo doc replace --object-id 5098297249 --markdown "# Fresh body"
+```
+
+For surgical edits, fetch + diff blocks manually with `add-block` / `delete-block`.
 
 ## Markdown round-trip — what actually round-trips
 
