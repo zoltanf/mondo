@@ -356,6 +356,64 @@ class TestCreate:
             "person9": {"personsAndTeams": [{"id": 37251583, "kind": "person"}]}
         }
 
+    def test_tags_codec_resolves_names_to_ids(self, httpx_mock: HTTPXMock) -> None:
+        """subitem create resolves tag names to ids via create_or_get_tag,
+        matching `item create`. Previously the subitem path skipped tag
+        resolution, so a bare name hit the tags codec and errored."""
+        # 1) preflight fetch of the subitems-board columns (a tags column)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "id": "99",
+                            "name": "SubBoard",
+                            "columns": [
+                                {
+                                    "id": "tags9",
+                                    "title": "Tags",
+                                    "type": "tags",
+                                    "settings_str": "{}",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        # 2) name -> id resolution via create_or_get_tag
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_or_get_tag": {"id": "111", "name": "urgent"}}),
+        )
+        # 3) the create_subitem mutation
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_subitem": {"id": "20"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "subitem",
+                "create",
+                "--parent",
+                "1",
+                "--name",
+                "Hi",
+                "--subitems-board",
+                "99",
+                "--column",
+                "tags9=urgent",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        v = _last_body(httpx_mock)["variables"]
+        assert json.loads(v["values"]) == {"tags9": {"tag_ids": [111]}}
+
 
 class TestMoveRenameArchive:
     def test_rename(self, httpx_mock: HTTPXMock) -> None:
