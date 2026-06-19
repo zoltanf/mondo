@@ -297,7 +297,7 @@ Bundled topics:
 | `codecs`                   | `--column COL=VAL` parsing table for every column type              |
 | `complexity`               | monday's per-minute budget, retry guidance, debug logs              |
 | `duplicate-and-customize`  | End-to-end workflow: `board duplicate` → rename → reseed            |
-| `exit-codes`               | Exit codes 0–7 with retry/retry-not guidance                        |
+| `exit-codes`               | Exit codes 0–8 with retry/retry-not guidance                        |
 | `filters`                  | Server-side `--filter` (+ `--group`/`--parent` shortcuts) + JMESPath |
 | `graphql`                  | Using `mondo graphql` as the escape hatch                           |
 | `output`                   | `--output` / `--query` / `--fields` formatting + projection         |

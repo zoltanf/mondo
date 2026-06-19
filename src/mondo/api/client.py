@@ -260,6 +260,11 @@ def _classify_response(
         return ServiceError(f"monday returned HTTP {status}")
 
     if suppress_graphql_errors:
+        # GraphQL body errors are the caller's to inspect, but an unmapped
+        # non-2xx HTTP status is still a transport-layer failure that must
+        # not pass as success.
+        if not 200 <= status < 300:
+            return UsageError(f"monday returned HTTP {status}")
         return None
 
     # GraphQL-layer errors.

@@ -6,7 +6,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from mondo.api.client import MondayClient
+from mondo.api.client import MondayClient, _classify_response
 from mondo.api.errors import (
     AuthError,
     ExitCode,
@@ -268,6 +268,18 @@ class TestErrorMapping:
         with pytest.raises(RateLimitError) as exc_info:
             client.execute("query { me { id } }")
         assert exc_info.value.exit_code == ExitCode.RATE_LIMIT
+
+    def test_unknown_non_2xx_not_suppressed_as_success(self) -> None:
+        # An unmapped non-2xx status is a transport-layer failure and must be
+        # surfaced even in suppress_graphql_errors mode (used by aliased batch
+        # mutations, where only GraphQL *body* errors are the caller's to
+        # inspect).
+        teapot = httpx.Response(status_code=418, text="teapot")
+        assert isinstance(_classify_response(teapot, suppress_graphql_errors=True), UsageError)
+        # A 2xx in suppress mode still passes (None) so the caller can read
+        # the data/errors split itself.
+        ok = httpx.Response(status_code=200, json={"data": {}})
+        assert _classify_response(ok, suppress_graphql_errors=True) is None
 
 
 class TestRetry:
