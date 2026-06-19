@@ -94,7 +94,7 @@ def _build_column_values(
         definition = defs.get(col_id)
         # dict/list/None: structured JSON the user crafted — pass through as raw.
         # Bare scalars (int, float, bool) are valid codec shorthand and must be
-        # stringified so the codec sees them (mirror of item.py:_build_column_values).
+        # stringified so the codec sees them (mirror of mondo.services.items.build_column_values).
         if definition is None or isinstance(raw_value, (dict, list)) or raw_value is None:
             out[col_id] = raw_value
             continue

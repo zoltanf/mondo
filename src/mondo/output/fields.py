@@ -7,7 +7,7 @@ dotted form so a downstream JMESPath / formatter sees a flat record.
 Missing keys map to None — never raise — so a heterogeneous list projects
 cleanly. Projection itself is client-side, but `item list` also inspects
 the spec up front and drops `column_values` from its GraphQL request when
-no key reads them (see `_can_slim_column_values` in mondo.cli.item).
+no key reads them (see `can_slim_column_values` in mondo.services.items).
 """
 
 from __future__ import annotations
