@@ -616,7 +616,15 @@ def test_live_json_error_envelope_for_server_errors(live_test_board_id: int) -> 
     assert isinstance(envelope["error"], str) and envelope["error"]
     assert isinstance(envelope.get("code"), str) and envelope["code"]
 
-    assert result.stdout.strip() == "", f"stdout should be empty on error: {result.stdout!r}"
+    # Machine-output mode also mirrors the envelope to stdout (#28): ~31% of
+    # agent calls do `2>/dev/null`, so the fatal-error envelope is duplicated to
+    # stdout to stay visible. stdout therefore carries the same envelope, not
+    # empty output.
+    stdout_text = result.stdout.strip()
+    assert stdout_text, "expected the error envelope mirrored to stdout in machine mode"
+    assert json.loads(stdout_text) == envelope, (
+        f"stdout mirror should match the stderr envelope: {stdout_text!r} vs {envelope!r}"
+    )
 
 
 @pytest.mark.integration
