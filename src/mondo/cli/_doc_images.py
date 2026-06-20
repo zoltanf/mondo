@@ -40,11 +40,7 @@ def local_filename(asset_id: int, name: str | None, file_extension: str | None) 
 
     Falls back to the asset's `file_extension` when monday returns no name.
     """
-    safe = (
-        _FILENAME_UNSAFE_RE.sub("-", name).strip("-")
-        if name
-        else f"asset{file_extension or ''}"
-    )
+    safe = _FILENAME_UNSAFE_RE.sub("-", name).strip("-") if name else f"asset{file_extension or ''}"
     return f"{asset_id}-{safe}" if safe else str(asset_id)
 
 
@@ -141,9 +137,7 @@ def download_doc_images(
     """
     asset_ids = collect_image_asset_ids(blocks)
     downloaded = _download_assets(opts, asset_ids, folder)
-    return {
-        str(aid): (info["name"], info["filename"]) for aid, info in downloaded.items()
-    }
+    return {str(aid): (info["name"], info["filename"]) for aid, info in downloaded.items()}
 
 
 def localize_markdown_images(

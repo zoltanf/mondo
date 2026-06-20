@@ -276,9 +276,7 @@ class TestBlocksToMarkdownImages:
                 "content": {"assetId": 7, "url": "https://x/n.png"},
             },
         ]
-        out = blocks_to_markdown(
-            blocks, images={"7": ("n.png", "7-n.png")}
-        )
+        out = blocks_to_markdown(blocks, images={"7": ("n.png", "7-n.png")})
         assert "> ![n.png](7-n.png)" in out
 
 
@@ -293,19 +291,13 @@ class TestCollectImageAssetIds:
         assert collect_image_asset_ids(blocks) == [20, 10]
 
     def test_accepts_string_asset_id(self) -> None:
-        assert collect_image_asset_ids(
-            [{"type": "image", "content": '{"assetId":"55"}'}]
-        ) == [55]
+        assert collect_image_asset_ids([{"type": "image", "content": '{"assetId":"55"}'}]) == [55]
 
     def test_skips_image_without_asset_id(self) -> None:
-        assert collect_image_asset_ids(
-            [{"type": "image", "content": {"url": "u"}}]
-        ) == []
+        assert collect_image_asset_ids([{"type": "image", "content": {"url": "u"}}]) == []
 
     def test_ignores_non_image_blocks(self) -> None:
-        assert collect_image_asset_ids(
-            [{"type": "normal_text", "content": {"assetId": 1}}]
-        ) == []
+        assert collect_image_asset_ids([{"type": "normal_text", "content": {"assetId": 1}}]) == []
 
 
 class TestBlocksToMarkdownContainers:

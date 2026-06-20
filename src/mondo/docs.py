@@ -325,9 +325,7 @@ _LEAF_TYPES = frozenset(
 )
 
 
-def _render_image(
-    block: dict[str, Any], images: dict[str, tuple[str, str]] | None
-) -> str:
+def _render_image(block: dict[str, Any], images: dict[str, tuple[str, str]] | None) -> str:
     """`![alt](ref)` for an `image` block.
 
     With an `images` map the asset's downloaded local filename (ref) and name
@@ -498,9 +496,7 @@ def _render_block_list(
         if btype != "numbered_list":
             numbered_counter = 0
 
-        if btype == "table" and _render_table(
-            block, children_of, prefix, lines, images
-        ):
+        if btype == "table" and _render_table(block, children_of, prefix, lines, images):
             continue
 
         marker = _container_marker(btype, has_children=bool(kids))
