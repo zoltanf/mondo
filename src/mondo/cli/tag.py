@@ -10,11 +10,11 @@ Per monday-api.md §14:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import CREATE_OR_GET_TAG, TAG_BY_BOARD, TAGS_LIST
 from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
 from mondo.cli._cache_invalidate import invalidate_entity
@@ -143,7 +143,7 @@ def get_cmd(
         from mondo.cache.directory import get_tags as cache_get_tags
         from mondo.cli._dir_lookup import lookup_entity_in_directory
 
-        def _fetch_live_account(client: MondayClient) -> dict | None:
+        def _fetch_live_account(client: MondayClient) -> dict[str, Any] | None:
             data = exec_or_exit(client, TAGS_LIST, variables)
             tags = data.get("tags") or []
             return tags[0] if tags else None
@@ -159,12 +159,7 @@ def get_cmd(
             explain_cache=explain_cache,
         )
         if entry is None:
-            typer.secho(
-                f"tag {tag_id} not found in account.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=6)
+            handle_mondo_error_or_exit(NotFoundError(f"tag {tag_id} not found in account."))
         opts.emit(entry)
         return
 
@@ -182,8 +177,7 @@ def get_cmd(
         handle_mondo_error_or_exit(e)
     if not tags:
         scope = "account" if board_id is None else f"account + board {board_id}"
-        typer.secho(f"tag {tag_id} not found in {scope}.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"tag {tag_id} not found in {scope}."))
     opts.emit(tags[0])
 
 

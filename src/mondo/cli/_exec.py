@@ -57,9 +57,7 @@ def _emit_error(exc: BaseException, *, human_suffix: str | None = None) -> None:
         mirror_envelope_to_stdout(opts, envelope)
 
 
-def handle_mondo_error_or_exit(
-    exc: MondoError, *, human_suffix: str | None = None
-) -> NoReturn:
+def handle_mondo_error_or_exit(exc: MondoError, *, human_suffix: str | None = None) -> NoReturn:
     """Standard CLI handler for any `MondoError` raised mid-command.
 
     Collapses the `typer.secho(f"error: {e}", ...) + raise typer.Exit`
@@ -90,9 +88,7 @@ def client_or_exit(opts: GlobalOpts) -> MondayClient:
         handle_mondo_error_or_exit(e)
 
 
-def exec_or_exit(
-    client: MondayClient, query: str, variables: dict[str, Any]
-) -> dict[str, Any]:
+def exec_or_exit(client: MondayClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
     try:
         result = client.execute(query, variables=variables)
     except MondoError as e:
@@ -100,16 +96,12 @@ def exec_or_exit(
     return result.get("data") or {}
 
 
-def dry_run_and_exit(
-    opts: GlobalOpts, query: str, variables: dict[str, Any]
-) -> NoReturn:
+def dry_run_and_exit(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> NoReturn:
     opts.emit({"query": query, "variables": variables})
     raise typer.Exit(0)
 
 
-def execute_read(
-    opts: GlobalOpts, query: str, variables: dict[str, Any]
-) -> dict[str, Any]:
+def execute_read(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
     """Build client, run the query, handle `MondoError`. No dry-run gate."""
     client = client_or_exit(opts)
     try:
@@ -119,9 +111,7 @@ def execute_read(
         handle_mondo_error_or_exit(e)
 
 
-def execute(
-    opts: GlobalOpts, query: str, variables: dict[str, Any]
-) -> dict[str, Any]:
+def execute(opts: GlobalOpts, query: str, variables: dict[str, Any]) -> dict[str, Any]:
     """Mutation pattern: short-circuits on `--dry-run`, else runs via
     `execute_read`."""
     if opts.dry_run:
@@ -173,16 +163,18 @@ def poll_or_exit(
     """
     from mondo.api.polling import poll_until_jmespath
     from mondo.util.duration import parse_duration
+
     try:
         interval_s = parse_duration(interval)
         timeout_s = parse_duration(timeout)
     except ValueError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
     try:
         return poll_until_jmespath(
-            fetch, expression, interval_s=interval_s, timeout_s=timeout_s,
+            fetch,
+            expression,
+            interval_s=interval_s,
+            timeout_s=timeout_s,
         )
     except ValueError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))

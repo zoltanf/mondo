@@ -92,7 +92,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
 - `board update`
   type: `object | scalar`
   fields: `success?`, `<updated board metadata?>`
-  source: `_decode_json_string_payload(data.get("update_board"))`
+  source: `decode_json_string_payload(data.get("update_board"))`
   notes: Emits monday's update_board payload directly. Legacy stringified JSON is parsed before emit; non-JSON scalars pass through unchanged.
 
 ## cache

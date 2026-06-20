@@ -105,8 +105,7 @@ def rewrite(path: Path, group: str) -> int:
         sep = ", " if new_rest else ""
         touched += 1
         return (
-            f"{indent}@app.command({new_rest}{sep}"
-            f'epilog=epilog_for("{key}"))\n{indent}def {fname}('
+            f'{indent}@app.command({new_rest}{sep}epilog=epilog_for("{key}"))\n{indent}def {fname}('
         )
 
     new_src = DECORATOR_NAMED_RE.sub(sub_named, src)

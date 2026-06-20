@@ -306,9 +306,7 @@ class TestBoardList:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"boards": [{"id": "1", "name": "X", "board_kind": "public"}]}
-            ),
+            json=_ok({"boards": [{"id": "1", "name": "X", "board_kind": "public"}]}),
         )
         result = runner.invoke(app, ["board", "list"])
         assert result.exit_code == 0, result.stdout
@@ -320,9 +318,7 @@ class TestBoardList:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"boards": [{"id": "1", "name": "X", "board_folder_id": "42"}]}
-            ),
+            json=_ok({"boards": [{"id": "1", "name": "X", "board_folder_id": "42"}]}),
         )
         result = runner.invoke(app, ["board", "list"])
         assert result.exit_code == 0, result.stdout
@@ -425,9 +421,7 @@ class TestBoardGet:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"boards": [{"id": "42", "name": "Spec doc", "type": "document"}]}
-            ),
+            json=_ok({"boards": [{"id": "42", "name": "Spec doc", "type": "document"}]}),
         )
         result = runner.invoke(app, ["board", "get", "--id", "42"])
         assert result.exit_code == 0, result.stdout
@@ -463,9 +457,7 @@ class TestBoardGet:
         assert result.exit_code == 0, result.stdout
         assert _last_body(httpx_mock)["variables"] == {"id": 42}
 
-    def test_accepts_pulses_url_and_extracts_board_part(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_accepts_pulses_url_and_extracts_board_part(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -540,7 +532,9 @@ class TestBoardGet:
         assert "board_kind" not in parsed
         assert "board_folder_id" not in parsed
 
-    def test_updated_at_is_last_even_with_url(self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_updated_at_is_last_even_with_url(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from mondo.cli import _url as url_mod
 
         monkeypatch.setattr(url_mod, "_TENANT_SLUG_CACHE", None)
@@ -805,7 +799,9 @@ class TestBoardSetPermission:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"set_board_permission": {"edit_permissions": "viewer", "failed_actions": []}}),
+            json=_ok(
+                {"set_board_permission": {"edit_permissions": "viewer", "failed_actions": []}}
+            ),
         )
         result = runner.invoke(
             app,
@@ -885,7 +881,9 @@ class TestBoardMove:
         from mondo.cli import _list_decorate as list_decorate
 
         monkeypatch.setenv("MONDO_CACHE_ENABLED", "true")
-        monkeypatch.setattr(list_decorate, "enrich_workspaces_best_effort", lambda entries, opts: None)
+        monkeypatch.setattr(
+            list_decorate, "enrich_workspaces_best_effort", lambda entries, opts: None
+        )
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",

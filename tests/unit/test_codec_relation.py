@@ -31,9 +31,9 @@ class TestBoardRelation:
         Friction report B6: agents copy the GraphQL payload shape into
         --value and the codec rejects them. Accept the shape directly.
         """
-        assert parse_value(
-            "board_relation", '{"item_ids": [12345, 23456]}', {}
-        ) == {"item_ids": [12345, 23456]}
+        assert parse_value("board_relation", '{"item_ids": [12345, 23456]}', {}) == {
+            "item_ids": [12345, 23456]
+        }
 
     def test_json_object_with_single_id(self) -> None:
         assert parse_value("board_relation", '{"item_ids":[1]}', {}) == {"item_ids": [1]}

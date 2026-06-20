@@ -67,15 +67,11 @@ def parse_monday_id(s: str, *, kind: IdKind = "board") -> int:
             raise typer.BadParameter(
                 f"URL points to a board, not an item. Try: mondo board get {s}"
             )
-        raise typer.BadParameter(
-            f"expected an item id or a monday.com /pulses/<id> URL, got {s!r}"
-        )
+        raise typer.BadParameter(f"expected an item id or a monday.com /pulses/<id> URL, got {s!r}")
     m = _BOARD_URL_RE.match(s)
     if m:
         return int(m.group(1))
-    raise typer.BadParameter(
-        f"expected a numeric id or a monday.com URL, got {s!r}"
-    )
+    raise typer.BadParameter(f"expected a numeric id or a monday.com URL, got {s!r}")
 
 
 class MondayIdParam(click.ParamType):
@@ -126,8 +122,7 @@ def warn_cross_type(
         )
     elif expected == "doc" and observed != "document":
         typer.secho(
-            f"warning: id {id_} is a regular board, not a workdoc. "
-            f"Consider: mondo board get {id_}",
+            f"warning: id {id_} is a regular board, not a workdoc. Consider: mondo board get {id_}",
             fg=typer.colors.YELLOW,
             err=True,
         )

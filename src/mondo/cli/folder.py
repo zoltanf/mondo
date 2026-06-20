@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import (
     FOLDER_CREATE,
     FOLDER_DELETE,
@@ -28,6 +28,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
@@ -56,7 +57,10 @@ def list_cmd(
         None, "--max-items", help="Stop after this many folders total."
     ),
     no_cache: bool = typer.Option(
-        False, "--no-cache", help="Skip the local directory cache; fetch live.", rich_help_panel="Cache"
+        False,
+        "--no-cache",
+        help="Skip the local directory cache; fetch live.",
+        rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
@@ -193,10 +197,16 @@ def _build_tree_node(folder: FolderEntry, children_map: FolderChildrenMap) -> Fo
 def tree_cmd(
     ctx: typer.Context,
     workspace: list[int] | None = typer.Option(
-        None, "--workspace", help="Restrict to workspace IDs (repeatable).", rich_help_panel="Filters"
+        None,
+        "--workspace",
+        help="Restrict to workspace IDs (repeatable).",
+        rich_help_panel="Filters",
     ),
     no_cache: bool = typer.Option(
-        False, "--no-cache", help="Skip the local directory cache; fetch live.", rich_help_panel="Cache"
+        False,
+        "--no-cache",
+        help="Skip the local directory cache; fetch live.",
+        rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
@@ -224,11 +234,13 @@ def tree_cmd(
 
     if prefs.use_cache:
         if opts.dry_run:
-            opts.emit({
-                "cache": "folders",
-                "refresh": refresh_cache,
-                "filters": {"workspace_ids": workspace or None},
-            })
+            opts.emit(
+                {
+                    "cache": "folders",
+                    "refresh": refresh_cache,
+                    "filters": {"workspace_ids": workspace or None},
+                }
+            )
             raise typer.Exit(0)
 
         from mondo.cache.directory import get_folders as cache_get_folders
@@ -250,10 +262,12 @@ def tree_cmd(
 
         query, variables = build_folders_list_query(workspace_ids=workspace or None)
         if opts.dry_run:
-            opts.emit({
-                "query": query,
-                "variables": {**variables, "limit": 100},
-            })
+            opts.emit(
+                {
+                    "query": query,
+                    "variables": {**variables, "limit": 100},
+                }
+            )
             raise typer.Exit(0)
 
         client = client_or_exit(opts)
@@ -380,7 +394,7 @@ def get_cmd(
         opts.emit({"query": FOLDER_GET, "variables": {"ids": [folder_id]}})
         raise typer.Exit(0)
 
-    def _fetch_live(client: MondayClient) -> dict | None:
+    def _fetch_live(client: MondayClient) -> dict[str, Any] | None:
         data = exec_or_exit(client, FOLDER_GET, {"ids": [folder_id]})
         folders = data.get("folders") or []
         return normalize_folder_entry(folders[0]) if folders else None
@@ -396,8 +410,7 @@ def get_cmd(
         explain_cache=explain_cache,
     )
     if entry is None:
-        typer.secho(f"folder {folder_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"folder {folder_id} not found."))
 
     opts.emit(entry, selected_fields=folder_get_fields())
 
@@ -469,12 +482,7 @@ def update_cmd(
         "position": position_obj,
     }
     if all(v is None for k, v in variables.items() if k != "id"):
-        typer.secho(
-            "error: pass at least one of --name, --color, --product-id, --position.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("pass at least one of --name, --color, --product-id, --position.")
     data = execute(opts, FOLDER_UPDATE, variables)
     invalidate_entity(opts, "folders")
     opts.emit(data.get("update_folder") or {})

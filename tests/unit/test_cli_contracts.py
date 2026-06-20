@@ -206,9 +206,7 @@ def test_markdown_commands_registered_in_contract_table() -> None:
 
 
 @pytest.mark.parametrize("command_path", sorted(_MARKDOWN_CASES))
-def test_markdown_output_is_raw_not_json_quoted(
-    command_path: str, httpx_mock: HTTPXMock
-) -> None:
+def test_markdown_output_is_raw_not_json_quoted(command_path: str, httpx_mock: HTTPXMock) -> None:
     """Contract: `--format markdown` writes raw text, never a JSON-encoded string.
 
     Catches the bug shape where `opts.emit(markdown_str)` round-trips the string

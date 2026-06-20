@@ -62,7 +62,9 @@ def test_live_pm_board_setup_visible_via_cli(pm_board_session: PmBoard) -> None:
         if expected_type == "people":
             assert actual_type in {"people", "person"}, f"col {col_id} type={actual_type}"
         else:
-            assert actual_type == expected_type, f"col {col_id} type={actual_type}, want {expected_type}"
+            assert actual_type == expected_type, (
+                f"col {col_id} type={actual_type}, want {expected_type}"
+            )
 
     # item list — all 5 fixture items visible
     items = invoke_json(["item", "list", "--board", str(pm.board_id)])
@@ -122,9 +124,13 @@ def test_live_pm_board_export_csv_then_import_into_fresh_board(
     csv_path = tmp_path / "pm_export.csv"
     invoke(
         [
-            "export", "board", str(pm.board_id),
-            "--format", "csv",
-            "--out", str(csv_path),
+            "export",
+            "board",
+            str(pm.board_id),
+            "--format",
+            "csv",
+            "--out",
+            str(csv_path),
         ],
         expect_exit=0,
     )
@@ -136,25 +142,36 @@ def test_live_pm_board_export_csv_then_import_into_fresh_board(
     # 2. Build a fresh board.
     fresh_board = invoke_json(
         [
-            "board", "create",
-            "--workspace", str(pm.workspace_id),
-            "--name", f"E2E PM Import {suffix}",
-            "--kind", "private",
+            "board",
+            "create",
+            "--workspace",
+            str(pm.workspace_id),
+            "--name",
+            f"E2E PM Import {suffix}",
+            "--kind",
+            "private",
             "--empty",
         ]
     )
     fresh_board_id = int(fresh_board["id"])
     cleanup_plan.add(
         f"fresh board {fresh_board_id}",
-        "board", "delete", "--id", str(fresh_board_id), "--hard",
+        "board",
+        "delete",
+        "--id",
+        str(fresh_board_id),
+        "--hard",
     )
 
     # Need at least one group as the import target; --empty boards may have none.
     fresh_group = invoke_json(
         [
-            "group", "create",
-            "--board", str(fresh_board_id),
-            "--name", "Imported",
+            "group",
+            "create",
+            "--board",
+            str(fresh_board_id),
+            "--name",
+            "Imported",
         ]
     )
     fresh_group_id = fresh_group["id"]
@@ -162,29 +179,44 @@ def test_live_pm_board_export_csv_then_import_into_fresh_board(
     # Recreate the simple-typed columns whose titles match the export's headers.
     invoke_json(
         [
-            "column", "create",
-            "--board", str(fresh_board_id),
-            "--title", "Owner Email",
-            "--type", "text",
-            "--id", "text_owner_email",
+            "column",
+            "create",
+            "--board",
+            str(fresh_board_id),
+            "--title",
+            "Owner Email",
+            "--type",
+            "text",
+            "--id",
+            "text_owner_email",
         ]
     )
     invoke_json(
         [
-            "column", "create",
-            "--board", str(fresh_board_id),
-            "--title", "Story Points",
-            "--type", "numbers",
-            "--id", "numbers_story_points",
+            "column",
+            "create",
+            "--board",
+            str(fresh_board_id),
+            "--title",
+            "Story Points",
+            "--type",
+            "numbers",
+            "--id",
+            "numbers_story_points",
         ]
     )
     invoke_json(
         [
-            "column", "create",
-            "--board", str(fresh_board_id),
-            "--title", "Description",
-            "--type", "long_text",
-            "--id", "long_text_description",
+            "column",
+            "create",
+            "--board",
+            str(fresh_board_id),
+            "--title",
+            "Description",
+            "--type",
+            "long_text",
+            "--id",
+            "long_text_description",
         ]
     )
 
@@ -194,10 +226,15 @@ def test_live_pm_board_export_csv_then_import_into_fresh_board(
     # supply --group <fresh_group_id> as the default for every row.
     import_result = invoke(
         [
-            "import", "board", str(fresh_board_id),
-            "--from", str(csv_path),
-            "--group", fresh_group_id,
-            "--group-column", "__nogroup__",
+            "import",
+            "board",
+            str(fresh_board_id),
+            "--from",
+            str(csv_path),
+            "--group",
+            fresh_group_id,
+            "--group-column",
+            "__nogroup__",
         ],
         expect_exit=None,
     )
@@ -224,7 +261,9 @@ def test_live_pm_board_export_csv_then_import_into_fresh_board(
     text_val = values.get("text_owner_email", {}).get("text", "")
     numbers_val = values.get("numbers_story_points", {}).get("text", "")
     assert "pm@e2e.test" in text_val, f"text column not round-tripped: {text_val!r}"
-    assert numbers_val.replace(".0", "") == "13", f"numbers column not round-tripped: {numbers_val!r}"
+    assert numbers_val.replace(".0", "") == "13", (
+        f"numbers column not round-tripped: {numbers_val!r}"
+    )
 
 
 @pytest.mark.integration
@@ -259,7 +298,9 @@ def _extract_items_from_export(payload: Any) -> list[dict[str, Any]]:
             if key in payload and isinstance(payload[key], list):
                 return payload[key]
         if "board" in payload and isinstance(payload["board"], dict):
-            inner = payload["board"].get("items") or payload["board"].get("items_page", {}).get("items")
+            inner = payload["board"].get("items") or payload["board"].get("items_page", {}).get(
+                "items"
+            )
             if isinstance(inner, list):
                 return inner
     raise AssertionError(

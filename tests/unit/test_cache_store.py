@@ -144,6 +144,51 @@ def test_expired_envelope_returns_none(tmp_path: Path) -> None:
     assert store.read() is None
 
 
+def test_long_ttl_entry_is_stale_under_shorter_configured_ttl(tmp_path: Path) -> None:
+    # Written under a generous TTL, then read by a store configured with a
+    # much shorter TTL: the current configured TTL wins, so the entry is stale.
+    written_at = datetime.now(UTC) - timedelta(seconds=120)
+    store = _store(tmp_path, ttl=60)
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "fetched_at": _format_utc(written_at),
+                "ttl_seconds": 3600,  # stored TTL is large; must be ignored
+                "api_endpoint": ENDPOINT,
+                "entries": [{"id": 1}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert store.read() is None
+
+
+def test_short_ttl_entry_is_fresh_under_longer_configured_ttl(tmp_path: Path) -> None:
+    # Same age as above, but written under a tiny TTL and read by a store
+    # configured with a generous TTL: the current configured TTL wins, so the
+    # entry is fresh.
+    written_at = datetime.now(UTC) - timedelta(seconds=120)
+    store = _store(tmp_path, ttl=3600)
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "fetched_at": _format_utc(written_at),
+                "ttl_seconds": 1,  # stored TTL is tiny; must be ignored
+                "api_endpoint": ENDPOINT,
+                "entries": [{"id": 1}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    reloaded = store.read()
+    assert reloaded is not None
+    assert reloaded.entries == [{"id": 1}]
+
+
 def test_invalidate_is_idempotent(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.write([{"id": 1}])

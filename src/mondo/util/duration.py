@@ -3,6 +3,7 @@
 Used by the polling flags on read commands (`--poll-interval`,
 `--poll-timeout`). Accepts bare numbers as seconds for convenience.
 """
+
 from __future__ import annotations
 
 import re

@@ -47,24 +47,50 @@ def _prewarm_workspaces(tmp_path: Path) -> None:
 
 class TestCacheStatus:
     def test_status_empty_shows_all_cold(self) -> None:
-        result = runner.invoke(app, ["cache", "status", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "status",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert {r["type"] for r in rows} == {
-            "boards", "workspaces", "users", "teams", "docs", "folders", "tags",
+            "boards",
+            "workspaces",
+            "users",
+            "teams",
+            "docs",
+            "folders",
+            "tags",
         }
         assert all(r["fresh"] is False for r in rows)
         assert all(r["entries"] is None for r in rows)
 
     def test_status_single_type(self) -> None:
-        result = runner.invoke(app, ["cache", "status", "workspaces", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "status",
+                "workspaces",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert len(rows) == 1
         assert rows[0]["type"] == "workspaces"
 
     def test_status_folders_type(self) -> None:
-        result = runner.invoke(app, ["cache", "status", "folders", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "status",
+                "folders",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert len(rows) == 1
@@ -74,9 +100,7 @@ class TestCacheStatus:
         result = runner.invoke(app, ["cache", "status", "nonsense"])
         assert result.exit_code == 2
 
-    def test_status_after_prime_reports_fresh(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_status_after_prime_reports_fresh(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prewarm_workspaces(tmp_path)
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -85,7 +109,14 @@ class TestCacheStatus:
         )
         runner.invoke(app, ["board", "list"])
 
-        result = runner.invoke(app, ["cache", "status", "boards", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "status",
+                "boards",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert rows[0]["fresh"] is True
@@ -103,7 +134,14 @@ class TestCacheRefresh:
             method="POST",
             json=_ok({"teams": [{"id": "1", "name": "Platform"}]}),
         )
-        result = runner.invoke(app, ["cache", "refresh", "teams", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "refresh",
+                "teams",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert len(rows) == 1
@@ -116,7 +154,14 @@ class TestCacheRefresh:
             method="POST",
             json=_ok({"folders": [{"id": "1", "name": "Folder A"}]}),
         )
-        result = runner.invoke(app, ["cache", "refresh", "folders", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "refresh",
+                "folders",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert len(rows) == 1
@@ -125,7 +170,13 @@ class TestCacheRefresh:
 
     def test_refresh_dry_run_emits_plan(self) -> None:
         result = runner.invoke(
-            app, ["--dry-run", "cache", "refresh", "boards", ]
+            app,
+            [
+                "--dry-run",
+                "cache",
+                "refresh",
+                "boards",
+            ],
         )
         assert result.exit_code == 0, result.stdout
         plan = json.loads(result.stdout)
@@ -159,22 +210,33 @@ class TestCacheRefresh:
 
 class TestCacheClear:
     def test_clear_idempotent_when_empty(self) -> None:
-        result = runner.invoke(app, ["cache", "clear", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "clear",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert all(r["removed"] is False for r in rows)
 
     def test_clear_folders_type(self) -> None:
-        result = runner.invoke(app, ["cache", "clear", "folders", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "clear",
+                "folders",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert len(rows) == 1
         assert rows[0]["type"] == "folders"
         assert rows[0]["removed"] is False
 
-    def test_clear_deletes_file(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_clear_deletes_file(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prewarm_workspaces(tmp_path)
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -185,15 +247,20 @@ class TestCacheClear:
         cache_file = tmp_path / "cache" / "default" / "boards.json"
         assert cache_file.exists()
 
-        result = runner.invoke(app, ["cache", "clear", "boards", ])
+        result = runner.invoke(
+            app,
+            [
+                "cache",
+                "clear",
+                "boards",
+            ],
+        )
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert rows[0]["removed"] is True
         assert not cache_file.exists()
 
-    def test_clear_dry_run_preserves_files(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_clear_dry_run_preserves_files(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prewarm_workspaces(tmp_path)
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -229,9 +296,7 @@ COLS_RESPONSE = _ok(
 )
 
 
-def _prime_columns_cache(
-    httpx_mock: HTTPXMock, tmp_path: Path, board_id: int = 42
-) -> Path:
+def _prime_columns_cache(httpx_mock: HTTPXMock, tmp_path: Path, board_id: int = 42) -> Path:
     """Warm the columns cache for one board and return the resulting file path."""
     httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
     # `column list` goes through fetch_board_columns which writes the file.
@@ -270,9 +335,7 @@ GROUPS_RESPONSE = _ok(
 )
 
 
-def _prime_groups_cache(
-    httpx_mock: HTTPXMock, tmp_path: Path, board_id: int = 42
-) -> Path:
+def _prime_groups_cache(httpx_mock: HTTPXMock, tmp_path: Path, board_id: int = 42) -> Path:
     """Warm the groups cache for one board and return the resulting file path."""
     httpx_mock.add_response(url=ENDPOINT, method="POST", json=GROUPS_RESPONSE)
     result = runner.invoke(app, ["group", "list", "--board", str(board_id)])
@@ -286,7 +349,13 @@ class TestCacheColumns:
         assert result.exit_code == 0, result.stdout
         rows = json.loads(result.stdout)
         assert {r["type"] for r in rows} == {
-            "boards", "workspaces", "users", "teams", "docs", "folders", "tags",
+            "boards",
+            "workspaces",
+            "users",
+            "teams",
+            "docs",
+            "folders",
+            "tags",
         }
 
     def test_status_columns_only_empty_dir(self) -> None:
@@ -303,9 +372,7 @@ class TestCacheColumns:
         result = runner.invoke(app, ["column", "list", "42"])
         assert result.exit_code == 0, result.stdout
 
-    def test_status_reports_cached_board(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_status_reports_cached_board(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
         result = runner.invoke(app, ["cache", "status", "columns"])
         assert result.exit_code == 0, result.stdout
@@ -328,9 +395,7 @@ class TestCacheColumns:
         assert rows[0]["removed"] is True
         assert not cache_file.exists()
 
-    def test_clear_columns_with_board_filter(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_clear_columns_with_board_filter(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prime_columns_cache(httpx_mock, tmp_path, board_id=42)
         result = runner.invoke(app, ["cache", "clear", "columns", "--board", "42"])
         assert result.exit_code == 0, result.stdout
@@ -361,9 +426,7 @@ class TestCacheColumns:
         assert [r["board"] for r in rows] == ["42"]
 
     def test_board_flag_rejected_for_non_columns_types(self) -> None:
-        result = runner.invoke(
-            app, ["cache", "clear", "boards", "--board", "42"]
-        )
+        result = runner.invoke(app, ["cache", "clear", "boards", "--board", "42"])
         assert result.exit_code == 2
         assert "only applies when clearing" in result.stderr or "only applies" in (
             result.stdout + (result.stderr or "")
@@ -384,9 +447,7 @@ class TestCacheGroups:
         result = runner.invoke(app, ["group", "list", "--board", "42"])
         assert result.exit_code == 0, result.stdout
 
-    def test_status_reports_cached_group_board(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_status_reports_cached_group_board(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prime_groups_cache(httpx_mock, tmp_path, board_id=42)
         result = runner.invoke(app, ["cache", "status", "groups"])
         assert result.exit_code == 0, result.stdout
@@ -409,9 +470,7 @@ class TestCacheGroups:
         assert rows[0]["removed"] is True
         assert not cache_file.exists()
 
-    def test_clear_groups_with_board_filter(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_clear_groups_with_board_filter(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         _prime_groups_cache(httpx_mock, tmp_path, board_id=42)
         result = runner.invoke(app, ["cache", "clear", "groups", "--board", "42"])
         assert result.exit_code == 0, result.stdout

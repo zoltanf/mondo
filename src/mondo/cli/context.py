@@ -83,7 +83,12 @@ class GlobalOpts:
         from mondo.output.query import apply_query
 
         fmt = self.output or choose_default_format(is_tty=is_tty)
-        projected = apply_query(data, self.query)
+        try:
+            projected = apply_query(data, self.query)
+        except ValueError as e:
+            from mondo.cli._exec import usage_error_or_exit
+
+            usage_error_or_exit(str(e))
         projected = apply_fields(projected, self.fields)
         if (
             self.query
@@ -147,9 +152,7 @@ class GlobalOpts:
         if self._cache_config is None:
             from mondo.cache import resolve_cache_config
 
-            self._cache_config = resolve_cache_config(
-                self._load(), profile_name=self.profile_name
-            )
+            self._cache_config = resolve_cache_config(self._load(), profile_name=self.profile_name)
         return self._cache_config
 
     def api_endpoint(self) -> str:
@@ -162,9 +165,7 @@ class GlobalOpts:
         profile = cfg.get_profile(self.profile_name)
         return profile.api_url
 
-    def build_cache_store(
-        self, entity_type: EntityType, *, scope: str | None = None
-    ) -> CacheStore:
+    def build_cache_store(self, entity_type: EntityType, *, scope: str | None = None) -> CacheStore:
         """Build a CacheStore for the given entity type, wired with the
         resolved TTL + endpoint + cache directory.
 

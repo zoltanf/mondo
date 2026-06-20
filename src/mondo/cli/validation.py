@@ -14,7 +14,7 @@ import typer
 
 from mondo.api.queries import VALIDATIONS_LIST
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import execute
+from mondo.cli._exec import execute, usage_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -32,8 +32,7 @@ _MUTATIONS_REMOVED_MSG = (
 
 
 def _mutation_removed() -> None:
-    typer.secho(f"error: {_MUTATIONS_REMOVED_MSG}", fg=typer.colors.RED, err=True)
-    raise typer.Exit(code=2)
+    usage_error_or_exit(_MUTATIONS_REMOVED_MSG)
 
 
 @app.command("list", epilog=epilog_for("validation list"))

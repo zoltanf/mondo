@@ -14,9 +14,7 @@ from mondo.cache.store import EntityType
 from mondo.cli.context import GlobalOpts
 
 
-def invalidate_entity(
-    opts: GlobalOpts, entity: EntityType, *, scope: str | None = None
-) -> None:
+def invalidate_entity(opts: GlobalOpts, entity: EntityType, *, scope: str | None = None) -> None:
     """Drop the cache file for `entity` (and optional `scope`). Best-effort.
 
     Skipped on `--dry-run`. `OSError` (file-op failures) logs at debug and

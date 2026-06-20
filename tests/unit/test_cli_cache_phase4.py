@@ -71,9 +71,7 @@ class TestItemGetCache:
         assert httpx_mock.get_requests() == []
         assert json.loads(result.stdout)["name"] == "Cached"
 
-    def test_no_cache_forces_live(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_no_cache_forces_live(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="items",
@@ -89,9 +87,7 @@ class TestItemGetCache:
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)["name"] == "Live"
 
-    def test_include_updates_bypasses_cache(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_include_updates_bypasses_cache(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="items",
@@ -101,21 +97,15 @@ class TestItemGetCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"items": [{"id": "123", "name": "Live", "updates": []}]}
-            ),
+            json=_ok({"items": [{"id": "123", "name": "Live", "updates": []}]}),
         )
-        result = runner.invoke(
-            app, ["item", "get", "--id", "123", "--include-updates"]
-        )
+        result = runner.invoke(app, ["item", "get", "--id", "123", "--include-updates"])
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)["name"] == "Live"
 
 
 class TestColumnSetInvalidatesItem:
-    def test_column_set_drops_items_scope(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_column_set_drops_items_scope(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         path = _prewarm(
             tmp_path,
             entity_type="items",
@@ -158,9 +148,12 @@ class TestColumnSetInvalidatesItem:
             [
                 "column",
                 "set",
-                "--item", "123",
-                "--column", "text",
-                "--value", "hi",
+                "--item",
+                "123",
+                "--column",
+                "text",
+                "--value",
+                "hi",
             ],
         )
         assert result.exit_code == 0, result.stdout
@@ -181,9 +174,7 @@ class TestSubitemListCache:
         parsed = json.loads(result.stdout)
         assert [s["id"] for s in parsed] == ["200", "201"]
 
-    def test_subitem_create_drops_parent(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_subitem_create_drops_parent(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         path = _prewarm(
             tmp_path,
             entity_type="subitems",
@@ -207,9 +198,7 @@ class TestSubitemListCache:
 
 
 class TestUpdateListCache:
-    def test_cache_hit_with_item(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_cache_hit_with_item(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="updates",
@@ -225,9 +214,7 @@ class TestUpdateListCache:
         parsed = json.loads(result.stdout)
         assert [u["id"] for u in parsed] == ["u1", "u2"]
 
-    def test_update_create_drops_scope(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_update_create_drops_scope(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         path = _prewarm(
             tmp_path,
             entity_type="updates",
@@ -249,20 +236,14 @@ class TestUpdateListCache:
     def test_update_delete_wildcard_drops_all_updates(
         self, tmp_path: Path, httpx_mock: HTTPXMock
     ) -> None:
-        a = _prewarm(
-            tmp_path, entity_type="updates", scope="123", entries=[{"id": "u1"}]
-        )
-        b = _prewarm(
-            tmp_path, entity_type="updates", scope="456", entries=[{"id": "u2"}]
-        )
+        a = _prewarm(tmp_path, entity_type="updates", scope="123", entries=[{"id": "u1"}])
+        b = _prewarm(tmp_path, entity_type="updates", scope="456", entries=[{"id": "u2"}])
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
             json=_ok({"delete_update": {"id": "u1"}}),
         )
-        result = runner.invoke(
-            app, ["--yes", "update", "delete", "--id", "1"]
-        )
+        result = runner.invoke(app, ["--yes", "update", "delete", "--id", "1"])
         assert result.exit_code == 0, result.stdout
         assert not a.exists()
         assert not b.exists()
@@ -272,9 +253,7 @@ class TestUpdateListCache:
 
 
 class TestDocGetCache:
-    def test_cache_hit_by_id(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_cache_hit_by_id(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="docs_blocks",
@@ -296,9 +275,7 @@ class TestDocGetCache:
         assert parsed["name"] == "Cached Doc"
         assert len(parsed["blocks"]) == 1
 
-    def test_doc_rename_drops_doc_blocks(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_doc_rename_drops_doc_blocks(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         path = _prewarm(
             tmp_path,
             entity_type="docs_blocks",
@@ -310,9 +287,7 @@ class TestDocGetCache:
             method="POST",
             json=_ok({"update_doc_name": {"id": "7"}}),
         )
-        result = runner.invoke(
-            app, ["doc", "rename", "--doc", "7", "--name", "New"]
-        )
+        result = runner.invoke(app, ["doc", "rename", "--doc", "7", "--name", "New"])
         assert result.exit_code == 0, result.stdout
         assert not path.exists()
 

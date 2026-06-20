@@ -59,9 +59,7 @@ class TestGroupList:
         parsed = json.loads(result.stdout)
         assert [g["id"] for g in parsed] == ["topics", "new_group"]
 
-    def test_list_writes_cache_then_warm_hit(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_list_writes_cache_then_warm_hit(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -87,9 +85,7 @@ class TestGroupList:
         assert result.exit_code == 0, result.stdout
         assert not _groups_cache_path(tmp_path).exists()
 
-    def test_refresh_cache_forces_refetch(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_refresh_cache_forces_refetch(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -317,10 +313,14 @@ class TestGroupRenameByName:
         result = runner.invoke(
             app,
             [
-                "group", "rename",
-                "--board", "42",
-                "--name-contains", "objective 2",
-                "--title", "Done",
+                "group",
+                "rename",
+                "--board",
+                "42",
+                "--name-contains",
+                "objective 2",
+                "--title",
+                "Done",
             ],
         )
         assert result.exit_code == 0, result.stdout
@@ -345,10 +345,14 @@ class TestGroupRenameByName:
         result = runner.invoke(
             app,
             [
-                "group", "rename",
-                "--board", "42",
-                "--name-matches", r"Objective\s+2:",
-                "--title", "Done",
+                "group",
+                "rename",
+                "--board",
+                "42",
+                "--name-matches",
+                r"Objective\s+2:",
+                "--title",
+                "Done",
             ],
         )
         assert result.exit_code == 0, result.stdout
@@ -366,10 +370,14 @@ class TestGroupRenameByName:
         result = runner.invoke(
             app,
             [
-                "group", "rename",
-                "--board", "42",
-                "--name-contains", "draft",
-                "--title", "X",
+                "group",
+                "rename",
+                "--board",
+                "42",
+                "--name-contains",
+                "draft",
+                "--title",
+                "X",
             ],
         )
         assert result.exit_code == 2, result.stdout
@@ -393,11 +401,15 @@ class TestGroupRenameByName:
         result = runner.invoke(
             app,
             [
-                "group", "rename",
-                "--board", "42",
-                "--name-contains", "draft",
+                "group",
+                "rename",
+                "--board",
+                "42",
+                "--name-contains",
+                "draft",
                 "--first",
-                "--title", "Final",
+                "--title",
+                "Final",
             ],
         )
         assert result.exit_code == 0, result.stdout
@@ -412,10 +424,14 @@ class TestGroupRenameByName:
         result = runner.invoke(
             app,
             [
-                "group", "rename",
-                "--board", "42",
-                "--name-contains", "nonexistent",
-                "--title", "X",
+                "group",
+                "rename",
+                "--board",
+                "42",
+                "--name-contains",
+                "nonexistent",
+                "--title",
+                "X",
             ],
         )
         assert result.exit_code == 6, result.stdout
@@ -429,11 +445,16 @@ class TestGroupRenameByName:
         result = runner.invoke(
             app,
             [
-                "group", "rename",
-                "--board", "42",
-                "--id", "topics",
-                "--name-contains", "Topics",
-                "--title", "X",
+                "group",
+                "rename",
+                "--board",
+                "42",
+                "--id",
+                "topics",
+                "--name-contains",
+                "Topics",
+                "--title",
+                "X",
             ],
         )
         assert result.exit_code == 2, result.stdout

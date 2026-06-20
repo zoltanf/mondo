@@ -6,6 +6,7 @@ Friction report B4: agents writing GraphQL because there's no
 so it behaves the same w.r.t. codec dispatch + the new
 mondo-column-labels pointer on errors.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,18 +38,24 @@ def _stub_status_column(httpx_mock: HTTPXMock) -> None:
         url=ENDPOINT,
         method="POST",
         json={
-            "data": {"boards": [{
-                "id": "42",
-                "columns": [{
-                    "id": "status",
-                    "title": "Status",
-                    "type": "status",
-                    "settings_str": json.dumps({
-                        "labels": {"0": "Done", "1": "Working on it", "2": "Stuck"}
-                    }),
-                    "archived": False,
-                }],
-            }]},
+            "data": {
+                "boards": [
+                    {
+                        "id": "42",
+                        "columns": [
+                            {
+                                "id": "status",
+                                "title": "Status",
+                                "type": "status",
+                                "settings_str": json.dumps(
+                                    {"labels": {"0": "Done", "1": "Working on it", "2": "Stuck"}}
+                                ),
+                                "archived": False,
+                            }
+                        ],
+                    }
+                ]
+            },
             "extensions": {"request_id": "r"},
         },
     )
@@ -67,16 +74,28 @@ def _stub_items(httpx_mock: HTTPXMock, items: list[dict]) -> None:
 
 def test_item_find_returns_matching_items(httpx_mock: HTTPXMock) -> None:
     _stub_status_column(httpx_mock)
-    _stub_items(httpx_mock, [
-        {"id": "1", "name": "Alpha", "state": "active",
-         "group": {"id": "g1", "title": "T"}, "column_values": []},
-        {"id": "2", "name": "Beta", "state": "active",
-         "group": {"id": "g1", "title": "T"}, "column_values": []},
-    ])
+    _stub_items(
+        httpx_mock,
+        [
+            {
+                "id": "1",
+                "name": "Alpha",
+                "state": "active",
+                "group": {"id": "g1", "title": "T"},
+                "column_values": [],
+            },
+            {
+                "id": "2",
+                "name": "Beta",
+                "state": "active",
+                "group": {"id": "g1", "title": "T"},
+                "column_values": [],
+            },
+        ],
+    )
     result = runner.invoke(
         app,
-        ["-o", "json", "item", "find",
-         "--board", "42", "--column", "status", "--value", "Done"],
+        ["-o", "json", "item", "find", "--board", "42", "--column", "status", "--value", "Done"],
     )
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -93,19 +112,17 @@ def test_item_find_sends_same_query_as_filter(httpx_mock: HTTPXMock) -> None:
 
     r1 = runner.invoke(
         app,
-        ["-o", "json", "item", "find",
-         "--board", "42", "--column", "status", "--value", "Done"],
+        ["-o", "json", "item", "find", "--board", "42", "--column", "status", "--value", "Done"],
     )
     assert r1.exit_code == 0, r1.output
     r2 = runner.invoke(
         app,
-        ["-o", "json", "item", "list",
-         "--board", "42", "--filter", "status=Done"],
+        ["-o", "json", "item", "list", "--board", "42", "--filter", "status=Done"],
     )
     assert r2.exit_code == 0, r2.output
 
     requests = httpx_mock.get_requests()
-    # Two invocations × (columns fetch + items_page) = 4 requests
+    # Two invocations x (columns fetch + items_page) = 4 requests
     # The 2nd and 4th are the items_page calls.
     items_bodies = [json.loads(r.content) for r in requests[1::2]]
     assert items_bodies[0]["variables"] == items_bodies[1]["variables"], (
@@ -121,8 +138,7 @@ def test_item_find_unknown_label_errors_with_pointer(httpx_mock: HTTPXMock) -> N
     _stub_status_column(httpx_mock)
     result = runner.invoke(
         app,
-        ["item", "find", "--board", "42",
-         "--column", "status", "--value", "NotALabel"],
+        ["item", "find", "--board", "42", "--column", "status", "--value", "NotALabel"],
     )
     assert result.exit_code == 2, result.output
     combined = (result.output or "") + (result.stderr or "")
@@ -140,6 +156,7 @@ def test_item_find_in_help_index() -> None:
 def test_item_find_has_examples():
     """Lint dependency: every read leaf needs at least one -q example."""
     from mondo.cli._examples import EXAMPLES
+
     exs = EXAMPLES.get("item find") or []
     assert exs, "item find needs Examples (read-leaf lint)"
     assert any("-q " in ex.command for ex in exs), (

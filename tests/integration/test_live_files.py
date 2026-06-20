@@ -12,7 +12,6 @@ from ._helpers import (
     CleanupPlan,
     invoke,
     invoke_json,
-    wait_for,
 )
 from .conftest import PmBoard
 
@@ -31,45 +30,68 @@ def test_live_file_upload_to_column_and_download(
     file_col_id = f"e2e_file_{suffix.lower()}"
     invoke_json(
         [
-            "column", "create",
-            "--board", str(pm.board_id),
-            "--title", f"E2E File {suffix}",
-            "--type", "file",
-            "--id", file_col_id,
+            "column",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--title",
+            f"E2E File {suffix}",
+            "--type",
+            "file",
+            "--id",
+            file_col_id,
         ]
     )
     cleanup_plan.add(
         f"file column {file_col_id}",
-        "column", "delete", "--board", str(pm.board_id), "--column", file_col_id,
+        "column",
+        "delete",
+        "--board",
+        str(pm.board_id),
+        "--column",
+        file_col_id,
     )
 
     # Scratch item to attach the file to.
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", f"E2E File Item {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            f"E2E File Item {suffix}",
         ]
     )
     item_id = int(item["id"])
     cleanup_plan.add(
         f"file item {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
 
     # Deterministic content + filename.
     src_file = tmp_path / f"e2e-upload-{suffix}.txt"
-    payload = f"hello-monday-{suffix}\n".encode("utf-8")
+    payload = f"hello-monday-{suffix}\n".encode()
     src_file.write_bytes(payload)
 
     upload_result = invoke_json(
         [
-            "file", "upload",
-            "--file", str(src_file),
-            "--target", "item",
-            "--item", str(item_id),
-            "--column", file_col_id,
+            "file",
+            "upload",
+            "--file",
+            str(src_file),
+            "--target",
+            "item",
+            "--item",
+            str(item_id),
+            "--column",
+            file_col_id,
         ]
     )
 
@@ -87,9 +109,12 @@ def test_live_file_upload_to_column_and_download(
     download_path = tmp_path / "downloaded.bin"
     invoke(
         [
-            "file", "download",
-            "--asset", str(asset_id),
-            "--out", str(download_path),
+            "file",
+            "download",
+            "--asset",
+            str(asset_id),
+            "--out",
+            str(download_path),
         ],
         expect_exit=0,
     )
@@ -101,10 +126,10 @@ def _extract_asset_id(payload: Any) -> int | None:
     """Pull an asset id out of the upload response, tolerant of nested shapes."""
     if isinstance(payload, dict):
         for key in ("asset_id", "id"):
-            if key in payload and payload[key]:
+            if payload.get(key):
                 try:
                     return int(payload[key])
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     pass
         for key in ("asset", "data", "result"):
             inner = payload.get(key)

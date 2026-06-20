@@ -87,9 +87,7 @@ def test_filter_status_accepts_index_syntax(pm_board_session: PmBoard) -> None:
     assert by_label, "label filter returned nothing — fixture seeding broken?"
 
     # Discover the index of the seeded label via `column labels`.
-    labels = invoke_json(
-        ["column", "labels", "--board", str(pm.board_id), "--column", status_col]
-    )
+    labels = invoke_json(["column", "labels", "--board", str(pm.board_id), "--column", status_col])
     seeded = next(
         (e for e in labels if str(e.get("label")) == pm.status_value),
         None,
@@ -125,7 +123,14 @@ def test_filter_status_not_equals_excludes_matching(pm_board_session: PmBoard) -
     pm = pm_board_session
     status_col = pm.column_ids["status"]
     items = invoke_json(
-        ["item", "list", "--board", str(pm.board_id), "--filter", f"{status_col}!={pm.status_value}"]
+        [
+            "item",
+            "list",
+            "--board",
+            str(pm.board_id),
+            "--filter",
+            f"{status_col}!={pm.status_value}",
+        ]
     )
     excluded_ids = {int(it["id"]) for it in items}
     assert pm.item_ids[0] not in excluded_ids, (
@@ -153,7 +158,14 @@ def test_filter_unknown_status_label_errors_cleanly(pm_board_session: PmBoard) -
     pm = pm_board_session
     status_col = pm.column_ids["status"]
     result = invoke(
-        ["item", "list", "--board", str(pm.board_id), "--filter", f"{status_col}=DefinitelyNotALabel"],
+        [
+            "item",
+            "list",
+            "--board",
+            str(pm.board_id),
+            "--filter",
+            f"{status_col}=DefinitelyNotALabel",
+        ],
         expect_exit=None,
     )
     assert result.exit_code != 0
@@ -175,9 +187,7 @@ def test_filter_unknown_status_label_errors_cleanly(pm_board_session: PmBoard) -
 
 def _filter_matches(board_id: int, col_id: str, value: str) -> list[dict]:
     """Helper: run `--filter col=value` and return the items list."""
-    return invoke_json(
-        ["item", "list", "--board", str(board_id), "--filter", f"{col_id}={value}"]
-    )
+    return invoke_json(["item", "list", "--board", str(board_id), "--filter", f"{col_id}={value}"])
 
 
 @pytest.mark.integration
@@ -281,9 +291,7 @@ def test_filter_by_timeline(pm_board_session: PmBoard) -> None:
     # The fixture leaves timeline unset; the call should still succeed but
     # return zero matches today. Strict xfail means this passes if monday
     # ever starts matching this shape.
-    items = _filter_matches(
-        pm.board_id, pm.column_ids["timeline"], "2026-04-01..2026-04-30"
-    )
+    items = _filter_matches(pm.board_id, pm.column_ids["timeline"], "2026-04-01..2026-04-30")
     matched = {int(it["id"]) for it in items}
     assert pm.item_ids[0] in matched
 
@@ -298,9 +306,12 @@ def test_filter_doc_column_rejected(pm_board_session: PmBoard) -> None:
     pm = pm_board_session
     result = invoke(
         [
-            "item", "list",
-            "--board", str(pm.board_id),
-            "--filter", f"{pm.column_ids['doc']}=anything",
+            "item",
+            "list",
+            "--board",
+            str(pm.board_id),
+            "--filter",
+            f"{pm.column_ids['doc']}=anything",
         ],
         expect_exit=None,
     )

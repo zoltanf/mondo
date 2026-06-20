@@ -64,9 +64,7 @@ def _prewarm(
 
 
 class TestWorkspaceGetCache:
-    def test_cache_hit_no_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_cache_hit_no_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="workspaces",
@@ -78,9 +76,7 @@ class TestWorkspaceGetCache:
         parsed = json.loads(result.stdout)
         assert parsed["name"] == "Eng"
 
-    def test_no_cache_forces_live(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_no_cache_forces_live(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="workspaces",
@@ -95,9 +91,7 @@ class TestWorkspaceGetCache:
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)["name"] == "Live"
 
-    def test_refresh_cache_refetches_directory(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_refresh_cache_refetches_directory(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="workspaces",
@@ -110,9 +104,7 @@ class TestWorkspaceGetCache:
             method="POST",
             json=_ok({"workspaces": [{"id": "7", "name": "Fresh", "kind": "open"}]}),
         )
-        result = runner.invoke(
-            app, ["workspace", "get", "--id", "7", "--refresh-cache"]
-        )
+        result = runner.invoke(app, ["workspace", "get", "--id", "7", "--refresh-cache"])
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)["name"] == "Fresh"
 
@@ -165,9 +157,7 @@ class TestWorkspaceGetCache:
 
 
 class TestTeamGetCache:
-    def test_cache_hit_no_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_cache_hit_no_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="teams",
@@ -180,18 +170,14 @@ class TestTeamGetCache:
         assert httpx_mock.get_requests() == []
         assert json.loads(result.stdout)["name"] == "Squad"
 
-    def test_dry_run_skips_cache_and_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_dry_run_skips_cache_and_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(tmp_path, entity_type="teams", entries=[{"id": "42", "name": "Squad"}])
         result = runner.invoke(app, ["--dry-run", "team", "get", "--id", "42"])
         assert result.exit_code == 0, result.stdout
         assert httpx_mock.get_requests() == []
         assert "teams" in result.stdout  # query string emitted
 
-    def test_no_cache_forces_live(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_no_cache_forces_live(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(tmp_path, entity_type="teams", entries=[{"id": "42", "name": "Stale"}])
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -207,9 +193,7 @@ class TestTeamGetCache:
 
 
 class TestFolderGetCache:
-    def test_cache_hit_no_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_cache_hit_no_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm(
             tmp_path,
             entity_type="folders",
@@ -232,12 +216,8 @@ class TestFolderGetCache:
         assert httpx_mock.get_requests() == []
         assert json.loads(result.stdout)["name"] == "Projects"
 
-    def test_dry_run_skips_cache_and_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
-        _prewarm(
-            tmp_path, entity_type="folders", entries=[{"id": "100", "name": "P"}]
-        )
+    def test_dry_run_skips_cache_and_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
+        _prewarm(tmp_path, entity_type="folders", entries=[{"id": "100", "name": "P"}])
         result = runner.invoke(app, ["--dry-run", "folder", "get", "--id", "100"])
         assert result.exit_code == 0, result.stdout
         assert httpx_mock.get_requests() == []

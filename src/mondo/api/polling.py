@@ -104,11 +104,11 @@ def poll_until_jmespath(
     deadline measured from the first `now()` call. `sleep` and `now` are
     injectable for tests.
     """
-    import jmespath
+    import jmespath  # type: ignore[import-untyped]
 
     try:
         compiled = jmespath.compile(expression)
-    except Exception as e:  # noqa: BLE001 — jmespath raises ParseError etc.
+    except Exception as e:
         raise ValueError(f"invalid --poll-until expression {expression!r}: {e}") from e
 
     deadline = now() + timeout_s
@@ -118,7 +118,6 @@ def poll_until_jmespath(
             return result
         if now() >= deadline:
             raise WaitTimeoutError(
-                f"--poll-until expression {expression!r} stayed falsy "
-                f"after {timeout_s:.1f}s"
+                f"--poll-until expression {expression!r} stayed falsy after {timeout_s:.1f}s"
             )
         sleep(interval_s)

@@ -23,12 +23,9 @@ if TYPE_CHECKING:
 def reject_mutually_exclusive(no_cache: bool, refresh_cache: bool) -> None:
     """Exit(2) with a uniform error when both `--no-cache` and `--refresh-cache` are set."""
     if no_cache and refresh_cache:
-        typer.secho(
-            "error: --no-cache and --refresh-cache are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        from mondo.cli._exec import usage_error_or_exit
+
+        usage_error_or_exit("--no-cache and --refresh-cache are mutually exclusive.")
 
 
 @dataclass(frozen=True)

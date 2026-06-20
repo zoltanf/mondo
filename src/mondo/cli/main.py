@@ -239,7 +239,7 @@ _LAZY_ENTRY_ORDER: tuple[str, ...] = tuple(entry.name for entry in _TOP_LEVEL_EN
 def _load_lazy_entry(entry: _LazyEntry) -> click.Command:
     module = import_module(entry.module)
     if entry.is_group:
-        click_command = get_typer_group(getattr(module, entry.attr))
+        click_command: click.Command = get_typer_group(getattr(module, entry.attr))
         click_command.name = entry.name
         click_command.help = entry.help_text or click_command.help
         click_command.hidden = entry.hidden
@@ -388,9 +388,7 @@ def _root(
     # pipeline — emit it only when a human is plausibly watching stderr.
     from mondo.cli._notices import benign_notices_enabled
 
-    if not os.environ.get("PYTEST_CURRENT_TEST") and benign_notices_enabled(
-        verbose=verbose
-    ):
+    if not os.environ.get("PYTEST_CURRENT_TEST") and benign_notices_enabled(verbose=verbose):
         warn_if_skill_outdated()
     ctx.obj = GlobalOpts(
         profile_name=profile,

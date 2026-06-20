@@ -26,7 +26,13 @@ def _prewarm_workspaces(tmp_path: Path) -> None:
         api_endpoint=ENDPOINT,
         ttl_seconds=3600,
     )
-    store.write([{"id": "1", "name": "Main"}, {"id": "42", "name": "Engineering"}, {"id": "43", "name": "Sales"}])
+    store.write(
+        [
+            {"id": "1", "name": "Main"},
+            {"id": "42", "name": "Engineering"},
+            {"id": "43", "name": "Sales"},
+        ]
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -99,9 +105,7 @@ class TestBoardListCache:
         body = json.loads(httpx_mock.get_requests()[-1].content)
         assert "boards(" in body["query"]
 
-    def test_refresh_cache_always_fetches(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_refresh_cache_always_fetches(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         # Prime first
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=_ok({"boards": [_board("1", "A")]})
@@ -154,9 +158,7 @@ class TestBoardListCache:
         )
         assert result.exit_code == 2
 
-    def test_with_item_counts_bypasses_cache(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_with_item_counts_bypasses_cache(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -185,9 +187,7 @@ class TestBoardListCache:
         parsed = json.loads(result.stdout)
         assert [b["id"] for b in parsed] == ["2", "3"]
 
-    def test_workspace_name_enriched_from_cache(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_workspace_name_enriched_from_cache(self, httpx_mock: HTTPXMock) -> None:
         """workspace_name resolved from pre-warmed workspaces cache
         (fixture seeds id=42 → 'Engineering')."""
         httpx_mock.add_response(
@@ -200,9 +200,7 @@ class TestBoardListCache:
         parsed = json.loads(result.stdout)
         assert parsed[0]["workspace_name"] == "Engineering"
 
-    def test_main_workspace_name_synthesized_for_null_id(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_main_workspace_name_synthesized_for_null_id(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -252,9 +250,7 @@ class TestBoardListCache:
 
 
 class TestBoardMutationInvalidation:
-    def test_archive_invalidates_cache(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_archive_invalidates_cache(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         # Prime cache
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -309,9 +305,7 @@ class TestUserListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"users": [{"id": "1", "name": "Zoe", "email": "z@x", "enabled": True}]}
-            ),
+            json=_ok({"users": [{"id": "1", "name": "Zoe", "email": "z@x", "enabled": True}]}),
         )
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -331,9 +325,7 @@ class TestUserListCache:
 
 
 class TestTeamListCache:
-    def test_cache_prime_is_single_call(
-        self, httpx_mock: HTTPXMock, tmp_path: Path
-    ) -> None:
+    def test_cache_prime_is_single_call(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",

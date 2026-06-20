@@ -270,7 +270,7 @@ EXAMPLES: dict[str, list[Example]] = {
             "--order-by date4,desc -o json -q '[].{id:id,name:name}'",
         ),
         Example(
-            "--refresh-cache / --no-cache: accepted for parity (no-op; items aren't cached)",
+            "--refresh-cache / --no-cache: the bare board listing is cached per board (60s TTL)",
             "mondo item list --board 1234567890 --refresh-cache",
         ),
     ],

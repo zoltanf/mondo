@@ -6,6 +6,7 @@ up — never touches the original 5 fixture items.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -19,29 +20,33 @@ from ._helpers import (
 from .conftest import PmBoard
 
 
-def _scratch_parent(
-    pm: PmBoard, cleanup_plan: CleanupPlan, suffix: str
-) -> int:
+def _scratch_parent(pm: PmBoard, cleanup_plan: CleanupPlan, suffix: str) -> int:
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", f"E2E Subitem Parent {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            f"E2E Subitem Parent {suffix}",
         ]
     )
     item_id = int(item["id"])
     cleanup_plan.add(
         f"subitem parent {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
     return item_id
 
 
 @pytest.mark.integration
-def test_live_subitem_create_and_list(
-    pm_board_session: PmBoard, cleanup_plan: CleanupPlan
-) -> None:
+def test_live_subitem_create_and_list(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
     """Create 3 subitems on a fresh parent; assert they list back."""
     pm = pm_board_session
     suffix = uuid.uuid4().hex[:8]
@@ -51,16 +56,23 @@ def test_live_subitem_create_and_list(
     for i in range(3):
         sub = invoke_json(
             [
-                "subitem", "create",
-                "--parent", str(parent_id),
-                "--name", f"E2E Sub {suffix} #{i}",
+                "subitem",
+                "create",
+                "--parent",
+                str(parent_id),
+                "--name",
+                f"E2E Sub {suffix} #{i}",
             ]
         )
         sub_id = int(sub["id"])
         created_ids.append(sub_id)
         cleanup_plan.add(
             f"subitem {sub_id}",
-            "subitem", "delete", "--id", str(sub_id), "--hard",
+            "subitem",
+            "delete",
+            "--id",
+            str(sub_id),
+            "--hard",
         )
 
     def _all_visible() -> list[dict[str, Any]]:
@@ -84,14 +96,22 @@ def test_live_subitem_set_and_get_column_value(
 
     sub = invoke_json(
         [
-            "subitem", "create",
-            "--parent", str(parent_id),
-            "--name", f"E2E Sub Col {suffix}",
+            "subitem",
+            "create",
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Sub Col {suffix}",
         ]
     )
     sub_id = int(sub["id"])
     cleanup_plan.add(
-        f"sub col {sub_id}", "subitem", "delete", "--id", str(sub_id), "--hard",
+        f"sub col {sub_id}",
+        "subitem",
+        "delete",
+        "--id",
+        str(sub_id),
+        "--hard",
     )
 
     # Subitems live on a separate auto-generated board with its own column ids.
@@ -114,11 +134,16 @@ def test_live_subitem_set_and_get_column_value(
         # column so we have somewhere to write.
         created = invoke_json(
             [
-                "column", "create",
-                "--board", str(sub_board_id),
-                "--title", "E2E Sub Text",
-                "--type", "text",
-                "--id", "e2e_sub_text",
+                "column",
+                "create",
+                "--board",
+                str(sub_board_id),
+                "--title",
+                "E2E Sub Text",
+                "--type",
+                "text",
+                "--id",
+                "e2e_sub_text",
             ]
         )
         text_col_id = created["id"]
@@ -128,10 +153,14 @@ def test_live_subitem_set_and_get_column_value(
     text_value = f"e2e text {suffix}"
     invoke_json(
         [
-            "column", "set",
-            "--item", str(sub_id),
-            "--column", text_col_id,
-            "--value", text_value,
+            "column",
+            "set",
+            "--item",
+            str(sub_id),
+            "--column",
+            text_col_id,
+            "--value",
+            text_value,
         ]
     )
 
@@ -144,9 +173,100 @@ def test_live_subitem_set_and_get_column_value(
 
 
 @pytest.mark.integration
-def test_live_subitem_delete_hard(
+def test_live_subitem_create_with_tags_codec_resolves_names(
     pm_board_session: PmBoard, cleanup_plan: CleanupPlan
 ) -> None:
+    """`subitem create --subitems-board --column <tags>=name` resolves the tag
+    name to an id via create_or_get_tag, matching `item create`.
+
+    Regression for the subitem path that previously skipped tag resolution:
+    a bare name hit the tags codec and exited 5. The successful create alone
+    proves the fix (the old path would have errored); the round-trip confirms
+    the resolved tag actually landed on the subitem.
+    """
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    parent_id = _scratch_parent(pm, cleanup_plan, suffix)
+
+    # Materialize the subitems board via a throwaway name-only subitem.
+    seed = invoke_json(
+        ["subitem", "create", "--parent", str(parent_id), "--name", f"E2E Seed {suffix}"]
+    )
+    seed_id = int(seed["id"])
+    cleanup_plan.add(f"subitem seed {seed_id}", "subitem", "delete", "--id", str(seed_id), "--hard")
+
+    sub_listing = wait_for(
+        "seed subitem listed",
+        lambda: invoke_json(["subitem", "list", "--parent", str(parent_id)]),
+    )
+    sub_board_id = None
+    for s in sub_listing:
+        if int(s["id"]) == seed_id:
+            sub_board_id = (s.get("board") or {}).get("id")
+            break
+    assert sub_board_id, "could not resolve subitems board id"
+
+    # Ensure a tags column exists on the subitems board (default boards have none).
+    sub_columns = invoke_json(["column", "list", "--board", str(sub_board_id)])
+    tags_col = next((c for c in sub_columns if c.get("type") == "tags"), None)
+    if tags_col is None:
+        created = invoke_json(
+            [
+                "column",
+                "create",
+                "--board",
+                str(sub_board_id),
+                "--title",
+                "E2E Sub Tags",
+                "--type",
+                "tags",
+                "--id",
+                "e2e_sub_tags",
+            ]
+        )
+        tags_col_id = created["id"]
+    else:
+        tags_col_id = tags_col["id"]
+
+    # The actual fix under test: a bare tag NAME on subitem create.
+    tag_name = f"E2ETag{suffix}"
+    sub = invoke_json(
+        [
+            "subitem",
+            "create",
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Sub Tags {suffix}",
+            "--subitems-board",
+            str(sub_board_id),
+            "--column",
+            f"{tags_col_id}={tag_name}",
+        ]
+    )
+    sub_id = int(sub["id"])
+    cleanup_plan.add(f"subitem tags {sub_id}", "subitem", "delete", "--id", str(sub_id), "--hard")
+
+    def _tag_landed() -> None:
+        got = invoke_json(["subitem", "get", "--id", str(sub_id)])
+        cv = {v["id"]: v for v in got.get("column_values") or []}
+        col = cv.get(tags_col_id)
+        assert col is not None, f"tags column {tags_col_id} missing: {list(cv)}"
+        text = col.get("text") or ""
+        ids: list[int] = []
+        raw_value = col.get("value")
+        if raw_value:
+            try:
+                ids = (json.loads(raw_value) or {}).get("tag_ids") or []
+            except json.JSONDecodeError, TypeError:
+                ids = []
+        assert tag_name in text or ids, f"tag not resolved: text={text!r} value={raw_value!r}"
+
+    wait_for("subitem tag column landed", _tag_landed)
+
+
+@pytest.mark.integration
+def test_live_subitem_delete_hard(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
     """`subitem delete --hard` removes the subitem from the parent's listing."""
     pm = pm_board_session
     suffix = uuid.uuid4().hex[:8]
@@ -154,9 +274,12 @@ def test_live_subitem_delete_hard(
 
     sub = invoke_json(
         [
-            "subitem", "create",
-            "--parent", str(parent_id),
-            "--name", f"E2E Sub Delete {suffix}",
+            "subitem",
+            "create",
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Sub Delete {suffix}",
         ]
     )
     sub_id = int(sub["id"])

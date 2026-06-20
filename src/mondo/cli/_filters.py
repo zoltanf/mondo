@@ -28,9 +28,7 @@ def compile_name_filter(
     """
     active = sum(bool(x) for x in (name_contains, name_matches, name_fuzzy))
     if active > 1:
-        raise UsageError(
-            "pass only one of --name-contains / --name-matches / --name-fuzzy."
-        )
+        raise UsageError("pass only one of --name-contains / --name-matches / --name-fuzzy.")
     pattern: re.Pattern[str] | None = None
     if name_matches:
         try:

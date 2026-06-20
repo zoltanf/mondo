@@ -31,7 +31,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._column_cache import fetch_board_columns
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit
+from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -58,9 +58,7 @@ META_FIELDS = ("id", "name", "state", "group")
 # ----- helpers -----
 
 
-def _fetch_columns(
-    opts: GlobalOpts, client: MondayClient, board_id: int
-) -> list[dict[str, Any]]:
+def _fetch_columns(opts: GlobalOpts, client: MondayClient, board_id: int) -> list[dict[str, Any]]:
     """Return [{id, title, type}] for the board, in display order."""
     try:
         cols = fetch_board_columns(opts, client, board_id)
@@ -199,12 +197,7 @@ def board_cmd(
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
 
     if fmt is ExportFormat.xlsx and out is None:
-        typer.secho(
-            "error: xlsx is a binary format; pass --out PATH.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("xlsx is a binary format; pass --out PATH.")
 
     client = client_or_exit(opts)
     try:

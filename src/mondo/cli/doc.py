@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Annotated, Any, NoReturn
 
 import typer
 
-from mondo.api.errors import MondoError, NotFoundError
+from mondo.api.errors import MondoError, NotFoundError, ValidationError
 from mondo.api.queries import (
     ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
     CREATE_DOC_BLOCK,
@@ -57,6 +57,12 @@ from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.services.docs import (
+    last_block_id,
+    object_id_hint,
+    object_id_hint_with_client,
+    resolve_doc_id_from_object_id,
+)
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -114,19 +120,9 @@ DocObjectIdOpt = Annotated[
 def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> str:
     sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
     if sources == 0:
-        typer.secho(
-            "error: provide --markdown, --from-file @path, or --from-stdin",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --markdown, --from-file @path, or --from-stdin")
     if sources > 1:
-        typer.secho(
-            "error: --markdown, --from-file, and --from-stdin are mutually exclusive",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--markdown, --from-file, and --from-stdin are mutually exclusive")
     if path is not None:
         return path.read_text()
     if from_stdin:
@@ -138,19 +134,9 @@ def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> s
 def _load_html(inline: str | None, path: Path | None, from_stdin: bool) -> str:
     sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
     if sources == 0:
-        typer.secho(
-            "error: provide --html, --from-file @path, or --from-stdin",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --html, --from-file @path, or --from-stdin")
     if sources > 1:
-        typer.secho(
-            "error: --html, --from-file, and --from-stdin are mutually exclusive",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--html, --from-file, and --from-stdin are mutually exclusive")
     if path is not None:
         return path.read_text()
     if from_stdin:
@@ -216,17 +202,6 @@ def _fetch_doc_by_object_id_all_blocks(
         query=DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
         identity={"objs": [object_id]},
     )
-
-
-def _last_block_id(doc: dict[str, Any]) -> str | None:
-    blocks = doc.get("blocks") or []
-    if not blocks:
-        return None
-    last = blocks[-1]
-    if not isinstance(last, dict):
-        return None
-    last_id = last.get("id")
-    return str(last_id) if last_id else None
 
 
 # ----- read commands -----
@@ -343,8 +318,7 @@ def list_cmd(
     try:
         needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     prefs = resolve_cache_prefs(opts, no_cache=no_cache, fuzzy_threshold=fuzzy_threshold)
     if prefs.use_cache:
@@ -615,12 +589,7 @@ def get_cmd(
         usage_error_or_exit("--out is only valid with --format markdown.")
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
-        typer.secho(
-            "error: pass exactly one of --id or --object-id.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("pass exactly one of --id or --object-id.")
 
     if doc_id is not None:
         query = DOC_GET_BY_ID_BLOCKS_PAGE
@@ -651,7 +620,7 @@ def get_cmd(
                 resolved_doc_id = (
                     doc_id
                     if doc_id is not None
-                    else _resolve_doc_id_from_object_id(opts, client, object_id or 0)
+                    else resolve_doc_id_from_object_id(opts, client, object_id or 0)
                 )
             else:
                 resolved_doc_id = None
@@ -706,31 +675,6 @@ def get_cmd(
     opts.emit(doc)
 
 
-def _resolve_doc_id_from_object_id(
-    opts: GlobalOpts, client: MondayClient, object_id: int
-) -> int | None:
-    """Map a URL-visible `object_id` to its internal `doc_id` via the docs
-    directory cache (auto-populated on miss). Returns None when the
-    object_id isn't visible — the caller falls back to a live fetch.
-    """
-    from mondo.cache.directory import get_docs as _cache_get_docs
-
-    target = str(object_id)
-    store = opts.build_cache_store("docs")
-    try:
-        cached = _cache_get_docs(client, store=store, refresh=False)
-    except MondoError:
-        return None
-    for entry in cached.entries:
-        if str(entry.get("object_id")) == target:
-            raw = entry.get("id")
-            try:
-                return int(raw) if raw is not None else None
-            except TypeError, ValueError:
-                return None
-    return None
-
-
 def _emit_doc_not_found(
     client: MondayClient,
     *,
@@ -772,44 +716,15 @@ def _emit_doc_not_found(
 _OBJECT_ID_HINT_EXIT_CODES = frozenset({1, 5, 6, 7})
 
 
-def _object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
-    """Probe whether a failing `--doc` id is actually a URL-visible object_id
-    (the id a human copies out of a `/docs/<id>` URL). Returns the targeted
-    hint when it resolves; never raises — the probe must not mask the
-    original error.
-    """
-    try:
-        result = client.execute(DOC_HEAD_BY_OBJECT_ID, {"objs": [doc_id]})
-        docs = (result.get("data") or {}).get("docs") or []
-    except Exception:
-        return None
-    if not docs:
-        return None
-    return (
-        f"hint: {doc_id} looks like a URL-visible object id, not an internal "
-        f"doc id — retry with --object-id {doc_id}"
-    )
-
-
 def _emit_doc_id_not_found(client: MondayClient, doc_id: int, *, probe: bool) -> None:
     """Standard `doc id=X not found.` line, plus the object-id retry hint
     when the id was user-supplied via `--doc` (`probe=True`)."""
     line = f"doc id={doc_id} not found."
     if probe:
-        hint = _object_id_hint_with_client(client, doc_id)
+        hint = object_id_hint_with_client(client, doc_id)
         if hint is not None:
             line = f"{line}\n{hint}"
     typer.secho(line, fg=typer.colors.RED, err=True)
-
-
-def _object_id_hint(opts: GlobalOpts, doc_id: int) -> str | None:
-    """`_object_id_hint_with_client` with a fresh short-lived client."""
-    try:
-        client = opts.build_client()
-        with client:
-            return _object_id_hint_with_client(client, doc_id)
-    except Exception:
-        return None
 
 
 def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | None) -> NoReturn:
@@ -820,12 +735,8 @@ def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | Non
     mutation-level 500 ("Fetcher response returned NON-OK status=500") —
     probe before giving up.
     """
-    line = f"error: {err_line}"
-    hint = _object_id_hint(opts, doc_id) if doc_id is not None else None
-    if hint:
-        line = f"{line}\n{hint}"
-    typer.secho(line, fg=typer.colors.RED, err=True)
-    raise typer.Exit(code=5)
+    hint = object_id_hint(opts, doc_id) if doc_id is not None else None
+    handle_mondo_error_or_exit(ValidationError(err_line), human_suffix=hint)
 
 
 def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
@@ -843,12 +754,7 @@ def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
 def _require_one_doc_flag(doc_id: int | None, object_id: int | None) -> None:
     """Usage gate for commands taking `--doc` XOR `--object-id`."""
     if (doc_id is None) == (object_id is None):
-        typer.secho(
-            "error: pass exactly one of --doc or --object-id.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("pass exactly one of --doc or --object-id.")
 
 
 def _resolve_doc_in_client(
@@ -869,12 +775,11 @@ def _resolve_doc_in_client(
     assert object_id is not None
     resolved: int | None = None
     if opts.resolve_cache_config().enabled:
-        resolved = _resolve_doc_id_from_object_id(opts, client, object_id)
+        resolved = resolve_doc_id_from_object_id(opts, client, object_id)
     if resolved is None:
         resolved = _resolve_object_id_live(client, object_id)
     if resolved is None:
-        typer.secho(f"doc object_id={object_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"doc object_id={object_id} not found."))
     return resolved
 
 
@@ -910,7 +815,7 @@ def _execute_doc_command(
             except MondoError as e:
                 suffix = None
                 if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
-                    suffix = _object_id_hint_with_client(client, doc_id)
+                    suffix = object_id_hint_with_client(client, doc_id)
                 handle_mondo_error_or_exit(e, human_suffix=suffix)
             return (result.get("data") or {}), resolved
     except MondoError as e:
@@ -1003,7 +908,7 @@ def add_block_cmd(
                 if existing_doc is None:
                     _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                     raise typer.Exit(code=6)
-                effective_after = _last_block_id(existing_doc)
+                effective_after = last_block_id(existing_doc)
             data = exec_or_exit(client, CREATE_DOC_BLOCK, _variables(resolved_doc, effective_after))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
@@ -1037,12 +942,9 @@ def add_content_cmd(
     md = _load_markdown(markdown, from_file, from_stdin)
     blocks = markdown_to_blocks(md)
     if not blocks:
-        typer.secho(
-            "error: input produced no blocks (empty or unsupported markdown).",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            ValidationError("input produced no blocks (empty or unsupported markdown).")
         )
-        raise typer.Exit(code=5)
     if doc_id is not None and opts.dry_run:
         dry_run_and_exit(
             opts,
@@ -1068,7 +970,7 @@ def add_content_cmd(
             if existing_doc is None:
                 _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                 raise typer.Exit(code=6)
-            prev_id = _last_block_id(existing_doc)
+            prev_id = last_block_id(existing_doc)
             created = create_blocks(client, resolved_doc, blocks, after_block_id=prev_id)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
@@ -1127,13 +1029,10 @@ def set_cmd(
     _require_one_doc_flag(doc_id, object_id)
     md = _load_markdown(markdown, from_file, from_stdin)
     if not md.strip():
-        typer.secho(
-            "error: refusing to replace doc content with empty markdown "
-            "(use `doc delete` to remove the doc itself).",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "refusing to replace doc content with empty markdown "
+            "(use `doc delete` to remove the doc itself)."
         )
-        raise typer.Exit(code=2)
 
     _plan = f"{ADD_CONTENT_TO_DOC_FROM_MARKDOWN} + {DELETE_DOC_BLOCK} (per prior block)"
     if doc_id is not None and opts.dry_run:
@@ -1160,7 +1059,7 @@ def set_cmd(
             added = exec_or_exit(
                 client,
                 ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
-                {"doc": resolved_doc, "md": md, "after": _last_block_id(existing_doc)},
+                {"doc": resolved_doc, "md": md, "after": last_block_id(existing_doc)},
             )
             result = added.get("add_content_to_doc_from_markdown") or {}
             if not result.get("success"):
@@ -1263,21 +1162,15 @@ def duplicate_cmd(
         _fail_with_object_id_hint(opts, result.get("error") or "duplicate_doc failed", doc_id)
     new_object_id = result.get("id")
     if new_object_id is None:
-        typer.secho(
-            "error: duplicate_doc returned no id",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=5)
+        handle_mondo_error_or_exit(ValidationError("duplicate_doc returned no id"))
     lookup = execute(opts, DOC_HEAD_BY_OBJECT_ID, {"objs": [int(new_object_id)]})
     matches = lookup.get("docs") or []
     if not matches:
-        typer.secho(
-            f"error: duplicated doc with object_id={new_object_id} not visible in workspace lookup",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            ValidationError(
+                f"duplicated doc with object_id={new_object_id} not visible in workspace lookup"
+            )
         )
-        raise typer.Exit(code=5)
     new_doc = matches[0]
     opts.emit(
         {

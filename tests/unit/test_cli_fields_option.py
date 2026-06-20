@@ -2,6 +2,7 @@
 
 `--fields id,name,...` runs before `-q '<jmespath>'`; both can be combined.
 """
+
 from __future__ import annotations
 
 import csv as _csv
@@ -36,14 +37,27 @@ def _graphql_ok(httpx_mock: HTTPXMock, data: dict) -> None:
 
 
 def test_fields_trims_a_list_payload(httpx_mock: HTTPXMock) -> None:
-    _graphql_ok(httpx_mock, {"users": [
-        {"id": "1", "name": "Alice", "email": "a@x"},
-        {"id": "2", "name": "Bob", "email": "b@x"},
-    ]})
+    _graphql_ok(
+        httpx_mock,
+        {
+            "users": [
+                {"id": "1", "name": "Alice", "email": "a@x"},
+                {"id": "2", "name": "Bob", "email": "b@x"},
+            ]
+        },
+    )
     result = runner.invoke(
         app,
-        ["--fields", "id,name", "-q", "data.users", "-o", "json",
-         "graphql", "query { users { id name email } }"],
+        [
+            "--fields",
+            "id,name",
+            "-q",
+            "data.users",
+            "-o",
+            "json",
+            "graphql",
+            "query { users { id name email } }",
+        ],
     )
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -51,13 +65,26 @@ def test_fields_trims_a_list_payload(httpx_mock: HTTPXMock) -> None:
 
 
 def test_fields_with_csv_output(httpx_mock: HTTPXMock) -> None:
-    _graphql_ok(httpx_mock, {"users": [
-        {"id": "1", "name": "Alice", "email": "a@x"},
-    ]})
+    _graphql_ok(
+        httpx_mock,
+        {
+            "users": [
+                {"id": "1", "name": "Alice", "email": "a@x"},
+            ]
+        },
+    )
     result = runner.invoke(
         app,
-        ["--fields", "id,name", "-q", "data.users", "-o", "csv",
-         "graphql", "query { users { id name email } }"],
+        [
+            "--fields",
+            "id,name",
+            "-q",
+            "data.users",
+            "-o",
+            "csv",
+            "graphql",
+            "query { users { id name email } }",
+        ],
     )
     assert result.exit_code == 0, result.output
     rows = list(_csv.reader(io.StringIO(result.stdout)))
@@ -71,8 +98,7 @@ def test_fields_without_query_projects_dict(httpx_mock: HTTPXMock) -> None:
     _graphql_ok(httpx_mock, {"me": {"id": "1", "name": "Alice", "email": "a@x"}})
     result = runner.invoke(
         app,
-        ["--fields", "data", "-o", "json",
-         "graphql", "query { me { id name email } }"],
+        ["--fields", "data", "-o", "json", "graphql", "query { me { id name email } }"],
     )
     assert result.exit_code == 0, result.output
     parsed = json.loads(result.stdout)
@@ -94,16 +120,29 @@ def test_fields_appears_in_help_as_global_option() -> None:
 def test_query_runs_before_fields(httpx_mock: HTTPXMock) -> None:
     """Confirm pipeline order: -q first (extracts from envelope), then --fields
     (final row-shape projection)."""
-    _graphql_ok(httpx_mock, {"users": [
-        {"id": "1", "name": "Alice", "email": "a@x"},
-        {"id": "2", "name": "Bob", "email": "b@x"},
-    ]})
+    _graphql_ok(
+        httpx_mock,
+        {
+            "users": [
+                {"id": "1", "name": "Alice", "email": "a@x"},
+                {"id": "2", "name": "Bob", "email": "b@x"},
+            ]
+        },
+    )
     # Without --fields, -q 'data.users' returns the list.
     # With --fields id, each row is trimmed to {id}.
     result = runner.invoke(
         app,
-        ["-q", "data.users", "--fields", "id", "-o", "json",
-         "graphql", "query { users { id name email } }"],
+        [
+            "-q",
+            "data.users",
+            "--fields",
+            "id",
+            "-o",
+            "json",
+            "graphql",
+            "query { users { id name email } }",
+        ],
     )
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)

@@ -162,17 +162,13 @@ class TestIsMachineOutput:
     def test_explicit_human_format_is_not_machine(self, value: str) -> None:
         assert is_machine_output(_opts(value)) is False
 
-    def test_unset_format_falls_back_to_tty_check(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unset_format_falls_back_to_tty_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("sys.stdout.isatty", lambda: True)
         assert is_machine_output(_opts(None)) is False
         monkeypatch.setattr("sys.stdout.isatty", lambda: False)
         assert is_machine_output(_opts(None)) is True
 
-    def test_none_opts_uses_tty_fallback(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_none_opts_uses_tty_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("sys.stdout.isatty", lambda: False)
         assert is_machine_output(None) is True
         monkeypatch.setattr("sys.stdout.isatty", lambda: True)

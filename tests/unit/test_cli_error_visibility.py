@@ -66,9 +66,7 @@ class TestBenignNoticesEnabled:
         monkeypatch.setenv("MONDO_VERBOSE", "1")
         assert benign_notices_enabled() is True
 
-    def test_verbose_flag_overrides_non_tty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_verbose_flag_overrides_non_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("sys.stderr.isatty", lambda: False)
         assert benign_notices_enabled(verbose=True) is True
 
@@ -95,16 +93,12 @@ class TestMondoVerboseEnvVar:
         monkeypatch.setenv("MONDO_VERBOSE", "1")
         assert self._seen_verbose(monkeypatch) is True
 
-    def test_unset_env_var_keeps_verbose_off(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unset_env_var_keeps_verbose_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         assert self._seen_verbose(monkeypatch) is False
 
 
 class TestMondoErrorStdoutMirror:
-    def test_machine_mode_mirrors_envelope_to_stdout(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_machine_mode_mirrors_envelope_to_stdout(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_graphql_error())
         result = runner.invoke(app, ["-o", "json", "item", "get", "--id", "1"])
         assert result.exit_code == 6
@@ -150,9 +144,7 @@ class TestMondoErrorStdoutMirror:
 
 
 class TestUsageErrorStdoutMirror:
-    def test_graphql_missing_query_usage_error_lands_on_stdout(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_graphql_missing_query_usage_error_lands_on_stdout(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(app, ["-o", "json", "graphql"])
         assert result.exit_code == 2
         env = _stdout_envelope(result.stdout)
@@ -160,12 +152,8 @@ class TestUsageErrorStdoutMirror:
         assert "missing required argument" in env["error"]
         assert httpx_mock.get_requests() == []
 
-    def test_graphql_dry_run_refusal_lands_on_stdout(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
-        result = runner.invoke(
-            app, ["-o", "json", "--dry-run", "graphql", "query { me { id } }"]
-        )
+    def test_graphql_dry_run_refusal_lands_on_stdout(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["-o", "json", "--dry-run", "graphql", "query { me { id } }"])
         assert result.exit_code == 2
         env = _stdout_envelope(result.stdout)
         assert "--dry-run is not supported" in env["error"]

@@ -27,7 +27,7 @@ import typer
 
 from mondo.api.queries import AGGREGATE_BOARD
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import execute_read
+from mondo.cli._exec import execute_read, usage_error_or_exit
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli.context import GlobalOpts
 
@@ -186,8 +186,7 @@ def board_cmd(
     try:
         parsed_select = _parse_select_tokens(select)
     except typer.BadParameter as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     group_by_cols = [c.strip() for c in (group_by or []) if c.strip()]
 

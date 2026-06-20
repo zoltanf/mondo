@@ -28,10 +28,14 @@ def test_live_doc_get_markdown_downloads_images(live_test_doc_id: int, tmp_path)
     out = tmp_path / "doc.md"
     summary = invoke_json(
         [
-            "doc", "get",
-            "--object-id", str(live_test_doc_id),
-            "--format", "markdown",
-            "--out", str(out),
+            "doc",
+            "get",
+            "--object-id",
+            str(live_test_doc_id),
+            "--format",
+            "markdown",
+            "--out",
+            str(out),
         ]
     )
     assert out.exists(), "markdown file not written"
@@ -50,15 +54,16 @@ def test_live_doc_get_markdown_downloads_images(live_test_doc_id: int, tmp_path)
 
 
 @pytest.mark.integration
-def test_live_doc_export_markdown_downloads_images(
-    live_test_doc_id: int, tmp_path
-) -> None:
+def test_live_doc_export_markdown_downloads_images(live_test_doc_id: int, tmp_path) -> None:
     out = tmp_path / "exp.md"
     summary = invoke_json(
         [
-            "doc", "export-markdown",
-            "--object-id", str(live_test_doc_id),
-            "--out", str(out),
+            "doc",
+            "export-markdown",
+            "--object-id",
+            str(live_test_doc_id),
+            "--out",
+            str(out),
         ]
     )
     assert out.exists(), "markdown file not written"
@@ -85,19 +90,26 @@ def test_live_doc_export_no_images_keeps_urls(live_test_doc_id: int, tmp_path) -
     get_out = tmp_path / "get.md"
     invoke_json(
         [
-            "doc", "get",
-            "--object-id", str(live_test_doc_id),
-            "--format", "markdown",
-            "--out", str(get_out),
+            "doc",
+            "get",
+            "--object-id",
+            str(live_test_doc_id),
+            "--format",
+            "markdown",
+            "--out",
+            str(get_out),
             "--no-images",
         ]
     )
     exp_out = tmp_path / "exp.md"
     invoke_json(
         [
-            "doc", "export-markdown",
-            "--object-id", str(live_test_doc_id),
-            "--out", str(exp_out),
+            "doc",
+            "export-markdown",
+            "--object-id",
+            str(live_test_doc_id),
+            "--out",
+            str(exp_out),
             "--no-images",
         ]
     )
@@ -115,10 +127,14 @@ def test_live_doc_get_out_rejected_without_markdown(live_test_doc_id: int, tmp_p
     before any fetch (exit 2)."""
     result = invoke(
         [
-            "doc", "get",
-            "--object-id", str(live_test_doc_id),
-            "--format", "json",
-            "--out", str(tmp_path / "doc.md"),
+            "doc",
+            "get",
+            "--object-id",
+            str(live_test_doc_id),
+            "--format",
+            "json",
+            "--out",
+            str(tmp_path / "doc.md"),
         ],
         expect_exit=None,
     )

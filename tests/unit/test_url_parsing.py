@@ -111,9 +111,7 @@ class TestWarnCrossType:
         assert "workdoc" in captured.err
         assert "mondo doc get --object-id 42" in captured.err
 
-    def test_board_expected_board_observed_silent(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_board_expected_board_observed_silent(self, capsys: pytest.CaptureFixture[str]) -> None:
         warn_cross_type({"type": "board"}, expected="board", id_=42)
         assert capsys.readouterr().err == ""
 
@@ -121,17 +119,13 @@ class TestWarnCrossType:
         warn_cross_type({}, expected="board", id_=42)
         assert capsys.readouterr().err == ""
 
-    def test_doc_expected_board_observed_warns(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_doc_expected_board_observed_warns(self, capsys: pytest.CaptureFixture[str]) -> None:
         warn_cross_type({"type": "board"}, expected="doc", id_=99)
         captured = capsys.readouterr()
         assert "regular board" in captured.err
         assert "mondo board get 99" in captured.err
 
-    def test_doc_expected_doc_observed_silent(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_doc_expected_doc_observed_silent(self, capsys: pytest.CaptureFixture[str]) -> None:
         warn_cross_type({"type": "document"}, expected="doc", id_=99)
         assert capsys.readouterr().err == ""
 
@@ -141,7 +135,4 @@ class TestUrlSynthesis:
         assert board_url("marktguru", 42) == "https://marktguru.monday.com/boards/42"
 
     def test_item_url(self) -> None:
-        assert (
-            item_url("marktguru", 42, 987)
-            == "https://marktguru.monday.com/boards/42/pulses/987"
-        )
+        assert item_url("marktguru", 42, 987) == "https://marktguru.monday.com/boards/42/pulses/987"

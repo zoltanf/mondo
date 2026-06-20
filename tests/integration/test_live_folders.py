@@ -17,9 +17,7 @@ from ._helpers import (
 
 
 def _list_folders_in_workspace(workspace_id: int) -> list[dict[str, Any]]:
-    return invoke_json(
-        ["folder", "list", "--workspace", str(workspace_id), "--no-cache"]
-    )
+    return invoke_json(["folder", "list", "--workspace", str(workspace_id), "--no-cache"])
 
 
 @pytest.mark.integration
@@ -31,57 +29,88 @@ def test_live_folder_tree_renders_hierarchy(
 
     root = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", f"E2E Tree Root {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            f"E2E Tree Root {suffix}",
         ]
     )
     root_id = int(root["id"])
     cleanup_plan.add(
         f"tree root {root_id}",
-        "folder", "delete", "--id", str(root_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(root_id),
+        "--hard",
     )
 
     alpha = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--parent", str(root_id),
-            "--name", f"E2E Tree Alpha {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--parent",
+            str(root_id),
+            "--name",
+            f"E2E Tree Alpha {suffix}",
         ]
     )
     alpha_id = int(alpha["id"])
     cleanup_plan.add(
         f"tree alpha {alpha_id}",
-        "folder", "delete", "--id", str(alpha_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(alpha_id),
+        "--hard",
     )
 
     beta = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--parent", str(root_id),
-            "--name", f"E2E Tree Beta {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--parent",
+            str(root_id),
+            "--name",
+            f"E2E Tree Beta {suffix}",
         ]
     )
     beta_id = int(beta["id"])
     cleanup_plan.add(
         f"tree beta {beta_id}",
-        "folder", "delete", "--id", str(beta_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(beta_id),
+        "--hard",
     )
 
     grandchild = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--parent", str(alpha_id),
-            "--name", f"E2E Tree Alpha.1 {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--parent",
+            str(alpha_id),
+            "--name",
+            f"E2E Tree Alpha.1 {suffix}",
         ]
     )
     grandchild_id = int(grandchild["id"])
     cleanup_plan.add(
         f"tree alpha.1 {grandchild_id}",
-        "folder", "delete", "--id", str(grandchild_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(grandchild_id),
+        "--hard",
     )
 
     def _tree_has_subtree() -> dict[str, Any]:
@@ -136,29 +165,44 @@ def test_live_folder_create_with_parent_link(
 
     parent = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", f"E2E Parent {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            f"E2E Parent {suffix}",
         ]
     )
     parent_id = int(parent["id"])
     cleanup_plan.add(
         f"parent {parent_id}",
-        "folder", "delete", "--id", str(parent_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(parent_id),
+        "--hard",
     )
 
     child = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--parent", str(parent_id),
-            "--name", f"E2E Child {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--parent",
+            str(parent_id),
+            "--name",
+            f"E2E Child {suffix}",
         ]
     )
     child_id = int(child["id"])
     cleanup_plan.add(
         f"child {child_id}",
-        "folder", "delete", "--id", str(child_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(child_id),
+        "--hard",
     )
 
     def _child_links_to_parent() -> dict[str, Any]:
@@ -184,21 +228,31 @@ def test_live_folder_update_name_changes_listing(
 
     folder = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", original_name,
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            original_name,
         ]
     )
     folder_id = int(folder["id"])
     cleanup_plan.add(
         f"renamed folder {folder_id}",
-        "folder", "delete", "--id", str(folder_id), "--hard",
+        "folder",
+        "delete",
+        "--id",
+        str(folder_id),
+        "--hard",
     )
 
     invoke_json(
         [
-            "folder", "update", str(folder_id),
-            "--name", updated_name,
+            "folder",
+            "update",
+            str(folder_id),
+            "--name",
+            updated_name,
         ]
     )
 
@@ -207,8 +261,8 @@ def test_live_folder_update_name_changes_listing(
         assert got.get("name") == updated_name, f"folder name={got.get('name')!r}"
         listing = _list_folders_in_workspace(live_workspace_id)
         names = {f.get("name") for f in listing}
-        assert updated_name in names, f"updated name not in listing"
-        assert original_name not in names, f"old name still in listing"
+        assert updated_name in names, "updated name not in listing"
+        assert original_name not in names, "old name still in listing"
 
     wait_for("rename visible", _rename_visible)
 
@@ -222,9 +276,12 @@ def test_live_folder_delete_archives_contained_board(
 
     folder = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", f"E2E Archive Folder {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            f"E2E Archive Folder {suffix}",
         ]
     )
     folder_id = int(folder["id"])
@@ -235,18 +292,27 @@ def test_live_folder_delete_archives_contained_board(
 
     board = invoke_json(
         [
-            "board", "create",
-            "--workspace", str(live_workspace_id),
-            "--folder", str(folder_id),
-            "--name", f"E2E Archive Board {suffix}",
-            "--kind", "private",
+            "board",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--folder",
+            str(folder_id),
+            "--name",
+            f"E2E Archive Board {suffix}",
+            "--kind",
+            "private",
             "--empty",
         ]
     )
     board_id = int(board["id"])
     cleanup_plan.add(
         f"archive board {board_id}",
-        "board", "delete", "--id", str(board_id), "--hard",
+        "board",
+        "delete",
+        "--id",
+        str(board_id),
+        "--hard",
     )
 
     def _board_visible_active() -> dict[str, Any]:
@@ -257,7 +323,10 @@ def test_live_folder_delete_archives_contained_board(
     # Delete the folder explicitly (cleanup_plan still cleans up if this fails).
     invoke_json(
         [
-            "folder", "delete", str(folder_id), "--hard",
+            "folder",
+            "delete",
+            str(folder_id),
+            "--hard",
         ]
     )
 
@@ -268,18 +337,24 @@ def test_live_folder_delete_archives_contained_board(
         # state may be "archived" or "deleted" depending on workspace policy.
         all_boards = invoke_json(
             [
-                "board", "list",
-                "--workspace", str(live_workspace_id),
-                "--state", "all",
+                "board",
+                "list",
+                "--workspace",
+                str(live_workspace_id),
+                "--state",
+                "all",
                 "--no-cache",
             ]
         )
         match = next((b for b in all_boards if int(b.get("id", 0)) == board_id), None)
         active = invoke_json(
             [
-                "board", "list",
-                "--workspace", str(live_workspace_id),
-                "--state", "active",
+                "board",
+                "list",
+                "--workspace",
+                str(live_workspace_id),
+                "--state",
+                "active",
                 "--no-cache",
             ]
         )
@@ -322,7 +397,9 @@ def _flatten_tree(tree: Any) -> list[dict[str, Any]]:
             # Tree may be grouped by workspace; descend into nested values.
             for value in node.values():
                 if isinstance(value, (dict, list)) and value not in (
-                    node.get("children"), node.get("folders"), node.get("items"),
+                    node.get("children"),
+                    node.get("folders"),
+                    node.get("items"),
                 ):
                     visit(value)
 

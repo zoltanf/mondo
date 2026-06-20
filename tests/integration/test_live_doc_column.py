@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -26,16 +25,24 @@ def _scratch_item_on_pm_board(
 ) -> int:
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", f"E2E Doc-Col Item {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            f"E2E Doc-Col Item {suffix}",
         ]
     )
     item_id = int(item["id"])
     cleanup_plan.add(
         f"doc-col scratch {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
     return item_id
 
@@ -43,10 +50,15 @@ def _scratch_item_on_pm_board(
 def _read_md(item_id: int, column_id: str) -> str:
     result = invoke(
         [
-            "column", "doc", "get",
-            "--item", str(item_id),
-            "--column", column_id,
-            "--format", "markdown",
+            "column",
+            "doc",
+            "get",
+            "--item",
+            str(item_id),
+            "--column",
+            column_id,
+            "--format",
+            "markdown",
         ],
         expect_exit=0,
     )
@@ -66,10 +78,15 @@ def test_live_doc_column_set_from_markdown_and_read_back(
 
     invoke_json(
         [
-            "column", "doc", "set",
-            "--item", str(item_id),
-            "--column", doc_col,
-            "--from-file", str(strict_path),
+            "column",
+            "doc",
+            "set",
+            "--item",
+            str(item_id),
+            "--column",
+            doc_col,
+            "--from-file",
+            str(strict_path),
         ]
     )
 
@@ -100,10 +117,15 @@ def test_live_doc_column_append_adds_blocks(
 
     invoke_json(
         [
-            "column", "doc", "set",
-            "--item", str(item_id),
-            "--column", doc_col,
-            "--from-file", str(strict_path),
+            "column",
+            "doc",
+            "set",
+            "--item",
+            str(item_id),
+            "--column",
+            doc_col,
+            "--from-file",
+            str(strict_path),
         ]
     )
 
@@ -114,10 +136,15 @@ def test_live_doc_column_append_adds_blocks(
 
     invoke_json(
         [
-            "column", "doc", "append",
-            "--item", str(item_id),
-            "--column", doc_col,
-            "--from-file", str(append_path),
+            "column",
+            "doc",
+            "append",
+            "--item",
+            str(item_id),
+            "--column",
+            doc_col,
+            "--from-file",
+            str(append_path),
         ]
     )
 
@@ -150,10 +177,15 @@ def test_live_doc_column_clear_unlinks(
 
     invoke_json(
         [
-            "column", "doc", "set",
-            "--item", str(item_id),
-            "--column", doc_col,
-            "--markdown", "## Will be cleared\n\nbody.\n",
+            "column",
+            "doc",
+            "set",
+            "--item",
+            str(item_id),
+            "--column",
+            doc_col,
+            "--markdown",
+            "## Will be cleared\n\nbody.\n",
         ]
     )
 
@@ -164,9 +196,13 @@ def test_live_doc_column_clear_unlinks(
 
     invoke_json(
         [
-            "column", "doc", "clear",
-            "--item", str(item_id),
-            "--column", doc_col,
+            "column",
+            "doc",
+            "clear",
+            "--item",
+            str(item_id),
+            "--column",
+            doc_col,
         ]
     )
 
@@ -176,10 +212,15 @@ def test_live_doc_column_clear_unlinks(
         # as long as the prior content is gone.
         result = invoke(
             [
-                "column", "doc", "get",
-                "--item", str(item_id),
-                "--column", doc_col,
-                "--format", "markdown",
+                "column",
+                "doc",
+                "get",
+                "--item",
+                str(item_id),
+                "--column",
+                doc_col,
+                "--format",
+                "markdown",
             ],
             expect_exit=None,
         )
@@ -207,9 +248,13 @@ def test_live_doc_column_set_from_stdin(
 
     invoke_json(
         [
-            "column", "doc", "set",
-            "--item", str(item_id),
-            "--column", doc_col,
+            "column",
+            "doc",
+            "set",
+            "--item",
+            str(item_id),
+            "--column",
+            doc_col,
             "--from-stdin",
         ],
         input=body,

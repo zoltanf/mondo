@@ -42,9 +42,7 @@ def _rows(start: int, count: int) -> list[dict[str, Any]]:
 class TestFetchPagesConcurrent:
     def test_single_short_page_costs_one_request(self) -> None:
         client = PagedFakeClient({1: _rows(1, 3)})
-        out = fetch_pages_concurrent(
-            client, query=QUERY, variables={}, limit=5, concurrency=4
-        )
+        out = fetch_pages_concurrent(client, query=QUERY, variables={}, limit=5, concurrency=4)
         assert [r["id"] for r in out] == ["1", "2", "3"]
         assert client.requested_pages == [1]
 
@@ -58,9 +56,7 @@ class TestFetchPagesConcurrent:
             6: _rows(26, 2),  # short → final
         }
         client = PagedFakeClient(pages)
-        out = fetch_pages_concurrent(
-            client, query=QUERY, variables={}, limit=5, concurrency=4
-        )
+        out = fetch_pages_concurrent(client, query=QUERY, variables={}, limit=5, concurrency=4)
         assert [r["id"] for r in out] == [str(i) for i in range(1, 28)]
         # Page 1 first (serial), then waves starting at 2.
         assert client.requested_pages[0] == 1
@@ -76,17 +72,13 @@ class TestFetchPagesConcurrent:
             4: _rows(200, 5),
         }
         client = PagedFakeClient(pages)
-        out = fetch_pages_concurrent(
-            client, query=QUERY, variables={}, limit=5, concurrency=4
-        )
+        out = fetch_pages_concurrent(client, query=QUERY, variables={}, limit=5, concurrency=4)
         assert [r["id"] for r in out] == [str(i) for i in range(1, 8)]
 
     def test_exact_multiple_then_empty_page(self) -> None:
         pages = {1: _rows(1, 5), 2: _rows(6, 5)}
         client = PagedFakeClient(pages)
-        out = fetch_pages_concurrent(
-            client, query=QUERY, variables={}, limit=5, concurrency=4
-        )
+        out = fetch_pages_concurrent(client, query=QUERY, variables={}, limit=5, concurrency=4)
         assert len(out) == 10
 
     def test_max_items_truncates(self) -> None:
@@ -120,15 +112,11 @@ class TestFetchPagesConcurrent:
     def test_concurrency_one_falls_back_to_serial(self) -> None:
         pages = {1: _rows(1, 5), 2: _rows(6, 3)}
         client = PagedFakeClient(pages)
-        out = fetch_pages_concurrent(
-            client, query=QUERY, variables={}, limit=5, concurrency=1
-        )
+        out = fetch_pages_concurrent(client, query=QUERY, variables={}, limit=5, concurrency=1)
         assert len(out) == 8
         assert client.requested_pages == [1, 2]
 
-    def test_env_var_sets_default_concurrency(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_var_sets_default_concurrency(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MONDO_DIR_FETCH_CONCURRENCY", "1")
         pages = {1: _rows(1, 5), 2: _rows(6, 3)}
         client = PagedFakeClient(pages)
@@ -136,9 +124,7 @@ class TestFetchPagesConcurrent:
         assert len(out) == 8
         assert client.requested_pages == [1, 2]
 
-    def test_env_var_invalid_falls_back_to_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_var_invalid_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MONDO_DIR_FETCH_CONCURRENCY", "not-a-number")
         assert directory_fetch_concurrency() == 4
 
@@ -146,9 +132,7 @@ class TestFetchPagesConcurrent:
         monkeypatch.setenv("MONDO_DIR_FETCH_CONCURRENCY", "500")
         assert directory_fetch_concurrency() == 16
 
-    def test_env_var_above_one_is_honored(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_var_above_one_is_honored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MONDO_DIR_FETCH_CONCURRENCY", "2")
         assert directory_fetch_concurrency() == 2
         # Behavioral check: the walk ends at page 3 (short), the last page of

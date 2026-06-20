@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError, NotFoundError
+from mondo.api.errors import MondoError, NotFoundError, ValidationError
 from mondo.api.queries import (
     CHANGE_COLUMN_VALUE,
     CHANGE_MULTIPLE_COLUMN_VALUES,
@@ -37,6 +37,7 @@ from mondo.cli._exec import (
     exec_or_exit,
     execute,
     handle_mondo_error_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_by_filters, resolve_required_id
@@ -91,19 +92,9 @@ def _load_value(value: str | None, from_file: Path | None, from_stdin: bool) -> 
     """Resolve --value / --from-file / --from-stdin into the raw input string."""
     sources = sum(x is not None and x is not False for x in (value, from_file, from_stdin))
     if sources == 0:
-        typer.secho(
-            "error: provide --value, --from-file @path, or --from-stdin",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --value, --from-file @path, or --from-stdin")
     if sources > 1:
-        typer.secho(
-            "error: --value, --from-file, and --from-stdin are mutually exclusive",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--value, --from-file, and --from-stdin are mutually exclusive")
     if from_file is not None:
         return from_file.read_text()
     if from_stdin:
@@ -146,8 +137,7 @@ def list_cmd(
                 opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
             )
     except NotFoundError:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from None
+        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     # Strip settings_str from default output (noisy); it's still in raw JSON.
@@ -201,18 +191,14 @@ def get_meta_cmd(
                 opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
             )
     except NotFoundError:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from None
+        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     column = next((c for c in columns if c.get("id") == column_id), None)
     if column is None:
-        typer.secho(
-            f"column {column_id!r} not found on board {board_id}.",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            NotFoundError(f"column {column_id!r} not found on board {board_id}.")
         )
-        raise typer.Exit(code=6)
     opts.emit(column)
 
 
@@ -238,18 +224,14 @@ def labels_cmd(
         with client:
             columns = fetch_board_columns(opts, client, board_id)
     except NotFoundError:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from None
+        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     column = next((c for c in columns if c.get("id") == column_id), None)
     if column is None:
-        typer.secho(
-            f"column {column_id!r} not found on board {board_id}.",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            NotFoundError(f"column {column_id!r} not found on board {board_id}.")
         )
-        raise typer.Exit(code=6)
     col_type = column.get("type")
     settings = parse_settings(column.get("settings_str"))
     if col_type == "status":
@@ -258,13 +240,10 @@ def labels_cmd(
     if col_type == "dropdown":
         opts.emit(iter_dropdown_labels(settings))
         return
-    typer.secho(
-        f"error: column labels only supported for status/dropdown columns "
-        f"(column {column_id!r} is type {col_type!r}).",
-        fg=typer.colors.RED,
-        err=True,
+    usage_error_or_exit(
+        f"column labels only supported for status/dropdown columns "
+        f"(column {column_id!r} is type {col_type!r})."
     )
-    raise typer.Exit(code=2)
 
 
 @app.command("get", epilog=epilog_for("column get"))
@@ -285,8 +264,7 @@ def get_cmd(
         with client:
             _, _defs, values = _fetch_column_context(client, item_id, [column_id])
     except NotFoundError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6) from e
+        handle_mondo_error_or_exit(NotFoundError(str(e)))
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
@@ -345,12 +323,9 @@ def set_cmd(
             board_id, defs, _current = _fetch_column_context(client, item_id, [column_id])
             definition = defs.get(column_id)
             if not definition:
-                typer.secho(
-                    f"column {column_id!r} not found on item {item_id}'s board.",
-                    fg=typer.colors.RED,
-                    err=True,
+                handle_mondo_error_or_exit(
+                    NotFoundError(f"column {column_id!r} not found on item {item_id}'s board.")
                 )
-                raise typer.Exit(code=6)
 
             col_type = definition["type"]
             settings = parse_settings(definition.get("settings_str"))
@@ -359,12 +334,7 @@ def set_cmd(
                 try:
                     parsed: Any = json.loads(raw_input)
                 except json.JSONDecodeError as e:
-                    typer.secho(
-                        f"error: --raw value is not valid JSON: {e}",
-                        fg=typer.colors.RED,
-                        err=True,
-                    )
-                    raise typer.Exit(code=2) from e
+                    usage_error_or_exit(f"--raw value is not valid JSON: {e}")
             else:
                 if col_type == "tags":
                     # Resolve tag names to IDs before the codec sees them.
@@ -374,29 +344,26 @@ def set_cmd(
                         col_type, raw_input, settings, create_labels=create_labels_if_missing
                     )
                 except ValueError as e:
-                    typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                    raise typer.Exit(code=5) from e
+                    handle_mondo_error_or_exit(ValidationError(str(e)))
                 except UnknownColumnTypeError as e:
                     if col_type == "name":
                         # The item title masquerades as a `name` column in
                         # monday's UI but isn't settable via
                         # change_column_value — what `column set` sends,
                         # including --raw. Point at the real command.
-                        typer.secho(
-                            "error: 'name' is the item's title, not a settable "
-                            "column. Use: mondo item rename "
-                            f'{item_id} --board {board_id} --name "<new name>"',
-                            fg=typer.colors.RED,
-                            err=True,
+                        handle_mondo_error_or_exit(
+                            ValidationError(
+                                "'name' is the item's title, not a settable "
+                                "column. Use: mondo item rename "
+                                f'{item_id} --board {board_id} --name "<new name>"'
+                            )
                         )
-                        raise typer.Exit(code=5) from e
-                    typer.secho(
-                        f"error: no codec for column type {col_type!r}. "
-                        f"Use --raw to send a literal JSON payload. Details: {e}",
-                        fg=typer.colors.RED,
-                        err=True,
+                    handle_mondo_error_or_exit(
+                        ValidationError(
+                            f"no codec for column type {col_type!r}. "
+                            f"Use --raw to send a literal JSON payload. Details: {e}"
+                        )
                     )
-                    raise typer.Exit(code=5) from e
 
             if opts.dry_run:
                 opts.emit(
@@ -460,10 +427,7 @@ def set_many_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     parsed: Any = parse_json_flag(values, flag_name="--values")
     if not isinstance(parsed, dict) or not parsed:
-        typer.secho(
-            "error: --values must be a non-empty JSON object", fg=typer.colors.RED, err=True
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--values must be a non-empty JSON object")
 
     client = client_or_exit(opts)
     try:
@@ -517,12 +481,9 @@ def clear_cmd(
             board_id, defs, _current = _fetch_column_context(client, item_id, [column_id])
             definition = defs.get(column_id)
             if not definition:
-                typer.secho(
-                    f"column {column_id!r} not found on item {item_id}'s board.",
-                    fg=typer.colors.RED,
-                    err=True,
+                handle_mondo_error_or_exit(
+                    NotFoundError(f"column {column_id!r} not found on item {item_id}'s board.")
                 )
-                raise typer.Exit(code=6)
 
             try:
                 payload = clear_payload_for(definition["type"])
@@ -590,8 +551,7 @@ def _parse_defaults(raw: str | None) -> str | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        typer.secho(f"error: --defaults is not valid JSON ({exc}).", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from exc
+        usage_error_or_exit(f"--defaults is not valid JSON ({exc}).")
     return json.dumps(parsed)
 
 
@@ -603,8 +563,7 @@ def _labels_to_defaults(labels: str, column_type: str) -> str:
     """
     names = [part.strip() for part in labels.split(",") if part.strip()]
     if not names:
-        typer.secho("error: --labels is empty.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--labels is empty.")
     if column_type == "status":
         payload: dict[str, Any] = {"labels": {str(i): name for i, name in enumerate(names, 1)}}
     elif column_type == "dropdown":
@@ -612,12 +571,7 @@ def _labels_to_defaults(labels: str, column_type: str) -> str:
             "settings": {"labels": [{"id": i, "name": name} for i, name in enumerate(names, 1)]}
         }
     else:
-        typer.secho(
-            "error: --labels only applies to status/dropdown columns.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--labels only applies to status/dropdown columns.")
     return json.dumps(payload)
 
 
@@ -671,12 +625,7 @@ def create_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     if labels is not None:
         if defaults is not None:
-            typer.secho(
-                "error: --labels and --defaults are mutually exclusive.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2)
+            usage_error_or_exit("--labels and --defaults are mutually exclusive.")
         defaults = _labels_to_defaults(labels, column_type)
     defaults_str = _parse_defaults(defaults)
     variables: dict[str, Any] = {

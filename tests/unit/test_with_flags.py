@@ -78,10 +78,25 @@ class TestBackwardsCompat:
         fields = extract_selected_fields(BOARD_GET)
         # Spot-check: every leaf the previous string had must still be there.
         for required in (
-            "id", "name", "description", "state", "board_kind", "type",
-            "board_folder_id", "workspace_id", "hierarchy_type", "items_count",
-            "updated_at", "permissions", "workspace", "owners", "subscribers",
-            "top_group", "groups", "columns", "tags",
+            "id",
+            "name",
+            "description",
+            "state",
+            "board_kind",
+            "type",
+            "board_folder_id",
+            "workspace_id",
+            "hierarchy_type",
+            "items_count",
+            "updated_at",
+            "permissions",
+            "workspace",
+            "owners",
+            "subscribers",
+            "top_group",
+            "groups",
+            "columns",
+            "tags",
         ):
             assert required in fields, f"missing {required}"
 
@@ -89,8 +104,17 @@ class TestBackwardsCompat:
         query, _ = build_boards_list_query()
         fields = extract_selected_fields(query)
         for required in (
-            "id", "name", "description", "state", "board_kind",
-            "board_folder_id", "workspace_id", "workspace", "hierarchy_type",
-            "created_at", "updated_at", "type",
+            "id",
+            "name",
+            "description",
+            "state",
+            "board_kind",
+            "board_folder_id",
+            "workspace_id",
+            "workspace",
+            "hierarchy_type",
+            "created_at",
+            "updated_at",
+            "type",
         ):
             assert required in fields, f"missing {required}"

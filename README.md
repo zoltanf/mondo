@@ -32,7 +32,9 @@ hand-written mutations for 90% of the work.
 entire command tree (flags, types, enums, examples, exit codes) as one JSON
 blob — ingest once, plan many calls. Exit codes are narrow and stable
 (3=auth, 4=rate, 5=validation, 6=not-found, 7=network) so retry logic can
-branch on the code. Stdout is always machine-parseable JSON when not a TTY.
+branch on the code. By default, successful structured output on stdout is
+JSON when stdout isn't a TTY — though explicit `markdown`/`raw` formats and a
+few legacy ad-hoc error paths are exceptions.
 
 **Complexity-aware.** Every query is transparently rewritten to fetch
 monday's [complexity counters](https://developer.monday.com/api-reference/docs/complexity),
@@ -295,7 +297,7 @@ Bundled topics:
 | `codecs`                   | `--column COL=VAL` parsing table for every column type              |
 | `complexity`               | monday's per-minute budget, retry guidance, debug logs              |
 | `duplicate-and-customize`  | End-to-end workflow: `board duplicate` → rename → reseed            |
-| `exit-codes`               | Exit codes 0–7 with retry/retry-not guidance                        |
+| `exit-codes`               | Exit codes 0–8 with retry/retry-not guidance                        |
 | `filters`                  | Server-side `--filter` (+ `--group`/`--parent` shortcuts) + JMESPath |
 | `graphql`                  | Using `mondo graphql` as the escape hatch                           |
 | `output`                   | `--output` / `--query` / `--fields` formatting + projection         |
@@ -891,7 +893,8 @@ Pick a profile with `--profile work` or `MONDO_PROFILE=work`.
 don't re-walk the monday API. The cache lives at
 `$XDG_CACHE_HOME/mondo/<profile>/` with per-entity TTLs spanning long-lived
 directories (boards/workspaces/users/teams/docs/folders/tags) and short-TTL
-detail caches (per-board details, per-item, per-doc — 60 s to 15 m). Inspect
+detail caches (per-board details, per-board item lists, per-item, per-doc —
+60 s to 15 m). Inspect
 or manage it:
 
 ```bash
@@ -939,9 +942,11 @@ directory is resident. Full contract: [`docs/caching.md`](docs/caching.md).
 | 5 | validation error (bad column value, unknown column id, ...) |
 | 6 | not found |
 | 7 | network / transport error |
+| 8 | timeout (client-side wait exceeded, e.g. `board duplicate --wait`) |
 
-Agents and scripts should check these codes; everything that goes to stdout is
-machine-parseable JSON when stdout isn't a TTY.
+Agents and scripts should check these codes. By default, successful structured
+output on stdout is JSON when stdout isn't a TTY — though explicit
+`markdown`/`raw` formats and a few legacy ad-hoc error paths are exceptions.
 
 ---
 

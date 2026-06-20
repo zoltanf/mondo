@@ -16,18 +16,18 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from dotenv import load_dotenv
 
 from ._helpers import (
     API_VERSION,
-    CleanupPlan,
     MONDO_TEST_BOARD_ID_ENV,
     MONDO_TEST_DOC_ID_ENV,
+    CleanupPlan,
     invoke,
     invoke_json,
     playground_workspace_id,
@@ -127,7 +127,9 @@ def session_env() -> Iterator[int]:
     """Session-scoped env setup. Returns playground workspace id."""
     token = require_live_token()
     mp = pytest.MonkeyPatch()
-    cache_dir = Path(os.environ.get("PYTEST_TMP_DIR", "/tmp")) / f"mondo-session-{uuid.uuid4().hex[:8]}"
+    cache_dir = (
+        Path(os.environ.get("PYTEST_TMP_DIR", "/tmp")) / f"mondo-session-{uuid.uuid4().hex[:8]}"
+    )
     cache_dir.mkdir(parents=True, exist_ok=True)
     mp.delenv("MONDO_PROFILE", raising=False)
     mp.setenv("MONDO_CONFIG", str(cache_dir / "nope.yaml"))
@@ -151,9 +153,7 @@ def session_cleanup_plan(session_env: int) -> Iterator[CleanupPlan]:
 
 
 @pytest.fixture(scope="session")
-def pm_board_session(
-    session_env: int, session_cleanup_plan: CleanupPlan
-) -> PmBoard:
+def pm_board_session(session_env: int, session_cleanup_plan: CleanupPlan) -> PmBoard:
     """Build a realistic PM board once per session.
 
     Layout: folder -> board with status / person / date / timeline / numbers
@@ -166,30 +166,48 @@ def pm_board_session(
     # 1. Folder
     folder = invoke_json(
         [
-            "folder", "create",
-            "--workspace", str(workspace_id),
-            "--name", f"E2E PM Session {suffix}",
+            "folder",
+            "create",
+            "--workspace",
+            str(workspace_id),
+            "--name",
+            f"E2E PM Session {suffix}",
         ]
     )
     folder_id = int(folder["id"])
     session_cleanup_plan.add(
-        f"pm folder {folder_id}", "folder", "delete", "--id", str(folder_id), "--hard",
+        f"pm folder {folder_id}",
+        "folder",
+        "delete",
+        "--id",
+        str(folder_id),
+        "--hard",
     )
 
     # 2. Board
     board = invoke_json(
         [
-            "board", "create",
-            "--workspace", str(workspace_id),
-            "--folder", str(folder_id),
-            "--name", f"E2E PM Board {suffix}",
-            "--kind", "private",
+            "board",
+            "create",
+            "--workspace",
+            str(workspace_id),
+            "--folder",
+            str(folder_id),
+            "--name",
+            f"E2E PM Board {suffix}",
+            "--kind",
+            "private",
             "--empty",
         ]
     )
     board_id = int(board["id"])
     session_cleanup_plan.add(
-        f"pm board {board_id}", "board", "delete", "--id", str(board_id), "--hard",
+        f"pm board {board_id}",
+        "board",
+        "delete",
+        "--id",
+        str(board_id),
+        "--hard",
     )
 
     wait_for(
@@ -214,11 +232,16 @@ def pm_board_session(
         col_id = f"e2e_{logical}"
         result = invoke_json(
             [
-                "column", "create",
-                "--board", str(board_id),
-                "--title", title,
-                "--type", col_type,
-                "--id", col_id,
+                "column",
+                "create",
+                "--board",
+                str(board_id),
+                "--title",
+                title,
+                "--type",
+                col_type,
+                "--id",
+                col_id,
             ]
         )
         column_ids[logical] = result["id"]
@@ -233,9 +256,12 @@ def pm_board_session(
     for logical, title in group_specs:
         result = invoke_json(
             [
-                "group", "create",
-                "--board", str(board_id),
-                "--name", title,
+                "group",
+                "create",
+                "--board",
+                str(board_id),
+                "--name",
+                title,
             ]
         )
         group_ids[logical] = result["id"]
@@ -243,8 +269,20 @@ def pm_board_session(
     # 5. Items — 5 distributed across the 3 groups with column values.
     item_specs = [
         ("Design login flow", "backlog", "5", "design@e2e.test", "Initial spec for login + 2FA."),
-        ("Refactor auth middleware", "backlog", "8", "auth@e2e.test", "Strip session token storage."),
-        ("Implement OAuth callback", "in_progress", "3", "oauth@e2e.test", "Wire callback endpoint."),
+        (
+            "Refactor auth middleware",
+            "backlog",
+            "8",
+            "auth@e2e.test",
+            "Strip session token storage.",
+        ),
+        (
+            "Implement OAuth callback",
+            "in_progress",
+            "3",
+            "oauth@e2e.test",
+            "Wire callback endpoint.",
+        ),
         ("QA login regression", "in_progress", "2", "qa@e2e.test", "Cover edge cases."),
         ("Ship v2 launch", "done", "13", "pm@e2e.test", "All gates closed; ramp 100%."),
     ]
@@ -253,13 +291,20 @@ def pm_board_session(
     for name, group_logical, points, email, description in item_specs:
         result = invoke_json(
             [
-                "item", "create",
-                "--board", str(board_id),
-                "--group", group_ids[group_logical],
-                "--name", name,
-                "--column", f"{column_ids['numbers']}={points}",
-                "--column", f"{column_ids['text']}={email}",
-                "--column", f"{column_ids['long_text']}={description}",
+                "item",
+                "create",
+                "--board",
+                str(board_id),
+                "--group",
+                group_ids[group_logical],
+                "--name",
+                name,
+                "--column",
+                f"{column_ids['numbers']}={points}",
+                "--column",
+                f"{column_ids['text']}={email}",
+                "--column",
+                f"{column_ids['long_text']}={description}",
             ]
         )
         item_id = int(result["id"])
@@ -286,36 +331,52 @@ def pm_board_session(
 
     invoke_json(
         [
-            "column", "set",
-            "--item", str(item_ids[0]),
-            "--column", column_ids["status"],
-            "--value", status_value,
+            "column",
+            "set",
+            "--item",
+            str(item_ids[0]),
+            "--column",
+            column_ids["status"],
+            "--value",
+            status_value,
             "--create-labels-if-missing",
         ]
     )
     invoke_json(
         [
-            "column", "set",
-            "--item", str(item_ids[0]),
-            "--column", column_ids["dropdown"],
-            "--value", dropdown_value,
+            "column",
+            "set",
+            "--item",
+            str(item_ids[0]),
+            "--column",
+            column_ids["dropdown"],
+            "--value",
+            dropdown_value,
             "--create-labels-if-missing",
         ]
     )
     invoke_json(
         [
-            "column", "set",
-            "--item", str(item_ids[0]),
-            "--column", column_ids["date"],
-            "--value", date_value,
+            "column",
+            "set",
+            "--item",
+            str(item_ids[0]),
+            "--column",
+            column_ids["date"],
+            "--value",
+            date_value,
         ]
     )
     invoke_json(
         [
-            "column", "set",
-            "--item", str(item_ids[0]),
-            "--column", column_ids["person"],
-            "--value", str(person_id),
+            "column",
+            "set",
+            "--item",
+            str(item_ids[0]),
+            "--column",
+            column_ids["person"],
+            "--value",
+            str(person_id),
         ]
     )
 

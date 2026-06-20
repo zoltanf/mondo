@@ -51,9 +51,7 @@ _NORMALIZED_BOARD_LIST_EXTRA = _NORMALIZED_BOARD_EXTRA | frozenset({"workspace_n
 
 # `normalize_folder_entry` reshapes nested `workspace`/`parent` objects into
 # scalar pairs. Include both shapes so JMESPath leaves on either resolve.
-_NORMALIZED_FOLDER_EXTRA = frozenset(
-    {"workspace_id", "workspace_name", "parent_id", "parent_name"}
-)
+_NORMALIZED_FOLDER_EXTRA = frozenset({"workspace_id", "workspace_name", "parent_id", "parent_name"})
 
 
 @lru_cache(maxsize=2)
@@ -65,9 +63,7 @@ def board_get_fields(*, with_views: bool = False) -> frozenset[str]:
 
 
 @lru_cache(maxsize=4)
-def board_list_fields(
-    *, with_item_counts: bool = False, with_tags: bool = False
-) -> frozenset[str]:
+def board_list_fields(*, with_item_counts: bool = False, with_tags: bool = False) -> frozenset[str]:
     # Pass the actual flags through so a user who didn't opt into the field
     # still gets a warning when they project on it (which is the whole point
     # of Phase 2.1). When `with_*` IS set the leaves enter the set and the
@@ -118,9 +114,7 @@ def update_get_fields() -> frozenset[str]:
 
 @lru_cache(maxsize=1)
 def update_list_fields() -> frozenset[str]:
-    return extract_selected_fields(UPDATES_LIST_PAGE) | extract_selected_fields(
-        UPDATES_FOR_ITEM
-    )
+    return extract_selected_fields(UPDATES_LIST_PAGE) | extract_selected_fields(UPDATES_FOR_ITEM)
 
 
 # --- schema introspection (Phase 2.3) ---

@@ -12,7 +12,6 @@ the EvalResult so it can extract created ids and queue them for LIFO teardown.
 from __future__ import annotations
 
 import re
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -41,10 +40,10 @@ class TaskContext:
 class Task:
     name: str
     prompt_template: str
-    predicate: Callable[["EvalResult", TaskContext], bool]
+    predicate: Callable[[EvalResult, TaskContext], bool]
     max_turns: int = 8
     setup: Callable[[TaskContext], None] | None = None
-    cleanup_register: Callable[["EvalResult", TaskContext], None] | None = None
+    cleanup_register: Callable[[EvalResult, TaskContext], None] | None = None
 
     def render_prompt(self, ctx: TaskContext) -> str:
         return self.prompt_template.format(
@@ -57,11 +56,10 @@ class Task:
 # --- Task 1: read-only board listing ----------------------------------------
 
 
-def _t1_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t1_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del ctx
     if not any(
-        re.search(r"\bmondo\s+board\s+list\b", c) and "--workspace" in c
-        for c in result.bash_calls
+        re.search(r"\bmondo\s+board\s+list\b", c) and "--workspace" in c for c in result.bash_calls
     ):
         return False
     return bool(result.final_text and result.final_text.strip())
@@ -85,14 +83,14 @@ def _t2_setup(ctx: TaskContext) -> None:
     ctx.extras["target_group_title"] = f"Q3 Goals {ctx.suffix}"
 
 
-def _t2_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t2_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     target = ctx.extras["target_group_title"]
     groups = invoke_json(["group", "list", "--board", str(ctx.board_id)])
     return any(g.get("title") == target for g in groups)
 
 
-def _t2_cleanup(result: "EvalResult", ctx: TaskContext) -> None:
+def _t2_cleanup(result: EvalResult, ctx: TaskContext) -> None:
     del result
     target = ctx.extras["target_group_title"]
     groups = invoke_json(["group", "list", "--board", str(ctx.board_id)])
@@ -100,18 +98,19 @@ def _t2_cleanup(result: "EvalResult", ctx: TaskContext) -> None:
         if group.get("title") == target:
             ctx.cleanup_plan.add(
                 f"eval group {group['id']}",
-                "group", "delete",
-                "--board", str(ctx.board_id),
-                "--id", group["id"],
+                "group",
+                "delete",
+                "--board",
+                str(ctx.board_id),
+                "--id",
+                group["id"],
                 "--hard",
             )
 
 
 task_create_group = Task(
     name="create_group",
-    prompt_template=(
-        "On board {board_id}, create a new group called \"{target_group_title}\"."
-    ),
+    prompt_template=('On board {board_id}, create a new group called "{target_group_title}".'),
     setup=_t2_setup,
     predicate=_t2_predicate,
     cleanup_register=_t2_cleanup,
@@ -132,18 +131,26 @@ def _t3_setup(ctx: TaskContext) -> None:
         # Create a status column with a stable id for the eval.
         created = invoke_json(
             [
-                "column", "create",
-                "--board", str(ctx.board_id),
-                "--title", f"E2E Eval Status {ctx.suffix}",
-                "--type", "status",
-                "--id", f"eval_status_{ctx.suffix.lower()}",
+                "column",
+                "create",
+                "--board",
+                str(ctx.board_id),
+                "--title",
+                f"E2E Eval Status {ctx.suffix}",
+                "--type",
+                "status",
+                "--id",
+                f"eval_status_{ctx.suffix.lower()}",
             ]
         )
         ctx.cleanup_plan.add(
             f"eval status col {created['id']}",
-            "column", "delete",
-            "--board", str(ctx.board_id),
-            "--column", created["id"],
+            "column",
+            "delete",
+            "--board",
+            str(ctx.board_id),
+            "--column",
+            created["id"],
         )
         ctx.extras["status_col_id"] = created["id"]
     else:
@@ -151,21 +158,29 @@ def _t3_setup(ctx: TaskContext) -> None:
 
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(ctx.board_id),
-            "--group", groups[0]["id"],
-            "--name", f"E2E Eval Status Item {ctx.suffix}",
+            "item",
+            "create",
+            "--board",
+            str(ctx.board_id),
+            "--group",
+            groups[0]["id"],
+            "--name",
+            f"E2E Eval Status Item {ctx.suffix}",
         ]
     )
     item_id = int(item["id"])
     ctx.cleanup_plan.add(
         f"eval status item {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
     ctx.extras["item_id"] = item_id
 
 
-def _t3_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t3_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     item_id = ctx.extras["item_id"]
     col_id = ctx.extras["status_col_id"]
@@ -175,9 +190,7 @@ def _t3_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
 
 task_set_status = Task(
     name="set_status_done",
-    prompt_template=(
-        "Mark item {item_id} as Done. The status column id is {status_col_id}."
-    ),
+    prompt_template=("Mark item {item_id} as Done. The status column id is {status_col_id}."),
     setup=_t3_setup,
     predicate=_t3_predicate,
     max_turns=4,
@@ -191,22 +204,30 @@ def _t4_setup(ctx: TaskContext) -> None:
     groups = invoke_json(["group", "list", "--board", str(ctx.board_id)])
     item = invoke_json(
         [
-            "item", "create",
-            "--board", str(ctx.board_id),
-            "--group", groups[0]["id"],
-            "--name", f"E2E Eval Update Item {ctx.suffix}",
+            "item",
+            "create",
+            "--board",
+            str(ctx.board_id),
+            "--group",
+            groups[0]["id"],
+            "--name",
+            f"E2E Eval Update Item {ctx.suffix}",
         ]
     )
     item_id = int(item["id"])
     ctx.cleanup_plan.add(
         f"eval update item {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
     ctx.extras["item_id"] = item_id
     ctx.extras["update_marker"] = f"reviewed-{ctx.suffix}"
 
 
-def _t4_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t4_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     marker = ctx.extras["update_marker"]
     updates = invoke_json(["update", "list", "--item", str(ctx.extras["item_id"])])
@@ -221,7 +242,7 @@ task_post_update = Task(
     name="post_update",
     prompt_template=(
         "Post an update on item {item_id} that contains the exact phrase "
-        "\"{update_marker}\" so a reviewer can find it later."
+        '"{update_marker}" so a reviewer can find it later.'
     ),
     setup=_t4_setup,
     predicate=_t4_predicate,
@@ -236,10 +257,11 @@ def _t5_setup(ctx: TaskContext) -> None:
     ctx.extras["csv_path"] = f"/tmp/eval-pm-{ctx.suffix}.csv"
 
 
-def _t5_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t5_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     del result
     import csv
     import os.path
+
     csv_path = ctx.extras["csv_path"]
     if not os.path.exists(csv_path):
         return False
@@ -248,22 +270,21 @@ def _t5_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
     return len(rows) >= 1
 
 
-def _t5_cleanup(result: "EvalResult", ctx: TaskContext) -> None:
+def _t5_cleanup(result: EvalResult, ctx: TaskContext) -> None:
     del result
+    import contextlib
     import os.path
+
     csv_path = ctx.extras["csv_path"]
     if os.path.exists(csv_path):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(csv_path)
-        except OSError:
-            pass
 
 
 task_export_csv = Task(
     name="export_csv",
     prompt_template=(
-        "Export board {board_id} as CSV to the file {csv_path}. "
-        "Confirm the file was written."
+        "Export board {board_id} as CSV to the file {csv_path}. Confirm the file was written."
     ),
     setup=_t5_setup,
     predicate=_t5_predicate,
@@ -281,7 +302,7 @@ def _t6_setup(ctx: TaskContext) -> None:
     ctx.extras["board_url"] = f"https://playground.monday.com/boards/{ctx.board_id}"
 
 
-def _t6_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
+def _t6_predicate(result: EvalResult, ctx: TaskContext) -> bool:
     saw_board_get = any(
         re.search(r"\bmondo\s+board\s+get\b", c) and str(ctx.board_id) in c
         for c in result.bash_calls
@@ -289,8 +310,10 @@ def _t6_predicate(result: "EvalResult", ctx: TaskContext) -> bool:
     if not saw_board_get:
         return False
     text_lower = result.final_text.lower()
-    return "board" in text_lower and bool(ctx.extras["board_name"]) and (
-        ctx.extras["board_name"].lower() in text_lower
+    return (
+        "board" in text_lower
+        and bool(ctx.extras["board_name"])
+        and (ctx.extras["board_name"].lower() in text_lower)
     )
 
 

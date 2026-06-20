@@ -11,7 +11,7 @@ from mondo.api.auth import ENV_VAR, KEYRING_SERVICE
 from mondo.api.errors import AuthError, MondoError
 from mondo.api.queries import ME_QUERY
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import handle_mondo_error_or_exit
+from mondo.cli._exec import handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -53,15 +53,13 @@ def status(ctx: typer.Context) -> None:
     try:
         client = opts.build_client()
     except MondoError as e:
-        typer.secho(f"\n[token present but client failed] {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e, human_suffix="[token present but client failed]")
 
     try:
         with client:
             result = client.execute(ME_QUERY)
     except MondoError as e:
-        typer.secho(f"\nerror: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=int(e.exit_code)) from e
+        handle_mondo_error_or_exit(e)
 
     me = (result.get("data") or {}).get("me") or {}
     account = me.get("account") or {}
@@ -101,30 +99,21 @@ def login(
 
     if token is None:
         if not sys.stdin.isatty():
-            typer.secho(
-                "error: login requires a TTY (or pass --token non-interactively).",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=2)
+            usage_error_or_exit("login requires a TTY (or pass --token non-interactively).")
         typer.echo(
             f"Paste your monday.com personal API token for profile {username!r}.\n"
             "Profile → Developers → API Token → Show."
         )
         token = getpass.getpass("token: ").strip()
         if not token:
-            typer.secho("error: empty token", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
+            usage_error_or_exit("empty token")
 
     try:
         keyring.set_password(KEYRING_SERVICE, username, token)
     except keyring.errors.KeyringError as e:
-        typer.secho(
-            f"error: keyring unavailable ({e}). Set {ENV_VAR} in your environment instead.",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            MondoError(f"keyring unavailable ({e}). Set {ENV_VAR} in your environment instead.")
         )
-        raise typer.Exit(code=1) from e
 
     typer.secho(
         f"stored token in keyring ({KEYRING_SERVICE}:{username}). "
@@ -144,8 +133,7 @@ def logout(ctx: typer.Context) -> None:
     try:
         existing = keyring.get_password(KEYRING_SERVICE, username)
     except keyring.errors.KeyringError as e:
-        typer.secho(f"error: keyring unavailable ({e})", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from e
+        handle_mondo_error_or_exit(MondoError(f"keyring unavailable ({e})"))
 
     if existing is None:
         typer.echo(f"no token stored for {KEYRING_SERVICE}:{username}")
@@ -154,8 +142,7 @@ def logout(ctx: typer.Context) -> None:
     try:
         keyring.delete_password(KEYRING_SERVICE, username)
     except keyring.errors.KeyringError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from e
+        handle_mondo_error_or_exit(MondoError(str(e)))
 
     typer.secho(
         f"removed token from keyring ({KEYRING_SERVICE}:{username}).",

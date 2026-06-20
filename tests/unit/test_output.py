@@ -242,17 +242,13 @@ class TestExtractQueryLeafFields:
         assert extract_query_leaf_fields("name") == frozenset({"name"})
 
     def test_nested_path(self) -> None:
-        assert extract_query_leaf_fields("[*].workspace.name") == frozenset(
-            {"workspace", "name"}
-        )
+        assert extract_query_leaf_fields("[*].workspace.name") == frozenset({"workspace", "name"})
 
     def test_multiselect_dict_excludes_aliases(self) -> None:
         # `ws` and `owner` are aliases (key_val_pair `value`), not field nodes.
         # Only `workspace`, `name`, `owner`, `id` survive — and `owner` only
         # because it's a field on the right of a key_val_pair.
-        result = extract_query_leaf_fields(
-            "{ws: workspace.name, owner: owner.id}"
-        )
+        result = extract_query_leaf_fields("{ws: workspace.name, owner: owner.id}")
         assert result == frozenset({"workspace", "name", "owner", "id"})
 
     def test_filter_collects_both_sides(self) -> None:

@@ -1681,9 +1681,7 @@ class TestImageExportOutputGuards:
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
-    def test_export_markdown_raw_and_out_mutually_exclusive(
-        self, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_export_markdown_raw_and_out_mutually_exclusive(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
             ["doc", "export-markdown", "--doc", "10", "--raw", "--out", "x.md"],
@@ -1722,9 +1720,14 @@ class TestImageExportOutputGuards:
         result = runner.invoke(
             app,
             [
-                "doc", "get", "--id", "7",
-                "--format", "markdown",
-                "--out", str(out),
+                "doc",
+                "get",
+                "--id",
+                "7",
+                "--format",
+                "markdown",
+                "--out",
+                str(out),
                 "--no-images",
             ],
         )

@@ -15,7 +15,7 @@ from typing import Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.pagination import fetch_pages_concurrent
 from mondo.api.queries import (
     UPDATE_CLEAR_ITEM,
@@ -33,7 +33,13 @@ from mondo.api.queries import (
 from mondo.cli._cache_invalidate import invalidate_all_scopes, invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, exec_or_exit, execute, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    exec_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+    usage_error_or_exit,
+)
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 
@@ -58,19 +64,9 @@ def _load_body(
 ) -> str:
     sources = sum(x is not None and x is not False for x in (body, from_file, from_stdin))
     if sources == 0:
-        typer.secho(
-            "error: provide --body, --from-file @path, or --from-stdin",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("provide --body, --from-file @path, or --from-stdin")
     if sources > 1:
-        typer.secho(
-            "error: --body, --from-file, and --from-stdin are mutually exclusive",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--body, --from-file, and --from-stdin are mutually exclusive")
     if from_file is not None:
         raw = from_file.read_text()
     elif from_stdin:
@@ -96,12 +92,7 @@ def _resolve_body_format(*, markdown: bool, html: bool) -> bool:
     --html:     opt out of conversion; the body is sent verbatim.
     """
     if markdown and html:
-        typer.secho(
-            "error: --markdown and --html are mutually exclusive.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit("--markdown and --html are mutually exclusive.")
     return html
 
 
@@ -156,10 +147,7 @@ def list_cmd(
     if item_id is not None:
         cfg = opts.resolve_cache_config()
         use_cache = (
-            cfg.enabled
-            and not no_cache
-            and max_items is None
-            and limit == MAX_UPDATES_PAGE_SIZE
+            cfg.enabled and not no_cache and max_items is None and limit == MAX_UPDATES_PAGE_SIZE
         )
         if use_cache:
             if opts.dry_run:
@@ -187,12 +175,7 @@ def list_cmd(
                         refresh=refresh_cache,
                     )
             except _NotFoundError:
-                typer.secho(
-                    f"item {item_id} not found.",
-                    fg=typer.colors.RED,
-                    err=True,
-                )
-                raise typer.Exit(code=6) from None
+                handle_mondo_error_or_exit(NotFoundError(f"item {item_id} not found."))
             except MondoError as e:
                 handle_mondo_error_or_exit(e)
             emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
@@ -223,12 +206,7 @@ def list_cmd(
                     items = data.get("items") or []
                     if not items:
                         if page == 1:
-                            typer.secho(
-                                f"item {item_id} not found.",
-                                fg=typer.colors.RED,
-                                err=True,
-                            )
-                            raise typer.Exit(code=6)
+                            handle_mondo_error_or_exit(NotFoundError(f"item {item_id} not found."))
                         break
                     updates = items[0].get("updates") or []
                     if not updates:
@@ -294,8 +272,7 @@ def get_cmd(
     data = execute(opts, UPDATE_GET, variables)
     updates = data.get("updates") or []
     if not updates:
-        typer.secho(f"update {update_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"update {update_id} not found."))
     from mondo.cli._field_sets import update_get_fields
 
     opts.emit(updates[0], selected_fields=update_get_fields())
@@ -311,8 +288,7 @@ def create_cmd(
     body: str | None = typer.Option(
         None,
         "--body",
-        help="Update body (CommonMark markdown by default — pass --html to send HTML "
-        "verbatim).",
+        help="Update body (CommonMark markdown by default — pass --html to send HTML verbatim).",
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
@@ -349,8 +325,7 @@ def reply_cmd(
     body: str | None = typer.Option(
         None,
         "--body",
-        help="Reply body (CommonMark markdown by default — pass --html to send HTML "
-        "verbatim).",
+        help="Reply body (CommonMark markdown by default — pass --html to send HTML verbatim).",
     ),
     from_file: Path | None = typer.Option(None, "--from-file", help="Load the body from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load the body from stdin."),
@@ -385,8 +360,7 @@ def edit_cmd(
     body: str | None = typer.Option(
         None,
         "--body",
-        help="New body (CommonMark markdown by default — pass --html to send HTML "
-        "verbatim).",
+        help="New body (CommonMark markdown by default — pass --html to send HTML verbatim).",
     ),
     from_file: Path | None = typer.Option(
         None, "--from-file", help="Load the new body from a file."

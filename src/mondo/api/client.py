@@ -26,8 +26,11 @@ from mondo.api.errors import (
     MondoError,
     NetworkError,
     NotFoundError,
+    RateLimitError,
     RetryableError,
     ServiceError,
+    UsageError,
+    ValidationError,
     from_response,
 )
 from mondo.logging_ import register_secret
@@ -150,9 +153,7 @@ class MondayClient:
                 last_exc = NetworkError(f"transport error: {e}")
                 logger.warning(f"attempt {attempt}: transport error — {e}")
             else:
-                exc = _classify_response(
-                    response, suppress_graphql_errors=surface_partial_errors
-                )
+                exc = _classify_response(response, suppress_graphql_errors=surface_partial_errors)
                 if exc is None:
                     parsed: dict[str, Any] = response.json()
                     logger.debug("GraphQL response: {}", parsed)
@@ -249,10 +250,21 @@ def _classify_response(
         return AuthError("forbidden — token lacks the required scope")
     if status == 404:
         return NotFoundError("endpoint or resource not found")
+    if status == 429:
+        return RateLimitError(f"monday returned HTTP {status}")
+    if status == 400:
+        return UsageError(f"monday returned HTTP {status}")
+    if status == 422:
+        return ValidationError(f"monday returned HTTP {status}")
     if status >= 500:
         return ServiceError(f"monday returned HTTP {status}")
 
     if suppress_graphql_errors:
+        # GraphQL body errors are the caller's to inspect, but an unmapped
+        # non-2xx HTTP status is still a transport-layer failure that must
+        # not pass as success.
+        if not 200 <= status < 300:
+            return UsageError(f"monday returned HTTP {status}")
         return None
 
     # GraphQL-layer errors.
@@ -261,4 +273,13 @@ def _classify_response(
     except ValueError:
         return ServiceError(f"invalid JSON response (HTTP {status})")
 
-    return from_response(parsed)
+    # A GraphQL `errors` array (even atop a non-2xx status) is the richest
+    # signal — prefer it for typed mapping.
+    if (mapped := from_response(parsed)) is not None:
+        return mapped
+
+    # Any other non-2xx without GraphQL errors must not pass as success.
+    if not 200 <= status < 300:
+        return UsageError(f"monday returned HTTP {status}")
+
+    return None

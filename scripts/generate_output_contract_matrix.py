@@ -207,7 +207,7 @@ MANUAL_ROWS: dict[str, Row] = {
             "Emits monday's update_board payload directly. Legacy stringified JSON is parsed "
             "before emit; non-JSON scalars pass through unchanged."
         ),
-        source='_decode_json_string_payload(data.get("update_board"))',
+        source='decode_json_string_payload(data.get("update_board"))',
     ),
     "cache clear": Row(
         command="cache clear",
@@ -696,7 +696,15 @@ MANUAL_ROWS: dict[str, Row] = {
     "team list": Row(
         command="team list",
         output_type="list[object]",
-        fields=["id", "name", "picture_url", "is_guest", "users{id,name}", "owners{id,name}", "_fuzzy_score?"],
+        fields=[
+            "id",
+            "name",
+            "picture_url",
+            "is_guest",
+            "users{id,name}",
+            "owners{id,name}",
+            "_fuzzy_score?",
+        ],
         notes="When --fuzzy-score is used, _fuzzy_score is appended last.",
         source="TEAMS_LIST.teams[]",
     ),
@@ -726,7 +734,10 @@ MANUAL_ROWS: dict[str, Row] = {
     "user update-role": Row(
         command="user update-role",
         output_type="object",
-        fields=["updated_users{id,name,is_admin|is_guest|is_view_only}", "errors{message,code,user_id}"],
+        fields=[
+            "updated_users{id,name,is_admin|is_guest|is_view_only}",
+            "errors{message,code,user_id}",
+        ],
         notes="The updated_users subfield varies slightly by target role but keeps the same top-level order.",
         source="USERS_UPDATE_AS_*",
     ),
@@ -896,7 +907,11 @@ def command_name_for(path: Path, fn: ast.FunctionDef) -> str | None:
             continue
         if not isinstance(dec.func, ast.Attribute) or dec.func.attr != "command":
             continue
-        if dec.args and isinstance(dec.args[0], ast.Constant) and isinstance(dec.args[0].value, str):
+        if (
+            dec.args
+            and isinstance(dec.args[0], ast.Constant)
+            and isinstance(dec.args[0].value, str)
+        ):
             leaf = dec.args[0].value
         else:
             leaf = fn.name.removesuffix("_cmd").replace("_", "-")

@@ -17,11 +17,11 @@ Without it, `--column` values are sent as raw strings/JSON.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import typer
 
-from mondo.api.errors import MondoError, NotFoundError
+from mondo.api.errors import MondoError, NotFoundError, ValidationError
 from mondo.api.queries import (
     ITEM_ARCHIVE,
     ITEM_DELETE,
@@ -31,82 +31,24 @@ from mondo.api.queries import (
     SUBITEM_CREATE,
     SUBITEMS_LIST,
 )
-from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.cli._column_cache import invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
+from mondo.cli._exec import (
+    client_or_exit,
+    execute,
+    handle_mondo_error_or_exit,
+)
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.services.items import build_column_values
 from mondo.util.kvparse import parse_column_kv
-
-if TYPE_CHECKING:
-    from mondo.api.client import MondayClient
 
 app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-
-# ----- helpers -----
-
-
-def _parse_settings(raw: str | None) -> dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _build_column_values(
-    opts: GlobalOpts,
-    client: MondayClient,
-    subitems_board_id: int | None,
-    pairs: list[str],
-    *,
-    create_labels: bool = False,
-) -> dict[str, Any]:
-    """Turn `--column K=V` pairs into the write JSON shape.
-
-    With `subitems_board_id` set, does codec dispatch via the subitems-board
-    column types. Without it, values pass through verbatim.
-    """
-    from mondo.columns import UnknownColumnTypeError, parse_value
-
-    parsed_pairs = [parse_column_kv(p) for p in pairs]
-    if subitems_board_id is None:
-        return dict(parsed_pairs)
-    try:
-        columns = fetch_board_columns(opts, client, subitems_board_id)
-    except NotFoundError:
-        return dict(parsed_pairs)
-    defs = {c["id"]: c for c in columns}
-    out: dict[str, Any] = {}
-    for col_id, raw_value in parsed_pairs:
-        definition = defs.get(col_id)
-        # dict/list/None: structured JSON the user crafted — pass through as raw.
-        # Bare scalars (int, float, bool) are valid codec shorthand and must be
-        # stringified so the codec sees them (mirror of item.py:_build_column_values).
-        if definition is None or isinstance(raw_value, (dict, list)) or raw_value is None:
-            out[col_id] = raw_value
-            continue
-        col_type = definition.get("type")
-        if not isinstance(col_type, str):
-            out[col_id] = raw_value
-            continue
-        settings = _parse_settings(definition.get("settings_str"))
-        str_value = raw_value if isinstance(raw_value, str) else json.dumps(raw_value)
-        try:
-            out[col_id] = parse_value(col_type, str_value, settings, create_labels=create_labels)
-        except UnknownColumnTypeError:
-            out[col_id] = raw_value
-        except ValueError as e:
-            raise ValueError(f"--column {col_id}={raw_value!r}: {e}") from e
-    return out
 
 
 # ----- read commands -----
@@ -166,12 +108,7 @@ def list_cmd(
                     refresh=refresh_cache,
                 )
         except _NotFoundError:
-            typer.secho(
-                f"parent item {parent_id} not found.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(code=6) from None
+            handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
         except MondoError as e:
             handle_mondo_error_or_exit(e)
         emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
@@ -182,8 +119,7 @@ def list_cmd(
     data = execute(opts, SUBITEMS_LIST, variables)
     items = data.get("items") or []
     if not items:
-        typer.secho(f"parent item {parent_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
     opts.emit(items[0].get("subitems") or [])
 
 
@@ -247,7 +183,7 @@ def get_cmd(
     cfg = opts.resolve_cache_config()
     use_cache = cfg.enabled and not no_cache
 
-    item: dict | None
+    item: dict[str, Any] | None
     if use_cache:
         from mondo.cache.directory import get_item
 
@@ -255,12 +191,8 @@ def get_cmd(
         store = opts.build_cache_store("items", scope=str(subitem_id))
         try:
             with client:
-                cached = get_item(
-                    client, store=store, item_id=subitem_id, refresh=refresh_cache
-                )
-                emit_cache_provenance(
-                    opts, cached, store=store, explain=explain_cache
-                )
+                cached = get_item(client, store=store, item_id=subitem_id, refresh=refresh_cache)
+                emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                 item = cached.entries[0] if cached.entries else None
         except _NotFoundError:
             item = None
@@ -272,8 +204,7 @@ def get_cmd(
         item = items[0] if items else None
 
     if item is None:
-        typer.secho(f"subitem {subitem_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"subitem {subitem_id} not found."))
     if not with_url:
         item.pop("url", None)
     opts.emit(item)
@@ -323,11 +254,12 @@ def create_cmd(
             client = client_or_exit(opts)
             try:
                 with client:
-                    col_values = _build_column_values(
+                    col_values = build_column_values(
                         opts,
                         client,
                         subitems_board,
                         columns,
+                        raw_mode=False,
                         create_labels=create_labels_if_missing,
                     )
             except MondoError as e:
@@ -335,8 +267,7 @@ def create_cmd(
             except ValueError as e:
                 # Codec validation (e.g. unknown status label) — surface as a
                 # clean CLI error rather than a Python traceback.
-                typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=5) from e
+                handle_mondo_error_or_exit(ValidationError(str(e)))
 
     variables = {
         "parent": parent_id,

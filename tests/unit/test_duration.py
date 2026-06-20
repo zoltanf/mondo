@@ -1,4 +1,5 @@
 """parse_duration accepts compact strings (s/ms/m/h) and returns seconds."""
+
 from __future__ import annotations
 
 import pytest

@@ -17,7 +17,7 @@ from typing import Any
 
 import typer
 
-from mondo.api.errors import MondoError
+from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.pagination import MAX_BOARDS_PAGE_SIZE
 from mondo.api.queries import (
     ADD_USERS_TO_TEAM,
@@ -263,9 +263,7 @@ def _list_users_via_cache(
         needle = name.lower()
         entries = [u for u in entries if needle in (u.get("name") or "").lower()]
     if newest_first:
-        entries = sorted(
-            entries, key=lambda u: u.get("created_at") or "", reverse=True
-        )
+        entries = sorted(entries, key=lambda u: u.get("created_at") or "", reverse=True)
 
     if name_fuzzy is not None:
         entries = apply_fuzzy(
@@ -292,8 +290,7 @@ def get_cmd(
     data = execute(opts, USER_GET, {"ids": [user_id]})
     users = data.get("users") or []
     if not users:
-        typer.secho(f"user {user_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"user {user_id} not found."))
     opts.emit(users[0])
 
 

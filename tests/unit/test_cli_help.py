@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from mondo.cli._examples import EXAMPLES, _READ_SUFFIXES, epilog_for
+from mondo.cli._examples import _READ_SUFFIXES, EXAMPLES, epilog_for
 from mondo.cli.help import _list_topics, _read_topic
 from mondo.cli.main import app
 
@@ -270,20 +270,24 @@ class TestDumpSpec:
     # Friction report E1: these are the leaves agents reach for most often and
     # whose Examples were too thin to teach the common shape. Lint enforces a
     # minimum so future thinning is caught at CI time.
-    HEAVY_USE_PATHS = frozenset({
-        "item list", "item get", "item find",
-        "column set", "column get",
-        "graphql",
-        "update create", "update get",
-        "subitem list",
-    })
+    HEAVY_USE_PATHS = frozenset(
+        {
+            "item list",
+            "item get",
+            "item find",
+            "column set",
+            "column get",
+            "graphql",
+            "update create",
+            "update get",
+            "subitem list",
+        }
+    )
 
     def test_heavy_use_paths_have_at_least_four_examples(self) -> None:
         from mondo.cli._examples import EXAMPLES
-        thin = sorted(
-            path for path in self.HEAVY_USE_PATHS
-            if len(EXAMPLES.get(path, [])) < 4
-        )
+
+        thin = sorted(path for path in self.HEAVY_USE_PATHS if len(EXAMPLES.get(path, [])) < 4)
         assert not thin, (
             f"heavy-use leaves with fewer than 4 examples (friction report "
             f"E1): {thin}. Add to EXAMPLES in src/mondo/cli/_examples.py."

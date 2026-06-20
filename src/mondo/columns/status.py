@@ -57,22 +57,16 @@ class StatusCodec(LabelAwareCodec):
         against the live API on 2026-05-18.
         """
         labels_map = settings.get("labels") or {}
-        name_to_id = {
-            entry["label"]: entry["index"] for entry in iter_status_labels(settings)
-        }
+        name_to_id = {entry["label"]: entry["index"] for entry in iter_status_labels(settings)}
 
         def _resolve_index(idx_str: str) -> int:
             try:
                 idx = int(idx_str)
             except ValueError as e:
-                raise ValueError(
-                    f"invalid status index {'#' + idx_str!r}: use format #N"
-                ) from e
+                raise ValueError(f"invalid status index {'#' + idx_str!r}: use format #N") from e
             if labels_map and str(idx) not in labels_map:
                 allowed = ", ".join(sorted(labels_map.keys()))
-                raise ValueError(
-                    f"status index {idx} out of range. Valid indices: {allowed}"
-                )
+                raise ValueError(f"status index {idx} out of range. Valid indices: {allowed}")
             return idx
 
         return self._resolve_label_csv(

@@ -7,7 +7,6 @@ applied client-side after retrieval.
 
 from __future__ import annotations
 
-import json
 import re
 from enum import StrEnum
 from typing import Any
@@ -37,11 +36,19 @@ from mondo.cli._exec import (
     execute_read,
     handle_mondo_error_or_exit,
     poll_or_exit,
+    usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
 from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.services.boards import (
+    BoardTypeFilter,
+    decode_json_string_payload,
+    fetch_items_count,
+    projection_wants_items_count,
+    type_matches,
+)
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -65,43 +72,6 @@ class BoardState(StrEnum):
 class BoardOrderBy(StrEnum):
     used_at = "used_at"
     created_at = "created_at"
-
-
-class BoardTypeFilter(StrEnum):
-    """`--type` selector on `board list`.
-
-    monday's `boards()` query returns both real boards and workdoc-backing
-    boards (monday models every workdoc as a board with `type=="document"`).
-    The CLI hides docs by default; pass `--type doc` to list only docs, or
-    `--type all` to see everything including non-standard types such as
-    `sub_items_board` and `custom_object`.
-    """
-
-    board = "board"
-    doc = "doc"
-    all = "all"
-
-
-# Mapping from CLI filter → monday's `Board.type` server value.
-_BOARD_TYPE_SERVER_VALUE: dict[BoardTypeFilter, str] = {
-    BoardTypeFilter.board: "board",
-    BoardTypeFilter.doc: "document",
-}
-
-
-def _type_matches(entry: dict[str, Any], type_filter: BoardTypeFilter) -> bool:
-    """Return True when `entry` should pass the `--type` filter.
-
-    Entries cached before schema_version 2 lack `type`; we don't want those
-    to silently disappear under `--type board` (the common default). The
-    schema_version bump forces a one-off refresh so this branch should only
-    matter in the edge case of an in-memory fetch before the cache is warm.
-    Treat missing as `"board"` to keep behavior predictable.
-    """
-    if type_filter is BoardTypeFilter.all:
-        return True
-    observed = entry.get("type") or "board"
-    return observed == _BOARD_TYPE_SERVER_VALUE[type_filter]
 
 
 class BoardAttribute(StrEnum):
@@ -131,29 +101,16 @@ def _resolve_source_workspace(opts: GlobalOpts, board_id: int) -> int | None:
     data = execute_read(opts, BOARD_GET, {"id": board_id})
     boards = data.get("boards") or []
     if not boards:
-        typer.secho(
-            f"error: source board {board_id} not found (cannot resolve workspace).",
-            fg=typer.colors.RED,
-            err=True,
+        handle_mondo_error_or_exit(
+            MondoError(f"source board {board_id} not found (cannot resolve workspace).")
         )
-        raise typer.Exit(code=1)
     ws = boards[0].get("workspace_id")
     if ws in (None, ""):
         return None
     try:
         return int(ws)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
-
-
-def _decode_json_string_payload(value: Any) -> Any:
-    """Parse monday's legacy stringified-JSON mutation payloads when possible."""
-    if not isinstance(value, str):
-        return value
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        return value
 
 
 # ----- read commands -----
@@ -296,8 +253,7 @@ def list_cmd(
     try:
         needle_lower, pattern = compile_name_filter(name_contains, name_matches, name_fuzzy)
     except UsageError as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from e
+        usage_error_or_exit(str(e))
 
     prefs = resolve_cache_prefs(
         opts,
@@ -370,7 +326,7 @@ def list_cmd(
                         max_items=None,  # client-side filters applied below
                     )
                 )
-                if _type_matches(b, type_filter) and _name_matches(b, needle_lower, pattern)
+                if type_matches(b, type_filter) and _name_matches(b, needle_lower, pattern)
             ]
     except MondoError as e:
         handle_mondo_error_or_exit(e)
@@ -400,9 +356,7 @@ def list_cmd(
 
     opts.emit(
         boards,
-        selected_fields=board_list_fields(
-            with_item_counts=with_item_counts, with_tags=with_tags
-        ),
+        selected_fields=board_list_fields(with_item_counts=with_item_counts, with_tags=with_tags),
     )
 
 
@@ -479,7 +433,7 @@ def _list_via_cache(
     if kind is not None:
         entries = [b for b in entries if (b.get("kind") or "") == kind.value]
     if type_filter is not BoardTypeFilter.all:
-        entries = [b for b in entries if _type_matches(b, type_filter)]
+        entries = [b for b in entries if type_matches(b, type_filter)]
     if workspace:
         wanted = {str(w) for w in workspace}
         entries = [b for b in entries if str(b.get("workspace_id") or "") in wanted]
@@ -584,16 +538,14 @@ def get_cmd(
     # `--poll-until` (caller wants live observation), plus any user-driven
     # `--no-cache`. Cache disabled in config also lands here.
     cfg = opts.resolve_cache_config()
-    bypass_cache = (
-        not cfg.enabled or no_cache or with_views or poll_until is not None
-    )
+    bypass_cache = not cfg.enabled or no_cache or with_views or poll_until is not None
 
-    def _fetch_once() -> dict | None:
+    def _fetch_once() -> dict[str, Any] | None:
         data = execute(opts, query, {"id": board_id})
         boards = data.get("boards") or []
         return boards[0] if boards else None
 
-    board: dict | None
+    board: dict[str, Any] | None
     if bypass_cache:
         if poll_until is not None:
             board = poll_or_exit(
@@ -616,12 +568,10 @@ def get_cmd(
                 cached = get_board_details(
                     client, store=store, board_id=board_id, refresh=refresh_cache
                 )
-                emit_cache_provenance(
-                    opts, cached, store=store, explain=explain_cache
-                )
+                emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
                 board = cached.entries[0] if cached.entries else None
-                if board is not None and _projection_wants_items_count(opts):
-                    items_count = _fetch_items_count(client, board_id)
+                if board is not None and projection_wants_items_count(opts):
+                    items_count = fetch_items_count(client, board_id)
                     board = {**board, "items_count": items_count}
         except NotFoundError:
             board = None
@@ -629,8 +579,7 @@ def get_cmd(
             handle_mondo_error_or_exit(e)
 
     if board is None:
-        typer.secho(f"board {board_id} not found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=6)
+        handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     warn_cross_type(board, expected="board", id_=board_id)
     if with_url:
         client = client_or_exit(opts)
@@ -638,43 +587,6 @@ def get_cmd(
             board = {**board, "url": board_url(get_tenant_slug(client), board_id)}
     board = normalize_board_entry(board)
     opts.emit(board, selected_fields=board_get_fields(with_views=with_views))
-
-
-def _projection_wants_items_count(opts: GlobalOpts) -> bool:
-    """Skip the live `items_count` merge when the caller's projection won't
-    surface it. Default behavior (no `-q`/`--fields`) returns True so the
-    field stays in the emitted payload as it did pre-cache; with an explicit
-    projection we only pay the round-trip if `items_count` actually appears.
-
-    The check is intentionally lenient (substring): a JMESPath expression
-    or comma-separated field list that mentions `items_count` keeps the
-    merge; anything else skips it. False negatives just mean the cached
-    `items_count: null` flows through — accurate per the cache contract.
-    """
-    needle = "items_count"
-    if opts.query and needle in opts.query:
-        return True
-    if opts.fields and needle in opts.fields:
-        return True
-    return opts.query is None and opts.fields is None
-
-
-def _fetch_items_count(client: Any, board_id: int) -> int | None:
-    """One-field live fetch for the volatile items_count field. Used to merge
-    a fresh count onto a `board_details` cache hit so the cache file stays
-    invalidation-free of item writes. Returns None on any unexpected shape."""
-    from mondo.api.queries import BOARD_ITEMS_COUNT
-    from mondo.cli._exec import exec_or_exit
-
-    data = exec_or_exit(client, BOARD_ITEMS_COUNT, {"ids": [board_id]})
-    boards = data.get("boards") or []
-    if not boards:
-        return None
-    raw = boards[0].get("items_count")
-    try:
-        return int(raw) if raw is not None else None
-    except (TypeError, ValueError):
-        return None
 
 
 # ----- write commands -----
@@ -763,7 +675,7 @@ def update_cmd(
         {"board": board_id, "attribute": attribute.value, "value": value},
     )
     invalidate_board_caches(opts, board_id)
-    opts.emit(_decode_json_string_payload(data.get("update_board")))
+    opts.emit(decode_json_string_payload(data.get("update_board")))
 
 
 @app.command("set-permission", epilog=epilog_for("board set-permission"))
@@ -823,12 +735,9 @@ def move_cmd(
     if position_obj is not None:
         attributes["position"] = position_obj
     if not attributes:
-        typer.secho(
-            "error: pass at least one of --workspace, --folder, --product-id, or --position.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "pass at least one of --workspace, --folder, --product-id, or --position."
         )
-        raise typer.Exit(code=2)
     data = execute(opts, BOARD_UPDATE_HIERARCHY, {"board": board_id, "attributes": attributes})
     invalidate_board_caches(opts, board_id)
     opts.emit(data.get("update_board_hierarchy") or {})
@@ -951,28 +860,22 @@ def duplicate_cmd(
         board_payload = (duplicate_payload.get("board") or {}) if duplicate_payload else {}
         dup_id_raw = board_payload.get("id")
         if dup_id_raw is None:
-            typer.secho(
-                "error: duplicate_board returned no board id — cannot poll for completion.",
-                fg=typer.colors.RED,
-                err=True,
+            handle_mondo_error_or_exit(
+                MondoError("duplicate_board returned no board id — cannot poll for completion.")
             )
-            raise typer.Exit(code=1)
         try:
             dup_id = int(dup_id_raw)
-        except (TypeError, ValueError):
-            typer.secho(
-                f"error: duplicate_board returned non-integer id {dup_id_raw!r}.",
-                fg=typer.colors.RED,
-                err=True,
+        except TypeError, ValueError:
+            handle_mondo_error_or_exit(
+                MondoError(f"duplicate_board returned non-integer id {dup_id_raw!r}.")
             )
-            raise typer.Exit(code=1) from None
         from mondo.util.duration import parse_duration
+
         try:
             timeout_s = parse_duration(timeout)
             poll_interval_s = parse_duration(poll_interval)
         except ValueError as e:
-            typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from e
+            usage_error_or_exit(str(e))
         # Structure-only duplicates never copy items, so the target is 0 by
         # definition — using the source's count would mismatch and force the
         # stall-counter path to terminate the wait, which is correct but
@@ -1022,5 +925,5 @@ def _items_count_or_none(opts: GlobalOpts, board_id: int) -> int | None:
         return None
     try:
         return int(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

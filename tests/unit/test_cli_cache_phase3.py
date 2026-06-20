@@ -69,9 +69,7 @@ def _board_details_payload(
     return base
 
 
-def _prewarm_board_details(
-    tmp_path: Path, board_id: str, payload: dict, *, ttl: int = 900
-) -> Path:
+def _prewarm_board_details(tmp_path: Path, board_id: str, payload: dict, *, ttl: int = 900) -> Path:
     store = CacheStore(
         entity_type="board_details",
         cache_dir=tmp_path / "cache" / "default",
@@ -87,9 +85,7 @@ def _prewarm_board_details(
 
 
 class TestBoardGetCache:
-    def test_cache_hit_merges_items_count(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_cache_hit_merges_items_count(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm_board_details(tmp_path, "42", _board_details_payload(name="Cached"))
         # Only the items_count merge query should hit the wire.
         httpx_mock.add_response(
@@ -103,9 +99,7 @@ class TestBoardGetCache:
         assert parsed["name"] == "Cached"
         assert parsed["items_count"] == 17
 
-    def test_no_cache_forces_live(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_no_cache_forces_live(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm_board_details(tmp_path, "42", _board_details_payload(name="Stale"))
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -117,9 +111,7 @@ class TestBoardGetCache:
         parsed = json.loads(result.stdout)
         assert parsed["name"] == "Live"
 
-    def test_refresh_cache_refetches_board_get(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_refresh_cache_refetches_board_get(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm_board_details(tmp_path, "42", _board_details_payload(name="Old"))
         # First call is the BOARD_GET refresh; second is the items_count merge.
         httpx_mock.add_response(
@@ -132,9 +124,7 @@ class TestBoardGetCache:
             method="POST",
             json=_ok({"boards": [{"id": "42", "items_count": 9}]}),
         )
-        result = runner.invoke(
-            app, ["board", "get", "--id", "42", "--refresh-cache"]
-        )
+        result = runner.invoke(app, ["board", "get", "--id", "42", "--refresh-cache"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert parsed["name"] == "Fresh"
@@ -155,9 +145,7 @@ class TestBoardGetCache:
         assert result.exit_code == 0, result.stdout
         assert httpx_mock.get_requests() == []
 
-    def test_with_views_bypasses_cache(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_with_views_bypasses_cache(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         # Even with a hot cache, --with-views must always go live (different
         # selection set).
         _prewarm_board_details(tmp_path, "42", _board_details_payload(name="Stale"))
@@ -176,9 +164,7 @@ class TestBoardGetCache:
                 }
             ),
         )
-        result = runner.invoke(
-            app, ["board", "get", "--id", "42", "--with-views"]
-        )
+        result = runner.invoke(app, ["board", "get", "--id", "42", "--with-views"])
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert parsed["name"] == "Live"
@@ -191,13 +177,7 @@ class TestBoardGetCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {
-                    "boards": [
-                        {**_board_details_payload(name="Live"), "items_count": 4}
-                    ]
-                }
-            ),
+            json=_ok({"boards": [{**_board_details_payload(name="Live"), "items_count": 4}]}),
         )
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -208,9 +188,7 @@ class TestBoardGetCache:
         assert result.exit_code == 0, result.stdout
         assert json.loads(result.stdout)["items_count"] == 4
 
-    def test_dry_run_skips_cache_and_network(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
+    def test_dry_run_skips_cache_and_network(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
         _prewarm_board_details(tmp_path, "42", _board_details_payload())
         result = runner.invoke(app, ["--dry-run", "board", "get", "--id", "42"])
         assert result.exit_code == 0, result.stdout
@@ -221,17 +199,13 @@ class TestBoardGetCache:
 
 
 class TestBoardDetailsInvalidation:
-    def test_board_update_drops_details(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
-        details_path = _prewarm_board_details(
-            tmp_path, "42", _board_details_payload(name="Cached")
-        )
+    def test_board_update_drops_details(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
+        details_path = _prewarm_board_details(tmp_path, "42", _board_details_payload(name="Cached"))
         assert details_path.exists()
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"update_board": "{\"success\":true}"}),
+            json=_ok({"update_board": '{"success":true}'}),
         )
         result = runner.invoke(
             app,
@@ -240,29 +214,19 @@ class TestBoardDetailsInvalidation:
         assert result.exit_code == 0, result.stdout
         assert not details_path.exists()
 
-    def test_board_archive_drops_details(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
-        details_path = _prewarm_board_details(
-            tmp_path, "42", _board_details_payload()
-        )
+    def test_board_archive_drops_details(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
+        details_path = _prewarm_board_details(tmp_path, "42", _board_details_payload())
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
             json=_ok({"archive_board": {"id": "42"}}),
         )
-        result = runner.invoke(
-            app, ["--yes", "board", "archive", "--id", "42"]
-        )
+        result = runner.invoke(app, ["--yes", "board", "archive", "--id", "42"])
         assert result.exit_code == 0, result.stdout
         assert not details_path.exists()
 
-    def test_column_create_drops_board_details(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
-        details_path = _prewarm_board_details(
-            tmp_path, "42", _board_details_payload()
-        )
+    def test_column_create_drops_board_details(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
+        details_path = _prewarm_board_details(tmp_path, "42", _board_details_payload())
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -275,12 +239,8 @@ class TestBoardDetailsInvalidation:
         assert result.exit_code == 0, result.stdout
         assert not details_path.exists()
 
-    def test_column_rename_drops_board_details(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
-        details_path = _prewarm_board_details(
-            tmp_path, "42", _board_details_payload()
-        )
+    def test_column_rename_drops_board_details(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
+        details_path = _prewarm_board_details(tmp_path, "42", _board_details_payload())
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -289,21 +249,21 @@ class TestBoardDetailsInvalidation:
         result = runner.invoke(
             app,
             [
-                "column", "rename",
-                "--board", "42",
-                "--id", "c",
-                "--title", "Renamed",
+                "column",
+                "rename",
+                "--board",
+                "42",
+                "--id",
+                "c",
+                "--title",
+                "Renamed",
             ],
         )
         assert result.exit_code == 0, result.stdout
         assert not details_path.exists()
 
-    def test_group_create_drops_board_details(
-        self, tmp_path: Path, httpx_mock: HTTPXMock
-    ) -> None:
-        details_path = _prewarm_board_details(
-            tmp_path, "42", _board_details_payload()
-        )
+    def test_group_create_drops_board_details(self, tmp_path: Path, httpx_mock: HTTPXMock) -> None:
+        details_path = _prewarm_board_details(tmp_path, "42", _board_details_payload())
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -319,9 +279,7 @@ class TestBoardDetailsInvalidation:
     def test_tag_create_or_get_drops_board_details(
         self, tmp_path: Path, httpx_mock: HTTPXMock
     ) -> None:
-        details_path = _prewarm_board_details(
-            tmp_path, "42", _board_details_payload()
-        )
+        details_path = _prewarm_board_details(tmp_path, "42", _board_details_payload())
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -351,9 +309,7 @@ class TestCacheCliKnowsBoardDetails:
     def test_clear_board_details_by_board(self, tmp_path: Path) -> None:
         path_a = _prewarm_board_details(tmp_path, "42", _board_details_payload())
         path_b = _prewarm_board_details(tmp_path, "99", _board_details_payload(board_id="99"))
-        result = runner.invoke(
-            app, ["cache", "clear", "board_details", "--board", "42"]
-        )
+        result = runner.invoke(app, ["cache", "clear", "board_details", "--board", "42"])
         assert result.exit_code == 0, result.stdout
         assert not path_a.exists()
         assert path_b.exists()

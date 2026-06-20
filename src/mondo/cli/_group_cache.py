@@ -54,9 +54,7 @@ def fetch_board_groups(
         from mondo.cache.directory import get_groups as _cache_get_groups
 
         store = opts.build_cache_store("groups", scope=str(board_id))
-        cached = _cache_get_groups(
-            client, store=store, board_id=board_id, refresh=refresh
-        )
+        cached = _cache_get_groups(client, store=store, board_id=board_id, refresh=refresh)
         return list(cached.entries)
 
     # Live path — skip cache entirely (honors `--no-cache` and the

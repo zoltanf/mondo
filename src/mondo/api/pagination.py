@@ -56,12 +56,20 @@ def iter_items_page(
         "qp": query_params,
         **(extra_vars or {}),
     }
+    # Track ids already emitted so a cursor-expiry restart (which replays the
+    # initial page) can't yield the same item twice.
+    seen: set[Any] = set()
+
     page = _initial_page(client, query_initial, initial_vars)
     cursor = page["cursor"]
 
     for item in page["items"]:
         if max_items is not None and yielded >= max_items:
             return
+        item_id = item.get("id")
+        if item_id in seen:
+            continue
+        seen.add(item_id)
         yield item
         yielded += 1
 
@@ -69,20 +77,18 @@ def iter_items_page(
         try:
             next_page = _fetch_next(client, query_next, cursor, page_size, extra_vars)
         except CursorExpiredError:
-            # Restart from the initial page; the caller re-sees some items.
-            page = _initial_page(client, query_initial, initial_vars)
-            cursor = page["cursor"]
-            for item in page["items"]:
-                if max_items is not None and yielded >= max_items:
-                    return
-                yield item
-                yielded += 1
-            continue
+            # Restart from the initial page; the `seen` set below skips any
+            # item already yielded, so the restart can't produce duplicates.
+            next_page = _initial_page(client, query_initial, initial_vars)
 
         cursor = next_page["cursor"]
         for item in next_page["items"]:
             if max_items is not None and yielded >= max_items:
                 return
+            item_id = item.get("id")
+            if item_id in seen:
+                continue
+            seen.add(item_id)
             yield item
             yielded += 1
 

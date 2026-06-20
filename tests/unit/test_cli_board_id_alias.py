@@ -7,6 +7,7 @@ rejected with `No such option`. We accept it everywhere --board is accepted
 on a list/get-style command, but hide it from --help so the help layout
 stays uncluttered.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,15 +75,11 @@ def test_board_id_alias_is_accepted(
     )
     result = runner.invoke(app, [*path, "--board-id", "12345", *extra])
     combined = (result.output or "") + (result.stderr or "")
-    assert "No such option" not in combined, (
-        f"{' '.join(path)} rejected --board-id: {combined!r}"
-    )
+    assert "No such option" not in combined, f"{' '.join(path)} rejected --board-id: {combined!r}"
 
 
 @pytest.mark.parametrize("path,extra,stub", BOARD_FLAG_COMMANDS)
-def test_board_id_alias_hidden_in_help(
-    path: list[str], extra: list[str], stub: dict
-) -> None:
+def test_board_id_alias_hidden_in_help(path: list[str], extra: list[str], stub: dict) -> None:
     """The alias must not appear in --help output (keeps help uncluttered)."""
     result = runner.invoke(app, [*path, "--help"])
     assert result.exit_code == 0, result.output

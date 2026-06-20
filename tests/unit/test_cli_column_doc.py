@@ -156,7 +156,11 @@ class TestDocGet:
 
     def test_markdown_paginates_blocks(self, httpx_mock: HTTPXMock) -> None:
         first_page_blocks = [
-            {"id": f"b{i}", "type": "normal_text", "content": {"deltaFormat": [{"insert": f"L{i}"}]}}
+            {
+                "id": f"b{i}",
+                "type": "normal_text",
+                "content": {"deltaFormat": [{"insert": f"L{i}"}]},
+            }
             for i in range(1, 101)
         ]
         httpx_mock.add_response(
@@ -440,7 +444,9 @@ class TestDocAppend:
         assert result.exit_code == 2
 
     def test_uses_last_block_from_later_page(self, httpx_mock: HTTPXMock) -> None:
-        first_page_blocks = [{"id": f"b{i}", "type": "normal_text", "content": {}} for i in range(1, 101)]
+        first_page_blocks = [
+            {"id": f"b{i}", "type": "normal_text", "content": {}} for i in range(1, 101)
+        ]
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=_context_for_doc_column(_DOC_COLUMN_VALUE)
         )

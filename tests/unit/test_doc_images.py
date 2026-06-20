@@ -58,20 +58,14 @@ class TestExtractAssetIds:
         assert extract_asset_ids_from_markdown(md) == [20, 10]
 
     def test_finds_images_inside_table_cells(self) -> None:
-        md = (
-            "| ![](https://x/resources/110/a.png) "
-            "| ![](https://x/resources/117/b.png) |"
-        )
+        md = "| ![](https://x/resources/110/a.png) | ![](https://x/resources/117/b.png) |"
         assert extract_asset_ids_from_markdown(md) == [110, 117]
 
 
 class TestRewriteMarkdownImages:
     def test_rewrites_mapped_id_keeps_alt(self) -> None:
         md = "![Image: ](https://x/resources/55/foo.png)"
-        assert (
-            rewrite_markdown_images(md, {55: "55-foo.png"})
-            == "![Image: ](55-foo.png)"
-        )
+        assert rewrite_markdown_images(md, {55: "55-foo.png"}) == "![Image: ](55-foo.png)"
 
     def test_unmapped_id_keeps_url(self) -> None:
         md = "![](https://x/resources/55/foo.png)"

@@ -86,11 +86,33 @@ class TestIterItemsPage:
                 _initial([{"id": "1"}, {"id": "2"}], None),
             ]
         )
-        list(iter_items_page(client, board_id=123, limit=50))
-        # The same first item appears twice because the restart replays items
-        # that were already yielded. The iterator must keep going without
-        # raising, and the caller's dedup (if any) is a higher-level concern.
+        result = list(iter_items_page(client, board_id=123, limit=50))
+        # The restart replays item "1", but the iterator dedups by id so it is
+        # emitted exactly once, followed by the new item "2".
+        assert [r["id"] for r in result] == ["1", "2"]
         assert len(client.calls) == 3
+
+    def test_cursor_expired_midstream_no_duplicates(self) -> None:
+        """A cursor expiring partway through pagination must not yield any item
+        id twice, while still covering every item exactly once."""
+        client = FakeClient(
+            [
+                # Initial page: items 1, 2.
+                _initial([{"id": "1"}, {"id": "2"}], "CURSOR_A"),
+                # Second page: items 3, 4 — but the cursor expires next.
+                _next([{"id": "3"}, {"id": "4"}], "CURSOR_EXPIRED"),
+                CursorExpiredError("cursor expired", request_id="r"),
+                # Restart replays the initial page (1, 2) with a fresh cursor.
+                _initial([{"id": "1"}, {"id": "2"}], "CURSOR_B"),
+                # Resumed walk surfaces the already-seen 3, 4 plus the new 5.
+                _next([{"id": "3"}, {"id": "4"}, {"id": "5"}], None),
+            ]
+        )
+        result = [r["id"] for r in iter_items_page(client, board_id=123, limit=2)]
+        # No id appears twice despite the replayed pages.
+        assert len(result) == len(set(result))
+        # And every distinct item is covered.
+        assert sorted(result) == ["1", "2", "3", "4", "5"]
 
     def test_empty_board(self) -> None:
         client = FakeClient([_initial([], None)])

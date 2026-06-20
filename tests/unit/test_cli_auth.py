@@ -42,9 +42,7 @@ class TestStatus:
         monkeypatch.delenv("MONDAY_API_TOKEN", raising=False)
         # Isolate from the dev machine's real keyring (which may have an
         # entry from `mondo auth login` during manual testing).
-        monkeypatch.setattr(
-            "mondo.api.auth.keyring.get_password", lambda service, username: None
-        )
+        monkeypatch.setattr("mondo.api.auth.keyring.get_password", lambda service, username: None)
         result = runner.invoke(app, ["auth", "status"])
         assert result.exit_code == 3
 

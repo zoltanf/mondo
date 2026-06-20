@@ -37,6 +37,7 @@ keyring: Any = _LazyKeyring()
 def _keyring_backend() -> Any:
     return keyring
 
+
 ENV_VAR = "MONDAY_API_TOKEN"
 KEYRING_SERVICE = "mondo"
 

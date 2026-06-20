@@ -89,10 +89,18 @@ class TestGraphqlFormats:
     def test_invalid_query_exits_usage_error(self, httpx_mock: HTTPXMock) -> None:
         _graphql_ok(httpx_mock, {"me": {"id": "1"}})
         result = runner.invoke(app, ["-q", "[", "graphql", "query { me { id } }"])
-        # `[` → JMESPath lexer error → ValueError → exit code 1 (generic) via uncaught
-        # Actually: apply_query raises ValueError; format_output never runs.
-        # Typer wraps uncaught exceptions as exit code 1.
-        assert result.exit_code != 0
+        # Invalid JMESPath → ValueError → routed through usage_error_or_exit.
+        assert result.exit_code == 2
+
+    def test_invalid_query_json_mode_emits_error_envelope(self, httpx_mock: HTTPXMock) -> None:
+        _graphql_ok(httpx_mock, {"me": {"id": "1"}})
+        result = runner.invoke(app, ["-o", "json", "-q", "[", "graphql", "query { me { id } }"])
+        assert result.exit_code == 2
+        assert "Traceback (most recent call last)" not in result.output
+        envelope = json.loads(result.output.strip().splitlines()[-1])
+        assert envelope["code"] == "UsageError"
+        assert envelope["exit_code"] == 2
+        assert "invalid JMESPath expression" in envelope["error"]
 
     def test_unknown_output_format_exits_usage_error(self, httpx_mock: HTTPXMock) -> None:
         # Typer's Choice enforcement should catch this before the command runs.

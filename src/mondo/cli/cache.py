@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 import typer
 
@@ -25,9 +25,9 @@ from mondo.cache.directory import (
     get_webhooks,
     get_workspaces,
 )
-from mondo.cache.store import CacheStore
+from mondo.cache.store import CacheStore, EntityType
 from mondo.cli._examples import epilog_for
-from mondo.cli._exec import handle_mondo_error_or_exit
+from mondo.cli._exec import handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli.context import GlobalOpts
 
 app = typer.Typer(
@@ -57,11 +57,20 @@ class CacheType(StrEnum):
 
 
 _SINGLE_FILE_TYPES: tuple[str, ...] = (
-    "boards", "workspaces", "users", "teams", "docs", "folders", "tags",
+    "boards",
+    "workspaces",
+    "users",
+    "teams",
+    "docs",
+    "folders",
+    "tags",
 )
 # Per-board scoped types accept `--board` for explicit refresh/clear.
 _BOARD_SCOPED_TYPES: tuple[str, ...] = (
-    "columns", "groups", "webhooks", "board_details",
+    "columns",
+    "groups",
+    "webhooks",
+    "board_details",
 )
 # Per-item / per-doc scoped types: status and clear work over the cache
 # directory; refresh requires re-reading via the CLI command itself, since
@@ -69,7 +78,9 @@ _BOARD_SCOPED_TYPES: tuple[str, ...] = (
 _ITEM_SCOPED_TYPES: tuple[str, ...] = ("items", "board_items", "subitems", "updates")
 _DOC_SCOPED_TYPES: tuple[str, ...] = ("docs_blocks",)
 _SCOPED_TYPES: tuple[str, ...] = (
-    *_BOARD_SCOPED_TYPES, *_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES,
+    *_BOARD_SCOPED_TYPES,
+    *_ITEM_SCOPED_TYPES,
+    *_DOC_SCOPED_TYPES,
 )
 _ALL_TYPES: tuple[str, ...] = (*_SINGLE_FILE_TYPES, *_SCOPED_TYPES)
 
@@ -146,10 +157,8 @@ def status_cmd(
     opts.emit(rows)
 
 
-def _status_row(
-    opts: GlobalOpts, entity: str, *, scope: str | None = None
-) -> dict[str, Any]:
-    store = opts.build_cache_store(entity, scope=scope)
+def _status_row(opts: GlobalOpts, entity: str, *, scope: str | None = None) -> dict[str, Any]:
+    store = opts.build_cache_store(cast(EntityType, entity), scope=scope)
     cached = store.read()
     fetched_at: str | None
     age: timedelta | None
@@ -189,7 +198,7 @@ def _lookup_fetched_at(store: CacheStore) -> str | None:
         value = raw.get("fetched_at")
         if isinstance(value, str):
             return value
-    except (OSError, ValueError, KeyError, AttributeError):
+    except OSError, ValueError, KeyError, AttributeError:
         return None
     return None
 
@@ -222,13 +231,10 @@ def refresh_cmd(
     refreshable_scoped = set(_BOARD_SCOPED_TYPES)
 
     if boards and not any(t in refreshable_scoped for t in types):
-        typer.secho(
-            "error: --board only applies when refreshing "
-            "`columns`, `groups`, `webhooks`, or `board_details`.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--board only applies when refreshing "
+            "`columns`, `groups`, `webhooks`, or `board_details`."
         )
-        raise typer.Exit(code=2)
 
     # `cache refresh` for per-item / per-doc caches isn't supported here —
     # use the read command's `--refresh-cache` flag instead, since only the
@@ -236,14 +242,11 @@ def refresh_cmd(
     # `all` was selected; raise on an explicit ask.
     unsupported = [t for t in types if t in (*_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES)]
     if unsupported and cache_type is not CacheType.all:
-        typer.secho(
-            f"error: `cache refresh {cache_type.value}` isn't supported. "
+        usage_error_or_exit(
+            f"`cache refresh {cache_type.value}` isn't supported. "
             "Use the read command's --refresh-cache flag for items/board_items/"
-            "subitems/updates/docs_blocks (each needs a specific id).",
-            fg=typer.colors.RED,
-            err=True,
+            "subitems/updates/docs_blocks (each needs a specific id)."
         )
-        raise typer.Exit(code=2)
     types = [t for t in types if t not in (*_ITEM_SCOPED_TYPES, *_DOC_SCOPED_TYPES)]
 
     if opts.dry_run:
@@ -270,7 +273,7 @@ def refresh_cmd(
                 if entity in _SCOPED_TYPES:
                     results.extend(_refresh_scoped(opts, client, boards, entity))
                     continue
-                store = opts.build_cache_store(entity)
+                store = opts.build_cache_store(cast(EntityType, entity))
                 fetcher = _REFRESH_DISPATCH[entity]
                 cached = fetcher(client, store=store, refresh=True)
                 results.append(
@@ -297,7 +300,9 @@ def _for_each_board_scope(
     already present in the selected scoped cache directory.
     """
     target_ids: list[str] = [str(b) for b in boards] if boards else _scoped_board_ids(opts, entity)
-    return [op(opts.build_cache_store(entity, scope=bid), bid) for bid in target_ids]
+    return [
+        op(opts.build_cache_store(cast(EntityType, entity), scope=bid), bid) for bid in target_ids
+    ]
 
 
 _SCOPED_REFRESH_DISPATCH = {
@@ -350,20 +355,17 @@ def clear_cmd(
     types = _resolve_types(cache_type)
 
     if boards and not any(t in _BOARD_SCOPED_TYPES for t in types):
-        typer.secho(
-            "error: --board only applies when clearing `columns`, `groups`, "
-            "`webhooks`, or `board_details`.",
-            fg=typer.colors.RED,
-            err=True,
+        usage_error_or_exit(
+            "--board only applies when clearing `columns`, `groups`, "
+            "`webhooks`, or `board_details`."
         )
-        raise typer.Exit(code=2)
 
     results: list[dict[str, Any]] = []
     for entity in types:
         if entity in _SCOPED_TYPES:
             results.extend(_clear_scoped(opts, boards, entity))
             continue
-        store = opts.build_cache_store(entity)
+        store = opts.build_cache_store(cast(EntityType, entity))
         path = str(store.path)
         if opts.dry_run:
             results.append({"type": entity, "path": path, "action": "clear"})

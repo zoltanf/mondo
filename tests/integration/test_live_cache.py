@@ -50,9 +50,7 @@ def test_live_cache_workspace_get_short_circuits(
     # `workspace get` should serve from cache. Compare against a forced-live
     # refetch to confirm shape parity.
     cached = invoke_json(["workspace", "get", "--id", str(live_workspace_id)])
-    live = invoke_json(
-        ["workspace", "get", "--id", str(live_workspace_id), "--no-cache"]
-    )
+    live = invoke_json(["workspace", "get", "--id", str(live_workspace_id), "--no-cache"])
     assert cached["id"] == live["id"]
     assert cached["name"] == live["name"]
 
@@ -71,9 +69,7 @@ def test_live_cache_tags_invalidated_on_create_or_get(
     # Mint a tag (or get an existing one with this name). Either way, the
     # cache file should be dropped by `invalidate_entity(opts, "tags")`.
     tag_name = f"e2e-cache-{uuid.uuid4().hex[:8]}"
-    invoke(
-        ["tag", "create-or-get", "--name", tag_name, "--board", str(live_test_board_id)]
-    )
+    invoke(["tag", "create-or-get", "--name", tag_name, "--board", str(live_test_board_id)])
     assert not tags_file.exists(), "tag create-or-get did not invalidate tags cache"
 
 
@@ -101,17 +97,19 @@ def test_live_cache_board_details_invalidated_on_structural_mutation(
     # Trigger structural mutation: create a scratch group, then delete it.
     # Either side drops `board_details/<board_id>` via `invalidate_groups_cache`.
     group_name = f"E2E Cache {uuid.uuid4().hex[:6]}"
-    group = invoke_json(
-        ["group", "create", "--board", str(pm.board_id), "--name", group_name]
-    )
+    group = invoke_json(["group", "create", "--board", str(pm.board_id), "--name", group_name])
     group_id = group["id"]
     cleanup_plan.add(
         f"cache test group {group_id}",
-        "group", "delete", "--board", str(pm.board_id), "--id", group_id, "--hard",
+        "group",
+        "delete",
+        "--board",
+        str(pm.board_id),
+        "--id",
+        group_id,
+        "--hard",
     )
-    assert not details_file.exists(), (
-        "group create did not invalidate board_details cache"
-    )
+    assert not details_file.exists(), "group create did not invalidate board_details cache"
 
     # Reading again rebuilds the cache file.
     invoke_json(["board", "get", "--id", str(pm.board_id)])
@@ -132,16 +130,24 @@ def test_live_cache_items_invalidated_on_column_set(
     suffix = uuid.uuid4().hex[:8]
     created = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", pm.group_ids["backlog"],
-            "--name", f"E2E Cache Item {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            pm.group_ids["backlog"],
+            "--name",
+            f"E2E Cache Item {suffix}",
         ]
     )
     item_id = int(created["id"])
     cleanup_plan.add(
         f"cache test item {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
 
     items_file = cache_root / "items" / f"{item_id}.json"
@@ -155,15 +161,17 @@ def test_live_cache_items_invalidated_on_column_set(
     # `column set` callsite.
     invoke(
         [
-            "column", "set",
-            "--item", str(item_id),
-            "--column", pm.column_ids["text"],
-            "--value", f"cache-{suffix}",
+            "column",
+            "set",
+            "--item",
+            str(item_id),
+            "--column",
+            pm.column_ids["text"],
+            "--value",
+            f"cache-{suffix}",
         ]
     )
-    assert not items_file.exists(), (
-        "column set did not invalidate items cache"
-    )
+    assert not items_file.exists(), "column set did not invalidate items cache"
 
     # Re-read picks up the new value and re-warms the cache.
     re_read = invoke_json(["item", "get", "--id", str(item_id)])
@@ -188,9 +196,12 @@ def test_live_cache_docs_blocks_round_trip(
 
     created = invoke_json(
         [
-            "doc", "create",
-            "--workspace", str(live_workspace_id),
-            "--name", f"E2E Cache Doc {suffix}",
+            "doc",
+            "create",
+            "--workspace",
+            str(live_workspace_id),
+            "--name",
+            f"E2E Cache Doc {suffix}",
         ]
     )
     doc_id = int(created["id"])
@@ -206,14 +217,15 @@ def test_live_cache_docs_blocks_round_trip(
     # Append content → invalidates `docs_blocks/<doc_id>`.
     invoke(
         [
-            "doc", "add-markdown",
-            "--doc", str(doc_id),
-            "--markdown", f"# Cache test {suffix}\n",
+            "doc",
+            "add-markdown",
+            "--doc",
+            str(doc_id),
+            "--markdown",
+            f"# Cache test {suffix}\n",
         ]
     )
-    assert not blocks_file.exists(), (
-        "doc add-markdown did not invalidate docs_blocks cache"
-    )
+    assert not blocks_file.exists(), "doc add-markdown did not invalidate docs_blocks cache"
 
     # Re-read picks up the new block and re-warms the cache.
     refreshed = invoke_json(["doc", "get", "--id", str(doc_id)])
@@ -245,19 +257,23 @@ def test_live_cache_updates_invalidated_on_create(
 
     update = invoke_json(
         [
-            "update", "create",
-            "--item", str(item_id),
-            "--body", f"cache-test-{suffix}",
+            "update",
+            "create",
+            "--item",
+            str(item_id),
+            "--body",
+            f"cache-test-{suffix}",
         ]
     )
     update_id = int(update["id"])
     cleanup_plan.add(
         f"cache test update {update_id}",
-        "update", "delete", "--id", str(update_id),
+        "update",
+        "delete",
+        "--id",
+        str(update_id),
     )
-    assert not updates_file.exists(), (
-        "update create did not invalidate updates cache"
-    )
+    assert not updates_file.exists(), "update create did not invalidate updates cache"
 
 
 @pytest.mark.integration
@@ -283,9 +299,7 @@ def test_live_cache_board_items_round_trip(
     # The --group variant filters the cached full list client-side; parity
     # with a forced-live group listing.
     group_id = pm.group_ids["backlog"]
-    from_cache = invoke_json(
-        ["item", "list", "--board", str(pm.board_id), "--group", group_id]
-    )
+    from_cache = invoke_json(["item", "list", "--board", str(pm.board_id), "--group", group_id])
     live = invoke_json(
         ["item", "list", "--board", str(pm.board_id), "--group", group_id, "--no-cache"]
     )
@@ -295,20 +309,26 @@ def test_live_cache_board_items_round_trip(
     suffix = uuid.uuid4().hex[:8]
     created = invoke_json(
         [
-            "item", "create",
-            "--board", str(pm.board_id),
-            "--group", group_id,
-            "--name", f"E2E BoardItems Cache {suffix}",
+            "item",
+            "create",
+            "--board",
+            str(pm.board_id),
+            "--group",
+            group_id,
+            "--name",
+            f"E2E BoardItems Cache {suffix}",
         ]
     )
     item_id = int(created["id"])
     cleanup_plan.add(
         f"board_items cache test item {item_id}",
-        "item", "delete", "--id", str(item_id), "--hard",
+        "item",
+        "delete",
+        "--id",
+        str(item_id),
+        "--hard",
     )
-    assert not board_items_file.exists(), (
-        "item create did not invalidate the board_items cache"
-    )
+    assert not board_items_file.exists(), "item create did not invalidate the board_items cache"
 
     # Re-list sees the new item and re-warms the cache.
     re_listed = invoke_json(["item", "list", "--board", str(pm.board_id)])

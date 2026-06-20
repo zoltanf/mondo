@@ -276,9 +276,7 @@ class TestBlocksToMarkdownImages:
                 "content": {"assetId": 7, "url": "https://x/n.png"},
             },
         ]
-        out = blocks_to_markdown(
-            blocks, images={"7": ("n.png", "7-n.png")}
-        )
+        out = blocks_to_markdown(blocks, images={"7": ("n.png", "7-n.png")})
         assert "> ![n.png](7-n.png)" in out
 
 
@@ -293,19 +291,13 @@ class TestCollectImageAssetIds:
         assert collect_image_asset_ids(blocks) == [20, 10]
 
     def test_accepts_string_asset_id(self) -> None:
-        assert collect_image_asset_ids(
-            [{"type": "image", "content": '{"assetId":"55"}'}]
-        ) == [55]
+        assert collect_image_asset_ids([{"type": "image", "content": '{"assetId":"55"}'}]) == [55]
 
     def test_skips_image_without_asset_id(self) -> None:
-        assert collect_image_asset_ids(
-            [{"type": "image", "content": {"url": "u"}}]
-        ) == []
+        assert collect_image_asset_ids([{"type": "image", "content": {"url": "u"}}]) == []
 
     def test_ignores_non_image_blocks(self) -> None:
-        assert collect_image_asset_ids(
-            [{"type": "normal_text", "content": {"assetId": 1}}]
-        ) == []
+        assert collect_image_asset_ids([{"type": "normal_text", "content": {"assetId": 1}}]) == []
 
 
 class TestBlocksToMarkdownContainers:
@@ -317,9 +309,7 @@ class TestBlocksToMarkdownContainers:
     """
 
     @staticmethod
-    def _block(
-        bid: str, btype: str, text: str = "", parent: str | None = None
-    ) -> dict:
+    def _block(bid: str, btype: str, text: str = "", parent: str | None = None) -> dict:
         return {
             "id": bid,
             "type": btype,
@@ -398,9 +388,7 @@ class TestBlocksToMarkdownContainers:
             [
                 self._block("outer", "notice"),
                 self._block("inner", "notice", parent="outer"),
-                self._block(
-                    "leaf", "normal_text", "deep inside", parent="inner"
-                ),
+                self._block("leaf", "normal_text", "deep inside", parent="inner"),
             ]
         )
         # Inner notice's marker is rendered with the outer's prefix → `> > [!NOTE]`
@@ -455,9 +443,7 @@ class TestBlocksToMarkdownContainers:
     def test_self_referencing_parent_treated_as_root(self) -> None:
         """Defensive: a block whose parent_block_id == its own id must not
         recurse infinitely. It renders as a normal root."""
-        out = blocks_to_markdown(
-            [self._block("s", "normal_text", "self-loop", parent="s")]
-        )
+        out = blocks_to_markdown([self._block("s", "normal_text", "self-loop", parent="s")])
         assert "self-loop" in out
 
     def test_empty_notice_still_emits_marker(self) -> None:
@@ -501,14 +487,10 @@ class TestBlocksToMarkdownTables:
             "parent_block_id": cell_id,
         }
 
-    def _build_table(
-        self, table_id: str, grid_text: list[list[str]]
-    ) -> list[dict]:
+    def _build_table(self, table_id: str, grid_text: list[list[str]]) -> list[dict]:
         rows = len(grid_text)
         cols = len(grid_text[0]) if rows else 0
-        cell_ids = [
-            [f"{table_id}-c{r}-{c}" for c in range(cols)] for r in range(rows)
-        ]
+        cell_ids = [[f"{table_id}-c{r}-{c}" for c in range(cols)] for r in range(rows)]
         blocks: list[dict] = [
             {
                 "id": table_id,
@@ -547,9 +529,7 @@ class TestBlocksToMarkdownTables:
         assert "| ![n.png](7-n.png) |" in out
 
     def test_simple_2x2_table_renders_as_pipe_table(self) -> None:
-        blocks = self._build_table(
-            "t", [["Name", "Score"], ["Alice", "95"]]
-        )
+        blocks = self._build_table("t", [["Name", "Score"], ["Alice", "95"]])
         out = blocks_to_markdown(blocks)
         # Header row.
         assert "| Name | Score |" in out
@@ -594,6 +574,7 @@ class TestBlocksToMarkdownTables:
         # Build the structure, then re-encode the table block's content as a string.
         blocks = self._build_table("t", [["A", "B"], ["1", "2"]])
         import json as _json
+
         for b in blocks:
             if b["type"] == "table":
                 b["content"] = _json.dumps(b["content"])

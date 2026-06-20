@@ -16,6 +16,7 @@ _GLOBAL_FLAGS = (
     "--api-version",
     "--output",
     "--query",
+    "--fields",
     "--verbose",
     "--debug",
     "--yes",

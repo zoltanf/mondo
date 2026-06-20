@@ -11,6 +11,7 @@ from __future__ import annotations
 import typer
 
 from mondo.cli._examples import epilog_for
+from mondo.cli._exec import usage_error_or_exit
 from mondo.cli.context import GlobalOpts
 
 
@@ -43,13 +44,7 @@ def schema_command(
         return
 
     if resource not in schemas:
-        typer.secho(
-            f"unknown resource '{resource}'. "
-            f"Known: {', '.join(sorted(schemas))}.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        usage_error_or_exit(f"unknown resource '{resource}'. Known: {', '.join(sorted(schemas))}.")
 
     opts.emit(schemas[resource])
 

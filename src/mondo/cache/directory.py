@@ -36,6 +36,12 @@ from mondo.api.queries import (
     build_docs_list_query,
     build_folders_list_query,
 )
+from mondo.cache.store import CachedDirectory, CacheStore
+from mondo.cli._normalize import (
+    normalize_board_entry,
+    normalize_doc_entry,
+    normalize_folder_entry,
+)
 
 # Block-fetch page size for `get_doc_blocks` — picked to match the existing
 # CLI default in `mondo/cli/doc.py`. Doc bodies can be hundreds of blocks;
@@ -46,8 +52,6 @@ _DOC_BLOCKS_PAGE_SIZE = 50
 # `MAX_UPDATES_PAGE_SIZE` (25). Updates change less than items but pages
 # are smaller server-side.
 _UPDATES_PAGE_SIZE = 25
-from mondo.cache.store import CachedDirectory, CacheStore
-from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
 
 # Label for entries whose `workspace_id` is null (monday's "Main workspace").
 MAIN_WORKSPACE_NAME = "Main workspace"
@@ -258,7 +262,7 @@ def _fetch_all_docs(client: MondayClient) -> list[dict[str, Any]]:
     for ws in _fetch_all_workspaces(client):
         try:
             ws_ids.append(int(ws.get("id")))  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
 
     def _fetch_workspace_docs(ws_id: int) -> list[dict[str, Any]]:
@@ -394,9 +398,7 @@ def get_webhooks(
     return store.write(entries)
 
 
-def _fetch_board_webhooks(
-    client: MondayClient, board_id: int
-) -> list[dict[str, Any]]:
+def _fetch_board_webhooks(client: MondayClient, board_id: int) -> list[dict[str, Any]]:
     result = client.execute(WEBHOOKS_LIST, {"board": board_id, "appOnly": None})
     data = result.get("data") or {}
     webhooks = data.get("webhooks") or []
@@ -430,9 +432,7 @@ def get_board_details(
     return store.write([record])
 
 
-def _fetch_board_details(
-    client: MondayClient, board_id: int
-) -> dict[str, Any]:
+def _fetch_board_details(client: MondayClient, board_id: int) -> dict[str, Any]:
     result = client.execute(BOARD_GET, {"id": board_id})
     data = result.get("data") or {}
     boards = data.get("boards") or []
@@ -493,9 +493,7 @@ def get_subitems(
     return store.write(entries)
 
 
-def _fetch_subitems(
-    client: MondayClient, parent_item_id: int
-) -> list[dict[str, Any]]:
+def _fetch_subitems(client: MondayClient, parent_item_id: int) -> list[dict[str, Any]]:
     result = client.execute(SUBITEMS_LIST, {"parent": parent_item_id})
     data = result.get("data") or {}
     items = data.get("items") or []
@@ -523,9 +521,7 @@ def get_updates_for_item(
     return store.write(entries)
 
 
-def _fetch_updates_for_item(
-    client: MondayClient, item_id: int
-) -> list[dict[str, Any]]:
+def _fetch_updates_for_item(client: MondayClient, item_id: int) -> list[dict[str, Any]]:
     page = 1
     collected: list[dict[str, Any]] = []
     while True:
@@ -573,9 +569,7 @@ def get_doc_blocks(
     return store.write([record])
 
 
-def _fetch_doc_with_blocks_by_id(
-    client: MondayClient, doc_id: int
-) -> dict[str, Any] | None:
+def _fetch_doc_with_blocks_by_id(client: MondayClient, doc_id: int) -> dict[str, Any] | None:
     page = 1
     merged: dict[str, Any] | None = None
     all_blocks: list[dict[str, Any]] = []
