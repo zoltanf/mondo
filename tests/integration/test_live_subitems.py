@@ -6,7 +6,6 @@ up — never touches the original 5 fixture items.
 
 from __future__ import annotations
 
-import json
 import uuid
 from typing import Any
 
@@ -253,14 +252,7 @@ def test_live_subitem_create_with_tags_codec_resolves_names(
         col = cv.get(tags_col_id)
         assert col is not None, f"tags column {tags_col_id} missing: {list(cv)}"
         text = col.get("text") or ""
-        ids: list[int] = []
-        raw_value = col.get("value")
-        if raw_value:
-            try:
-                ids = (json.loads(raw_value) or {}).get("tag_ids") or []
-            except json.JSONDecodeError, TypeError:
-                ids = []
-        assert tag_name in text or ids, f"tag not resolved: text={text!r} value={raw_value!r}"
+        assert tag_name in text, f"tag not resolved: text={text!r}"
 
     wait_for("subitem tag column landed", _tag_landed)
 
