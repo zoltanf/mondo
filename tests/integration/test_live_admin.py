@@ -164,10 +164,16 @@ def test_live_org_mutation_dry_run(
     del live_workspace_id, label
     out = invoke_json(["--dry-run", *argv])
     assert mutation in out["query"], f"expected {mutation} in:\n{out['query']}"
-    assert "variables" in out
-    # Sanity: the dry-run payload is valid JSON-serialisable (it already is,
-    # invoke_json parsed it) and carries variables.
-    assert isinstance(json.loads(json.dumps(out["variables"])), dict)
+    variables = out["variables"]
+    assert isinstance(variables, dict) and variables, out
+
+    # Every numeric flag value (ids / users / teams / targets) must actually
+    # reach the variables payload — catches dropped or mis-bound args, which a
+    # bare field-name check would miss. (Name-only creates carry no numeric
+    # args; the field-name + non-empty-dict checks above cover those.)
+    var_blob = json.dumps(variables)
+    for value in (tok for tok in argv if tok.isdigit()):
+        assert value in var_blob, f"arg {value!r} not bound into variables {var_blob}"
 
 
 @pytest.mark.integration

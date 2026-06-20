@@ -243,11 +243,14 @@ class TestDumpSpec:
 
     def test_every_leaf_command_has_examples(self, spec: dict) -> None:
         """The binary is the docs — every runnable leaf command must ship
-        copy-pasteable examples. `help` itself is exempt (it's a meta-command)."""
+        copy-pasteable examples. Exempt: `help` (a meta-command) and the
+        validation CRUD stubs (monday removed those mutations in API 2026-01;
+        they always exit 2, so a runnable example would only produce an error)."""
+        exempt = {"help", "validation create", "validation update", "validation delete"}
         missing = [
             path
             for node in _iter_leaves(spec["root"])
-            if (path := node["path"].removeprefix("mondo ")) != "help"
+            if (path := node["path"].removeprefix("mondo ")) not in exempt
             if not node["examples"]
         ]
         assert not missing, f"leaf commands without examples: {missing}"

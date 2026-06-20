@@ -172,8 +172,15 @@ def test_live_doc_version_history_smoke(live_workspace_id: int, cleanup_plan: Cl
         ],
         expect_exit=None,
     )
-    # 0 = data returned, 1 = monday-side error on the (flaky) endpoint.
-    # A 2 (usage) or 3 (auth) would mean the command itself is broken.
+    # 0 = data returned (a list). 1 = the known monday-side instability on
+    # the `doc_version_history` endpoint — accepted ONLY when the error is an
+    # internal server error, so a real schema/query regression (e.g. "Cannot
+    # query field", auth, or a usage error) still fails the test loudly.
     assert result.exit_code in (0, 1), result.stderr
     if result.exit_code == 0:
         assert isinstance(json.loads(result.stdout), list)
+    else:
+        err = result.stderr.lower()
+        assert "internal server error" in err or "internal_server_error" in err, (
+            f"version-history failed for an unexpected reason: {result.stderr}"
+        )

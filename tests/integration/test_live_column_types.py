@@ -82,58 +82,61 @@ def types_board(session_env: int) -> Iterator[TypesBoard]:
     suffix = uuid.uuid4().hex[:8]
     plan = CleanupPlan()
 
-    board = invoke_json(
-        [
-            "board",
-            "create",
-            "--name",
-            f"E2E Column Types {suffix}",
-            "--workspace",
-            str(workspace_id),
-        ]
-    )
-    board_id = int(board["id"])
-    plan.add(f"types board {board_id}", "board", "delete", "--id", str(board_id), "--hard")
-
-    column_ids: dict[str, str] = {}
-    for logical, col_type in [
-        *_SCALAR_COLUMN_TYPES,
-        ("board_relation", "board_relation"),
-        ("dependency", "dependency"),
-    ]:
-        created = invoke_json(
+    # The whole build is inside try/finally so a mid-setup failure (e.g. a
+    # column create erroring after the board exists) still hard-deletes the
+    # scratch board rather than leaking it.
+    try:
+        board = invoke_json(
             [
-                "column",
+                "board",
+                "create",
+                "--name",
+                f"E2E Column Types {suffix}",
+                "--workspace",
+                str(workspace_id),
+            ]
+        )
+        board_id = int(board["id"])
+        plan.add(f"types board {board_id}", "board", "delete", "--id", str(board_id), "--hard")
+
+        column_ids: dict[str, str] = {}
+        for logical, col_type in [
+            *_SCALAR_COLUMN_TYPES,
+            ("board_relation", "board_relation"),
+            ("dependency", "dependency"),
+        ]:
+            created = invoke_json(
+                [
+                    "column",
+                    "create",
+                    "--board",
+                    str(board_id),
+                    "--title",
+                    f"E2E {logical}",
+                    "--type",
+                    col_type,
+                    "--id",
+                    f"e2e_{logical}",
+                ]
+            )
+            column_ids[logical] = created["id"]
+
+        group = invoke_json(["group", "list", "--board", str(board_id)])[0]
+        group_id = group["id"]
+        item = invoke_json(
+            [
+                "item",
                 "create",
                 "--board",
                 str(board_id),
-                "--title",
-                f"E2E {logical}",
-                "--type",
-                col_type,
-                "--id",
-                f"e2e_{logical}",
+                "--group",
+                group_id,
+                "--name",
+                f"E2E Types Item {suffix}",
             ]
         )
-        column_ids[logical] = created["id"]
+        item_id = int(item["id"])
 
-    group = invoke_json(["group", "list", "--board", str(board_id)])[0]
-    group_id = group["id"]
-    item = invoke_json(
-        [
-            "item",
-            "create",
-            "--board",
-            str(board_id),
-            "--group",
-            group_id,
-            "--name",
-            f"E2E Types Item {suffix}",
-        ]
-    )
-    item_id = int(item["id"])
-
-    try:
         yield TypesBoard(
             board_id=board_id,
             group_id=group_id,
