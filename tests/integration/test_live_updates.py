@@ -155,12 +155,42 @@ def test_live_update_pin_and_like_lifecycle(
         # The CLI's update list returns enriched fields; tolerate variations.
         likes = match.get("likes") or match.get("liked_by") or []
         assert likes, f"update has no likes recorded: {match}"
+        # Assert the pin landed too, otherwise the later unpin postcondition
+        # (pinned_to_top falsy) would pass even if `update pin` never worked.
+        assert match.get("pinned_to_top"), f"update not pinned: {match.get('pinned_to_top')}"
 
     wait_for("pinned + liked", _pinned_and_liked)
 
     invoke_json(["update", "unlike", str(update_id)])
+
+    def _unliked() -> None:
+        ups = invoke_json(["update", "list", "--item", str(item_id)])
+        match = next((u for u in ups if int(u.get("id", 0)) == update_id), None)
+        assert match is not None, f"update {update_id} not visible after unlike"
+        likes = match.get("likes") or match.get("liked_by") or []
+        assert not likes, f"update still has likes after unlike: {likes}"
+
+    wait_for("unliked", _unliked)
+
     invoke_json(["update", "unpin", str(update_id)])
+
+    def _unpinned() -> None:
+        ups = invoke_json(["update", "list", "--item", str(item_id)])
+        match = next((u for u in ups if int(u.get("id", 0)) == update_id), None)
+        assert match is not None, f"update {update_id} not visible after unpin"
+        assert not match.get("pinned_to_top"), f"update still pinned: {match.get('pinned_to_top')}"
+
+    wait_for("unpinned", _unpinned)
+
     invoke_json(["update", "delete", str(update_id)])
+
+    def _deleted() -> None:
+        ups = invoke_json(["update", "list", "--item", str(item_id)])
+        assert not any(int(u.get("id", 0)) == update_id for u in ups), (
+            f"deleted update {update_id} still visible"
+        )
+
+    wait_for("deleted", _deleted)
 
 
 @pytest.mark.integration

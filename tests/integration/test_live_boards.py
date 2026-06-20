@@ -354,6 +354,14 @@ def test_live_board_update_and_set_permission(
 
     wait_for("board renamed", _renamed)
 
+    # set-permission --role contributor restricts editing to collaborators: the
+    # readable `permissions` field flips from "everyone" to "collaborators".
+    def _restricted() -> None:
+        b = invoke_json(["board", "get", "--id", str(board_id)])
+        assert b.get("permissions") == "collaborators", f"permissions={b.get('permissions')!r}"
+
+    wait_for("board permission restricted", _restricted)
+
 
 @pytest.mark.integration
 def test_live_board_archive(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
