@@ -476,16 +476,13 @@ you only need totals.
 ### Validation rules (Pro/Enterprise)
 
 ```bash
-mondo validation list   --board 1234567890
-mondo validation create --board 1234567890 --column status --rule-type REQUIRED
-mondo validation create --board 1234567890 --column numbers --rule-type MIN_VALUE \
-                        --value '{"min":10}' --description "Non-zero price"
-mondo validation update --id 1 --description "Updated"
-mondo validation delete --id 1 --yes
+mondo validation list --board 1234567890
 ```
 
-Violating item creates/edits raise `RecordInvalidException`. Not supported on
-multi-level subitem boards.
+`validation list` reads a board's rule set. The `create` / `update` / `delete`
+mutations were **removed from monday's API in 2026-01** — rule management is
+UI-only now, and those subcommands exit 2 with a message pointing you back to
+`validation list`.
 
 ### Activity logs
 
