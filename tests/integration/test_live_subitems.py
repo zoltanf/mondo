@@ -301,3 +301,76 @@ def test_live_subitem_delete_hard(pm_board_session: PmBoard, cleanup_plan: Clean
         assert sub_id not in ids, f"subitem {sub_id} still in listing after hard-delete"
 
     wait_for("subitem gone after delete", _gone)
+
+
+def _make_subitem(parent_id: int, cleanup_plan: CleanupPlan, name: str) -> int:
+    sub = invoke_json(["subitem", "create", "--parent", str(parent_id), "--name", name])
+    sub_id = int(sub["id"])
+    cleanup_plan.add(f"subitem {sub_id}", "subitem", "delete", "--id", str(sub_id), "--hard")
+    return sub_id
+
+
+def _subitems_board_id(parent_id: int) -> int:
+    listing = wait_for(
+        "subitems listed",
+        lambda: invoke_json(["subitem", "list", "--parent", str(parent_id)]),
+    )
+    board_id = (listing[0].get("board") or {}).get("id")
+    assert board_id, f"could not resolve subitems board id: {listing}"
+    return int(board_id)
+
+
+@pytest.mark.integration
+def test_live_subitem_rename(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    parent_id = _scratch_parent(pm, cleanup_plan, suffix)
+    sub_id = _make_subitem(parent_id, cleanup_plan, f"E2E Sub Rename {suffix}")
+    sub_board_id = _subitems_board_id(parent_id)
+
+    new_name = f"E2E Sub Renamed {suffix}"
+    invoke_json(
+        ["subitem", "rename", "--id", str(sub_id), "--board", str(sub_board_id), "--name", new_name]
+    )
+
+    def _renamed() -> None:
+        got = invoke_json(["subitem", "get", "--id", str(sub_id)])
+        assert got["name"] == new_name, f"name={got['name']!r}"
+
+    wait_for("subitem renamed", _renamed)
+
+
+@pytest.mark.integration
+def test_live_subitem_archive(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    parent_id = _scratch_parent(pm, cleanup_plan, suffix)
+    sub_id = _make_subitem(parent_id, cleanup_plan, f"E2E Sub Archive {suffix}")
+
+    invoke_json(["subitem", "archive", "--id", str(sub_id)])
+
+    def _gone() -> None:
+        ids = {int(s["id"]) for s in invoke_json(["subitem", "list", "--parent", str(parent_id)])}
+        assert sub_id not in ids, f"subitem {sub_id} still active after archive"
+
+    wait_for("subitem archived", _gone)
+
+
+@pytest.mark.integration
+def test_live_subitem_move_dry_run(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
+    """`subitem move` dispatches `move_item_to_group`.
+
+    A real move can't be exercised on this account: every subitem lives in
+    the subitems board's single `topics` group, and monday refuses to create
+    a second group there (`GroupActionOnSubitemBoardException`). So there is
+    no distinct target group to move into — the command path is verified via
+    --dry-run instead, against a real subitem id.
+    """
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    parent_id = _scratch_parent(pm, cleanup_plan, suffix)
+    sub_id = _make_subitem(parent_id, cleanup_plan, f"E2E Sub Move {suffix}")
+
+    out = invoke_json(["--dry-run", "subitem", "move", "--id", str(sub_id), "--group", "topics"])
+    assert "move_item_to_group" in out["query"], out["query"]
+    assert out["variables"]["id"] == sub_id and out["variables"]["group"] == "topics"

@@ -161,3 +161,53 @@ def test_live_update_pin_and_like_lifecycle(
     invoke_json(["update", "unlike", str(update_id)])
     invoke_json(["update", "unpin", str(update_id)])
     invoke_json(["update", "delete", str(update_id)])
+
+
+@pytest.mark.integration
+def test_live_update_get(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
+    """`update get` returns one update by id with its replies thread."""
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    item_id = _scratch_item(pm, cleanup_plan, suffix)
+
+    body = f"e2e get marker {suffix}"
+    posted = invoke_json(["update", "create", "--item", str(item_id), "--body", body])
+    update_id = int(posted["id"])
+    invoke_json(["update", "reply", "--parent", str(update_id), "--body", f"reply {suffix}"])
+
+    def _fetched() -> None:
+        got = invoke_json(["update", "get", "--id", str(update_id)])
+        assert int(got["id"]) == update_id
+        replies = got.get("replies") or []
+        assert any(
+            f"reply {suffix}" in (r.get("text_body") or r.get("body") or "") for r in replies
+        ), got
+
+    wait_for("update get returns reply", _fetched)
+
+
+@pytest.mark.integration
+def test_live_update_clear(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
+    """`update clear` deletes every update on an item."""
+    pm = pm_board_session
+    suffix = uuid.uuid4().hex[:8]
+    item_id = _scratch_item(pm, cleanup_plan, suffix)
+
+    for i in range(2):
+        invoke_json(
+            ["update", "create", "--item", str(item_id), "--body", f"e2e clear {suffix} #{i}"]
+        )
+
+    def _present() -> None:
+        assert invoke_json(["update", "list", "--item", str(item_id)]), "no updates yet"
+
+    wait_for("updates present before clear", _present)
+
+    invoke_json(["update", "clear", "--item", str(item_id)])
+
+    def _empty() -> None:
+        assert not invoke_json(["update", "list", "--item", str(item_id)]), (
+            "updates remain after clear"
+        )
+
+    wait_for("updates cleared", _empty)

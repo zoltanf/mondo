@@ -152,7 +152,9 @@ Live integration tests live under `tests/integration/`, split by feature:
   (folder/board/group/columns/items, batch, error envelope, doc create).
 - `test_live_pm_board.py` — PM-board CLI listing, JSON export,
   CSV export→import round-trip, markdown export smoke.
-- `test_live_boards.py` — `board duplicate` (3 variants) + `board move`.
+- `test_live_boards.py` — `board duplicate` (3 variants) + `board move`,
+  plus `board update`/`board set-permission` and `board archive`
+  (archived boards return exit 6 from `board get`).
 - `test_live_folders.py` — folder tree, parent linking, rename, delete
   archives contained boards.
 - `test_live_doc_column.py` — `column doc set/get/append/clear`.
@@ -162,8 +164,39 @@ Live integration tests live under `tests/integration/`, split by feature:
 - `test_live_doc_md_roundtrip.py` — standalone-doc markdown round-trip
   (strict subset + rich golden) plus `doc duplicate`/`doc rename`
   (currently `xfail`-pinned for the `Int!` vs `ID!` schema mismatch).
-- `test_live_subitems.py` — subitem create/list/columns/delete.
-- `test_live_updates.py` — update create/reply/edit/pin/like/delete.
+- `test_live_subitems.py` — subitem create/list/columns/delete, plus
+  rename/archive. `subitem move` is dry-run-only: every subitem lives in
+  the subitems board's single `topics` group and monday refuses to create
+  a second group there, so there's no real target group to move into.
+- `test_live_updates.py` — update create/reply/edit/pin/like/delete,
+  plus `update get` (single update + replies) and `update clear`.
+- `test_live_item_ops.py` — item rename/duplicate/find/move/archive and
+  `item move-to-board` (onto a structure-only duplicate so no
+  `--column-mapping` is needed).
+- `test_live_groups.py` — group archive/duplicate/reorder. The archive
+  test registers no per-group cleanup: monday forbids deleting an
+  archived group (exit 3); the session board teardown cascades it away.
+- `test_live_column_types.py` — codec round-trips on a dedicated scratch
+  board for every writable scalar type not exercised by the PM board
+  (checkbox/rating/email/phone/link/country/world_clock/week/hour/
+  timeline/location/tags); `board_relation`/`dependency` codec expansion
+  via `--dry-run`; plus `column get-meta`/`change-metadata`/`rename`/
+  `set-many`/`clear`.
+- `test_live_doc_blocks.py` — per-block editing (`doc add-block`/
+  `update-block`/`delete-block`, `deltaFormat` content), `doc replace`,
+  `doc import-html`, and a tolerant smoke for `doc version-history`
+  (the 2026-04 `doc_version_history` field is server-side unstable).
+- `test_live_readonly.py` — non-mutating commands: `account`, `me`,
+  `auth whoami`, `schema` (all + per-resource), `complexity status`,
+  `favorite list`, `graphql` (read query), `aggregate board`,
+  `activity board`.
+- `test_live_admin.py` — real reads (`user list/get`, `team list/get`,
+  board-scoped `tag get`) plus **dry-run-only** coverage of every
+  org-level mutation (user role/activation/team-membership, `team
+  create`/`add-users`, `workspace create`/`update`/`add-user`, `webhook
+  create`, `notify send`). Dry-run prints the GraphQL mutation + asserts
+  the dispatched field name without sending — never touches real
+  users/teams/workspaces/webhooks/notifications.
 - `test_live_files.py` — file upload to a file column + download
   round-trip.
 - `test_live_cache.py` — read/write/invalidate cycle for every cache
@@ -173,7 +206,8 @@ Live integration tests live under `tests/integration/`, split by feature:
   a read, asserts the expected file appears at `<cache_dir>/default/
   <entity>/<scope>.json`, triggers the mutation, and verifies the
   file is gone. The doc test creates a throwaway workspace doc rather
-  than depending on `MONDO_TEST_DOC_ID`.
+  than depending on `MONDO_TEST_DOC_ID`. Also covers the `cache
+  status`/`clear`/`refresh` management commands.
 - `fixtures/doc_roundtrip/` — markdown inputs (`strict_input.md`,
   `rich_input.md`, `append_input.md`) and the golden output
   (`rich_expected_export.md`). Regenerate the golden with
