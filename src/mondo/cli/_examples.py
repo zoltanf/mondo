@@ -919,27 +919,8 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo validation list --board 1234567890 -q required_column_ids",
         ),
     ],
-    "validation create": [
-        Example(
-            "Require a value in a column",
-            "mondo validation create --board 1234567890 --column status --rule-type REQUIRED",
-        ),
-        Example(
-            "Constrain a number column to a minimum",
-            "mondo validation create --board 1234567890 --column numbers "
-            "--rule-type MIN_VALUE --value '{\"min\":10}' "
-            '--description "Non-zero price"',
-        ),
-    ],
-    "validation update": [
-        Example(
-            "Update a rule's description",
-            'mondo validation update --id 1 --description "Updated"',
-        ),
-    ],
-    "validation delete": [
-        Example("Delete a rule", "mondo validation delete --id 1 --yes"),
-    ],
+    # validation create/update/delete intentionally have no examples: monday
+    # removed those mutations in API 2026-01 and the commands now exit 2.
     # --- group -------------------------------------------------------------
     "group list": [
         Example(

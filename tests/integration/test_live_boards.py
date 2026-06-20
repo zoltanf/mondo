@@ -9,6 +9,7 @@ import pytest
 
 from ._helpers import (
     CleanupPlan,
+    invoke,
     invoke_json,
     wait_for,
 )
@@ -319,3 +320,55 @@ def test_live_board_move_between_folders(
     )
 
     wait_for("board moved to B", lambda: _board_in_folder(folder_b_id))
+
+
+def _scratch_board(workspace_id: int, cleanup_plan: CleanupPlan, label: str) -> int:
+    suffix = uuid.uuid4().hex[:8]
+    board = invoke_json(
+        ["board", "create", "--name", f"E2E {label} {suffix}", "--workspace", str(workspace_id)]
+    )
+    board_id = int(board["id"])
+    cleanup_plan.add(f"board {board_id}", "board", "delete", "--id", str(board_id), "--hard")
+    return board_id
+
+
+@pytest.mark.integration
+def test_live_board_update_and_set_permission(
+    pm_board_session: PmBoard, cleanup_plan: CleanupPlan
+) -> None:
+    """`board update --attribute name/description` and `board set-permission`."""
+    pm = pm_board_session
+    board_id = _scratch_board(pm.workspace_id, cleanup_plan, "Update")
+
+    new_name = f"E2E Board Renamed {uuid.uuid4().hex[:6]}"
+    invoke_json(["board", "update", str(board_id), "--attribute", "name", "--value", new_name])
+    invoke_json(
+        ["board", "update", str(board_id), "--attribute", "description", "--value", "e2e desc"]
+    )
+    # Restrict the default board role; exercises set_board_permission.
+    invoke_json(["board", "set-permission", str(board_id), "--role", "contributor"])
+
+    def _renamed() -> None:
+        b = invoke_json(["board", "get", "--id", str(board_id)])
+        assert b["name"] == new_name, f"name={b['name']!r}"
+
+    wait_for("board renamed", _renamed)
+
+
+@pytest.mark.integration
+def test_live_board_archive(pm_board_session: PmBoard, cleanup_plan: CleanupPlan) -> None:
+    """Archiving drops the board out of `board get` (monday returns not-found
+    for archived boards)."""
+    pm = pm_board_session
+    board_id = _scratch_board(pm.workspace_id, cleanup_plan, "Archive")
+
+    # Confirm it's live first.
+    invoke_json(["board", "get", "--id", str(board_id)])
+
+    invoke_json(["board", "archive", str(board_id)])
+
+    def _archived() -> None:
+        result = invoke(["board", "get", "--id", str(board_id)], expect_exit=None)
+        assert result.exit_code == 6, f"archived board still reachable: exit={result.exit_code}"
+
+    wait_for("board archived", _archived)

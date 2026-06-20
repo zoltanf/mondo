@@ -334,3 +334,29 @@ def test_live_cache_board_items_round_trip(
     re_listed = invoke_json(["item", "list", "--board", str(pm.board_id)])
     assert any(int(r["id"]) == item_id for r in re_listed), re_listed
     assert board_items_file.exists()
+
+
+@pytest.mark.integration
+def test_live_cache_status_refresh_clear_cli(
+    live_workspace_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `cache status` / `cache refresh` / `cache clear` management commands."""
+    del live_workspace_id
+    cache_root = _cache_root(monkeypatch)
+    workspaces_file = cache_root / "workspaces.json"
+
+    # Warm the workspaces directory cache.
+    invoke(["workspace", "list", "--refresh-cache"])
+    assert workspaces_file.exists()
+
+    # `cache status` reports on the cache files (smoke: exit 0, non-empty).
+    status = invoke(["cache", "status"])
+    assert status.exit_code == 0 and status.stdout.strip()
+
+    # `cache clear workspaces` removes the file; idempotent.
+    invoke(["cache", "clear", "workspaces"])
+    assert not workspaces_file.exists(), "cache clear did not remove workspaces.json"
+
+    # `cache refresh workspaces` re-fetches and rewrites it.
+    invoke(["cache", "refresh", "workspaces"])
+    assert workspaces_file.exists(), "cache refresh did not rewrite workspaces.json"

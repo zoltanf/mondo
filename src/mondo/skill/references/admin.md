@@ -118,10 +118,10 @@ mondo notify send \
 ## Validation rules
 
 ```bash
-mondo validation --help    # subcommands: list / create / delete / etc.
+mondo validation list --board 5094861043    # read a board's rule set
 ```
 
-*Gotcha:* the validation surface is mutation-heavy and varies by monday plan. `--dry-run` is your friend.
+*Gotcha:* `validation list` is the only working subcommand. monday **removed the validation-rule CRUD mutations in API 2026-01** — `create` / `update` / `delete` exit 2 with a message saying rule management is UI-only now (don't bother with `--dry-run`; they never reach a mutation).
 
 ## Complexity budget
 
@@ -132,7 +132,7 @@ mondo complexity status -o json
 ```
 
 ```json
-{"reset_in_seconds": 42, "before": 10000000, "after": 9874321, "query": 125679}
+{"samples": 1, "last_query_cost": 125679, "budget_before": 10000000, "budget_after": 9874321, "reset_in_seconds": 42, "total_cost": 125679}
 ```
 
 *Gotcha:* `before / after / query` show the consumed budget per request. To stay under budget on big lists, prefer `--filter` (server-side) and `-q` (projection) over fetching everything and filtering client-side. See `mondo help complexity` for the deep-dive.

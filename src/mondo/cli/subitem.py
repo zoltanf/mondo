@@ -313,8 +313,10 @@ def move_cmd(
         ...,
         "--group",
         help=(
-            "Target subitems-board group ID. monday auto-names groups "
-            "`subitems_of_<parent_item_id>`."
+            "Target subitems-board group ID (must already exist). monday "
+            "rejects creating new groups on a subitems board "
+            "(GroupActionOnSubitemBoardException), and subitems often share "
+            "one default group, so a distinct target may not be available."
         ),
     ),
 ) -> None:
