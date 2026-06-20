@@ -68,7 +68,11 @@ def test_live_cache_tags_invalidated_on_create_or_get(
 
     # Mint a tag (or get an existing one with this name). Either way, the
     # cache file should be dropped by `invalidate_entity(opts, "tags")`.
-    tag_name = f"e2e-cache-{uuid.uuid4().hex[:8]}"
+    # Use a stable name so `create-or-get` is idempotent across runs: there
+    # is no `tag delete` CLI path, so a unique name would leak a new tag onto
+    # the shared board every run. The name's uniqueness isn't load-bearing —
+    # any create-or-get call proves the cache invalidation.
+    tag_name = "e2e-cache-tag"
     invoke(["tag", "create-or-get", "--name", tag_name, "--board", str(live_test_board_id)])
     assert not tags_file.exists(), "tag create-or-get did not invalidate tags cache"
 
