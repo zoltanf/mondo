@@ -1339,12 +1339,19 @@ def update_block_cmd(
     ctx: typer.Context,
     id_pos: str | None = typer.Argument(None, metavar="[BLOCK_ID]", help="Block ID (positional)."),
     id_flag: str | None = typer.Option(None, "--id", "--block", help="Block ID (flag form)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
     content: str = typer.Option(
         ..., "--content", metavar="JSON", help="Replacement content as JSON."
     ),
 ) -> None:
-    """Replace a single block's content."""
+    """Replace a single block's content.
+
+    `--doc`/`--object-id` are accepted for symmetry with `add-block` but
+    ignored: block IDs are globally unique, so the block ID alone targets it.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    del doc_id, object_id  # flags kept for symmetry; block ID alone targets the block
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     parsed_content = parse_json_flag(content, flag_name="--content")
     # monday's JSON scalar wants the content as a JSON-encoded string (matches
@@ -1361,9 +1368,16 @@ def delete_block_cmd(
     ctx: typer.Context,
     id_pos: str | None = typer.Argument(None, metavar="[BLOCK_ID]", help="Block ID (positional)."),
     id_flag: str | None = typer.Option(None, "--id", "--block", help="Block ID (flag form)."),
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
 ) -> None:
-    """Delete a single block from a doc."""
+    """Delete a single block from a doc.
+
+    `--doc`/`--object-id` are accepted for symmetry with `add-block` but
+    ignored: block IDs are globally unique, so the block ID alone targets it.
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    del doc_id, object_id  # flags kept for symmetry; block ID alone targets the block
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     variables = {"block": block_id}
     data = execute(opts, DELETE_DOC_BLOCK, variables)

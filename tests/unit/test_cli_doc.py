@@ -1143,6 +1143,43 @@ class TestBlocks:
         result = runner.invoke(app, ["doc", "delete-block", "--id", "b1"])
         assert result.exit_code == 0, result.stdout
 
+    def test_delete_block_tolerates_object_id(self, httpx_mock: HTTPXMock) -> None:
+        # Agents extrapolate --object-id from add-block / doc get; block edits
+        # only need the (globally unique) block id, so the flag is accepted and
+        # ignored rather than rejected with "No such option".
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"delete_doc_block": {"id": "b1"}}),
+        )
+        result = runner.invoke(
+            app, ["doc", "delete-block", "--object-id", "5098716806", "--id", "b1"]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"] == {"block": "b1"}
+
+    def test_update_block_tolerates_doc(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"update_doc_block": {"id": "b1", "type": "normal_text"}}),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "update-block",
+                "--doc",
+                "1777684749",
+                "--id",
+                "b1",
+                "--content",
+                '{"deltaFormat":[{"insert":"new"}]}',
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert _last_body(httpx_mock)["variables"]["block"] == "b1"
+
 
 class TestDocPagination:
     def test_get_markdown_paginates_blocks(self, httpx_mock: HTTPXMock) -> None:
