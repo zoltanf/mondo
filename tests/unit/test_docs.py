@@ -781,6 +781,12 @@ class TestNormalizeMarkdownTables:
         md = "    | A | B |\n    | --- | --- |\n    | 1 |\n"
         assert normalize_markdown_tables(md) == md
 
+    def test_indented_separator_not_treated_as_table(self) -> None:
+        # Header is unindented but the separator is indented 4 spaces (code),
+        # so this is not a GFM table and following pipe text must be left as-is.
+        md = "| A | B |\n    | --- | --- |\n| 1 |\n"
+        assert normalize_markdown_tables(md) == md
+
 
 class TestCoalesceMarkdownEmphasis:
     """Issue #62: rejoin fragmented bold runs from the server exporter."""
@@ -799,6 +805,12 @@ class TestCoalesceMarkdownEmphasis:
 
     def test_code_span_pipes_not_corrupted(self) -> None:
         md = "before `a****b` after"
+        assert coalesce_markdown_emphasis(md) == md
+
+    def test_multi_backtick_code_span_not_corrupted(self) -> None:
+        # A literal `****` inside a double-backtick code span is real content,
+        # not an export seam — leave it untouched.
+        md = "before ``a****b`` after"
         assert coalesce_markdown_emphasis(md) == md
 
     def test_no_op_without_fragmentation(self) -> None:

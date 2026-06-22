@@ -121,6 +121,7 @@ def _is_table_header(lines: list[str], i: int) -> bool:
     return (
         i + 1 < len(lines)
         and not _is_indented_code(lines[i])
+        and not _is_indented_code(lines[i + 1])
         and "|" in lines[i]
         and bool(lines[i].strip())
         and _TABLE_SEPARATOR_RE.match(lines[i + 1]) is not None
@@ -399,7 +400,10 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
 
 # A fenced code block or an inline backtick span — content we must never touch
 # when coalescing emphasis (a literal `****` there is real, not fragmentation).
-_CODE_SPAN_OR_FENCE_RE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
+# The inline alternative matches a run of N backticks closed by a matching run
+# (via the \1 backreference), so multi-backtick spans like `` ``a****b`` `` are
+# protected too, not just single-backtick ones.
+_CODE_SPAN_OR_FENCE_RE = re.compile(r"```[\s\S]*?```|(`+)(?:(?!\1).)+?\1")
 
 # Zero-width bold boundary: a bold-close immediately followed by a bold-open,
 # i.e. a literal `****` that isn't part of a `***bold-italic***` triple span.
