@@ -691,6 +691,9 @@ EXAMPLES: dict[str, list[Example]] = {
     "doc delete": [
         Example("Delete a doc", "mondo doc delete --doc 7"),
     ],
+    "doc clear": [
+        Example("Remove all blocks but keep the doc", "mondo doc clear --doc 7"),
+    ],
     "doc export-markdown": [
         Example("Export the whole doc as markdown", "mondo doc export-markdown --doc 7"),
         Example(

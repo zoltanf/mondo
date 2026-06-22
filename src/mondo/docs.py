@@ -59,6 +59,187 @@ def extract_doc_ids_from_column_value(raw: str | None) -> list[int]:
     return ids
 
 
+# --- markdown preprocessing / chunking --------------------------------------
+
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$")
+
+
+def _split_table_row(line: str) -> list[str]:
+    """Split a GFM table row into its cell texts.
+
+    Strips one leading/trailing border pipe, then splits on each remaining
+    cell-separator `|`. A `\\|` escape and any `|` inside an inline-code span
+    (backtick-delimited) stay inside their cell, so a cell like `` `a|b` `` is
+    not mis-split into two columns.
+    """
+    body = line.strip()
+    if body.startswith("|"):
+        body = body[1:]
+    if body.endswith("|"):
+        body = body[:-1]
+    cells: list[str] = []
+    buf: list[str] = []
+    in_code = False
+    prev = ""
+    for ch in body:
+        if ch == "`":
+            in_code = not in_code
+            buf.append(ch)
+        elif ch == "|" and not in_code and prev != "\\":
+            cells.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        prev = ch
+    cells.append("".join(buf))
+    return [c.strip() for c in cells]
+
+
+def _is_table_header(lines: list[str], i: int) -> bool:
+    """True when line `i` is a GFM table header: a non-blank `| … |` row
+    immediately followed by a `|---|---|` separator row."""
+    return (
+        i + 1 < len(lines)
+        and "|" in lines[i]
+        and bool(lines[i].strip())
+        and _TABLE_SEPARATOR_RE.match(lines[i + 1]) is not None
+        and "|" in lines[i + 1]
+    )
+
+
+def normalize_markdown_tables(md: str) -> str:
+    """Normalize every GFM table body row to its header's column count.
+
+    A runaway body row with MORE cells than the header otherwise spawns an
+    extra column server-side (issue #61). Short rows are padded with empty
+    cells; overflow rows have their extra trailing cells MERGED into the last
+    column (joined with a space) so no data is lost. Pipe characters inside
+    fenced code blocks are left untouched.
+    """
+    lines = md.splitlines()
+    out: list[str] = []
+    in_fence = False
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        if _CODE_FENCE_RE.match(line):
+            in_fence = not in_fence
+            out.append(line)
+            i += 1
+            continue
+        if in_fence:
+            out.append(line)
+            i += 1
+            continue
+        # A table is a header row of `| ... |` immediately followed by a
+        # `|---|---|` separator. Detect that pair, then normalize body rows.
+        if _is_table_header(lines, i):
+            col_count = len(_split_table_row(line))
+            out.append(line)
+            out.append(lines[i + 1])
+            i += 2
+            while i < n and "|" in lines[i] and lines[i].strip():
+                cells = _split_table_row(lines[i])
+                if len(cells) > col_count:
+                    cells = [*cells[: col_count - 1], " ".join(cells[col_count - 1 :])]
+                elif len(cells) < col_count:
+                    cells = [*cells, *([""] * (col_count - len(cells)))]
+                out.append("| " + " | ".join(cells) + " |")
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    trailing_newline = "\n" if md.endswith("\n") else ""
+    return "\n".join(out) + trailing_newline
+
+
+def split_markdown_for_upload(md: str, *, max_chars: int = 8000) -> list[str]:
+    """Split markdown into chunks each under `max_chars`, on blank-line
+    (top-level block) boundaries only.
+
+    Never splits inside a fenced code block (```...```) or in the middle of a
+    contiguous GFM table (header + separator + body rows). A single atomic
+    block larger than `max_chars` is emitted as its own chunk (it can't be
+    split further without corrupting it).
+    """
+    if not md.strip():
+        return []
+
+    blocks = _atomic_blocks(md)
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for block in blocks:
+        block_len = len(block)
+        # +2 accounts for the blank-line separator rejoining blocks.
+        if current and current_len + block_len + 2 > max_chars:
+            chunks.append("\n\n".join(current))
+            current = []
+            current_len = 0
+        current.append(block)
+        current_len += block_len + 2
+
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+
+
+def _atomic_blocks(md: str) -> list[str]:
+    """Break markdown into atomic blocks at blank-line boundaries, keeping
+    fenced code blocks and contiguous GFM tables intact as single units."""
+    lines = md.splitlines()
+    blocks: list[str] = []
+    buf: list[str] = []
+    i = 0
+    n = len(lines)
+
+    def flush() -> None:
+        if buf:
+            text = "\n".join(buf).strip("\n")
+            if text.strip():
+                blocks.append(text)
+            buf.clear()
+
+    while i < n:
+        line = lines[i]
+        if _CODE_FENCE_RE.match(line):
+            # An atomic fenced block starts a fresh block and absorbs every
+            # line through the closing fence (never split inside).
+            flush()
+            fence_lines = [line]
+            i += 1
+            while i < n and not _CODE_FENCE_RE.match(lines[i]):
+                fence_lines.append(lines[i])
+                i += 1
+            if i < n:
+                fence_lines.append(lines[i])
+                i += 1
+            blocks.append("\n".join(fence_lines))
+            continue
+        if _is_table_header(lines, i):
+            # A contiguous table (header + separator + body) is one atomic
+            # block — never split across a chunk boundary.
+            flush()
+            table_lines = [line, lines[i + 1]]
+            i += 2
+            while i < n and "|" in lines[i] and lines[i].strip():
+                table_lines.append(lines[i])
+                i += 1
+            blocks.append("\n".join(table_lines))
+            continue
+        if not line.strip():
+            flush()
+            i += 1
+            continue
+        buf.append(line)
+        i += 1
+
+    flush()
+    return blocks
+
+
 # --- markdown → blocks ------------------------------------------------------
 
 # Monday's `DocBlockContentType` enum (API 2026-01) — note that the old
@@ -191,6 +372,45 @@ def markdown_to_blocks(md: str) -> list[dict[str, Any]]:
 
     flush_paragraph()
     return blocks
+
+
+# --- export markdown post-processing ----------------------------------------
+
+# A fenced code block or an inline backtick span — content we must never touch
+# when coalescing emphasis (a literal `****` there is real, not fragmentation).
+_CODE_SPAN_OR_FENCE_RE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
+
+# Zero-width bold boundary: a bold-close immediately followed by a bold-open,
+# i.e. a literal `****` that isn't part of a `***bold-italic***` triple span.
+# Bracketed by non-`*` (or string edge) so `***` runs are left intact.
+_FRAGMENTED_BOLD_RE = re.compile(r"(?<!\*)\*\*\*\*(?!\*)")
+
+
+def coalesce_markdown_emphasis(md: str) -> str:
+    """Merge fragmented bold runs in server-exported markdown (issue #62).
+
+    `export_markdown_from_doc` returns contiguous bold text as many adjacent
+    `**…**` spans, e.g. `**a ****b****c**`, leaving a zero-width `****` at each
+    seam. Collapsing every `****` (a bold-close immediately followed by a
+    bold-open) in a single pass rejoins them into one span: the regex
+    guards each match with non-`*` boundaries, so a removal joins two
+    non-`*` chars and can never manufacture a fresh seam.
+
+    Content inside backtick code spans / fenced blocks is preserved verbatim,
+    and `***bold-italic***` triple-asterisk spans are left intact (the pattern
+    only matches an isolated four-asterisk seam).
+    """
+    if "****" not in md:
+        return md
+
+    segments: list[str] = []
+    last = 0
+    for m in _CODE_SPAN_OR_FENCE_RE.finditer(md):
+        segments.append(_FRAGMENTED_BOLD_RE.sub("", md[last : m.start()]))
+        segments.append(m.group(0))  # code content: untouched
+        last = m.end()
+    segments.append(_FRAGMENTED_BOLD_RE.sub("", md[last:]))
+    return "".join(segments)
 
 
 # --- blocks → markdown ------------------------------------------------------

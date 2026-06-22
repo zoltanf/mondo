@@ -32,7 +32,9 @@ if TYPE_CHECKING:
     from mondo.cli.context import GlobalOpts
 
 
-def _emit_error(exc: BaseException, *, human_suffix: str | None = None) -> None:
+def _emit_error(
+    exc: BaseException, *, human_suffix: str | None = None, suggestion: str | None = None
+) -> None:
     """Print the human-readable red `error:` line plus, in machine
     output mode, the JSON envelope on stderr (Phase 5.1).
 
@@ -42,29 +44,38 @@ def _emit_error(exc: BaseException, *, human_suffix: str | None = None) -> None:
 
     `human_suffix` lets callers append a multi-line hint to the human
     output (e.g. `_execute_create_item`'s column-value reminder)
-    without polluting the structured envelope.
+    without polluting the structured envelope. `suggestion` carries an
+    actionable hint into both the human output and the structured
+    `suggestion` envelope field.
     """
     line = f"error: {exc}"
     if human_suffix:
         line = f"{line}\n{human_suffix}"
+    if suggestion:
+        line = f"{line}\n{suggestion}"
     typer.secho(line, fg=typer.colors.RED, err=True)
 
     ctx = click.get_current_context(silent=True)
     opts = ctx.ensure_object(_GlobalOpts) if ctx is not None else None
     if is_machine_output(opts):
-        envelope = error_envelope(exc)
+        envelope = error_envelope(exc, suggestion=suggestion)
         emit_envelope(envelope)
         mirror_envelope_to_stdout(opts, envelope)
 
 
-def handle_mondo_error_or_exit(exc: MondoError, *, human_suffix: str | None = None) -> NoReturn:
+def handle_mondo_error_or_exit(
+    exc: MondoError, *, human_suffix: str | None = None, suggestion: str | None = None
+) -> NoReturn:
     """Standard CLI handler for any `MondoError` raised mid-command.
 
     Collapses the `typer.secho(f"error: {e}", ...) + raise typer.Exit`
     pair so every command module shares one error-rendering path —
     including the Phase 5.1 JSON envelope on stderr in machine mode.
+
+    `suggestion` surfaces an actionable hint in both the human output and
+    the structured `suggestion` envelope field.
     """
-    _emit_error(exc, human_suffix=human_suffix)
+    _emit_error(exc, human_suffix=human_suffix, suggestion=suggestion)
     raise typer.Exit(code=int(exc.exit_code)) from exc
 
 

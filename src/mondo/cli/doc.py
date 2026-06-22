@@ -62,6 +62,7 @@ from mondo.services.docs import (
     object_id_hint,
     object_id_hint_with_client,
     resolve_doc_id_from_object_id,
+    top_level_block_ids,
 )
 
 if TYPE_CHECKING:
@@ -853,7 +854,28 @@ def create_cmd(
         "kind": kind.value if kind else None,
         "folder": folder_id,
     }
-    data = execute(opts, CREATE_DOC_IN_WORKSPACE, variables)
+    if opts.dry_run:
+        dry_run_and_exit(opts, CREATE_DOC_IN_WORKSPACE, variables)
+    client = client_or_exit(opts)
+    try:
+        with client:
+            result = client.execute(CREATE_DOC_IN_WORKSPACE, variables=variables)
+            data = result.get("data") or {}
+    except MondoError as e:
+        # A bare USER_UNAUTHORIZED here almost always means the workspace
+        # lacks a doc-creation license/policy for this account — not a broken
+        # token. Surface that so callers don't burn time re-checking auth (#64).
+        if e.code == "USER_UNAUTHORIZED" or "not permitted to create" in str(e):
+            handle_mondo_error_or_exit(
+                e,
+                suggestion=(
+                    "This usually means the workspace lacks a doc-creation "
+                    "license/policy for your account rather than a token-permission "
+                    "bug — ask an admin to verify doc-creation is enabled/licensed "
+                    "for you in this workspace."
+                ),
+            )
+        handle_mondo_error_or_exit(e)
     opts.emit(normalize_doc_entry(data.get("create_doc") or {}))
 
 
@@ -989,24 +1011,51 @@ def add_markdown_cmd(
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Load markdown from stdin."),
     after: str | None = typer.Option(None, "--after", help="Insert after this block ID."),
 ) -> None:
-    """Append markdown using monday's server-side markdown parser."""
+    """Append markdown using monday's server-side markdown parser.
+
+    Large input is auto-chunked on top-level block boundaries and looped, so a
+    single oversized call can't trip monday's INTERNAL_SERVER_ERROR (#59).
+    """
+    from mondo.docs import normalize_markdown_tables
+    from mondo.services.docs import add_markdown_chunked
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    md = _load_markdown(markdown, from_file, from_stdin)
-    data, resolved_doc = _execute_doc_command(
-        opts,
-        ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
-        {"md": md, "after": after},
-        doc_id=doc_id,
-        object_id=object_id,
-    )
-    result = data.get("add_content_to_doc_from_markdown") or {}
-    if not result.get("success"):
-        _fail_with_object_id_hint(
-            opts, result.get("error") or "add_content_to_doc_from_markdown failed", doc_id
+    _require_one_doc_flag(doc_id, object_id)
+    md = normalize_markdown_tables(_load_markdown(markdown, from_file, from_stdin))
+    if not md.strip():
+        handle_mondo_error_or_exit(
+            ValidationError("input produced no blocks (empty or unsupported markdown).")
         )
+
+    if doc_id is not None and opts.dry_run:
+        dry_run_and_exit(
+            opts, f"{ADD_CONTENT_TO_DOC_FROM_MARKDOWN} (chunked)", {"doc": doc_id, "md": md}
+        )
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
+            if opts.dry_run:
+                dry_run_and_exit(
+                    opts,
+                    f"{ADD_CONTENT_TO_DOC_FROM_MARKDOWN} (chunked)",
+                    {"doc": resolved_doc, "md": md},
+                )
+            try:
+                result = add_markdown_chunked(client, resolved_doc, md, after=after)
+            except MondoError as e:
+                # A partial multi-chunk write may have already landed blocks;
+                # drop the now-stale docs_blocks cache before surfacing the error.
+                invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
+                suffix = None
+                if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
+                    suffix = object_id_hint_with_client(client, doc_id)
+                handle_mondo_error_or_exit(e, human_suffix=suffix)
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+
     invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
-    opts.emit(result)
+    opts.emit({**result, "blocks_added": len(result.get("block_ids") or [])})
 
 
 def set_cmd(
@@ -1025,6 +1074,9 @@ def set_cmd(
     blanking the doc. The doc id / object_id / URL are preserved — only the
     body changes. Mirrors `column doc set` overwrite semantics.
     """
+    from mondo.docs import normalize_markdown_tables
+    from mondo.services.docs import add_markdown_chunked
+
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _require_one_doc_flag(doc_id, object_id)
     md = _load_markdown(markdown, from_file, from_stdin)
@@ -1033,6 +1085,7 @@ def set_cmd(
             "refusing to replace doc content with empty markdown "
             "(use `doc delete` to remove the doc itself)."
         )
+    md = normalize_markdown_tables(md)
 
     _plan = f"{ADD_CONTENT_TO_DOC_FROM_MARKDOWN} + {DELETE_DOC_BLOCK} (per prior block)"
     if doc_id is not None and opts.dry_run:
@@ -1048,27 +1101,33 @@ def set_cmd(
             if existing_doc is None:
                 _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                 raise typer.Exit(code=6)
-            old_block_ids = [
-                str(b["id"])
-                for b in (existing_doc.get("blocks") or [])
-                if isinstance(b, dict) and b.get("id")
-            ]
-            # Add the new content first (after the current last block); only
-            # once it lands do we delete the prior blocks. A failed add leaves
-            # the doc untouched — no destructive half-state / data loss.
-            added = exec_or_exit(
-                client,
-                ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
-                {"doc": resolved_doc, "md": md, "after": last_block_id(existing_doc)},
-            )
-            result = added.get("add_content_to_doc_from_markdown") or {}
-            if not result.get("success"):
-                # Nothing deleted yet: the doc still holds its original content.
-                _fail_with_object_id_hint(
-                    opts,
-                    result.get("error") or "add_content_to_doc_from_markdown failed",
-                    doc_id,
+            # Only top-level blocks: deleting a container (e.g. a `table`)
+            # cascades its children, and re-deleting a cascaded child id 400s.
+            old_block_ids = top_level_block_ids(existing_doc)
+            # Add the new content first (after the current last TOP-LEVEL
+            # block); only once it lands do we delete the prior blocks. A failed
+            # add leaves the doc untouched — no destructive half-state / data
+            # loss. The anchor must be a root block: the doc's literal last
+            # block may be a container child (e.g. a table cell), and anchoring
+            # `add_content_to_doc_from_markdown` to a child id is rejected with
+            # INTERNAL_SERVER_ERROR. Large markdown is auto-chunked (#59); all
+            # chunks must succeed before any delete runs.
+            try:
+                result = add_markdown_chunked(
+                    client,
+                    resolved_doc,
+                    md,
+                    after=(old_block_ids[-1] if old_block_ids else None),
                 )
+            except MondoError as e:
+                # No deletes have run, so the original content is intact; but a
+                # partial multi-chunk add may have appended blocks, so drop the
+                # now-stale docs_blocks cache before surfacing the error.
+                invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
+                suffix = None
+                if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
+                    suffix = object_id_hint_with_client(client, doc_id)
+                handle_mondo_error_or_exit(e, human_suffix=suffix)
             # New content is in place; the doc is mutated now, so drop the cache
             # even if a subsequent delete fails partway.
             invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
@@ -1199,6 +1258,45 @@ def delete_cmd(
     opts.emit(data.get("delete_doc"))
 
 
+@app.command("clear", epilog=epilog_for("doc clear"))
+def clear_cmd(
+    ctx: typer.Context,
+    doc_id: DocIdOpt = None,
+    object_id: DocObjectIdOpt = None,
+) -> None:
+    """Remove all blocks from a doc, keeping the doc itself.
+
+    Unlike `doc delete` (which removes the document), this empties the body
+    while preserving the id / object_id / URL. An already-empty doc is a
+    no-op (`cleared_blocks: 0`).
+    """
+    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+    _require_one_doc_flag(doc_id, object_id)
+
+    _plan = f"{DELETE_DOC_BLOCK} (per top-level block)"
+    if doc_id is not None and opts.dry_run:
+        dry_run_and_exit(opts, _plan, {"doc": doc_id})
+
+    client = client_or_exit(opts)
+    try:
+        with client:
+            resolved_doc = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
+            if opts.dry_run:
+                dry_run_and_exit(opts, _plan, {"doc": resolved_doc})
+            existing_doc = _fetch_doc_by_id_all_blocks(client, resolved_doc)
+            if existing_doc is None:
+                _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
+                raise typer.Exit(code=6)
+            block_ids = top_level_block_ids(existing_doc)
+            for block_id in block_ids:
+                exec_or_exit(client, DELETE_DOC_BLOCK, {"block": block_id})
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+
+    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
+    opts.emit({"id": resolved_doc, "cleared_blocks": len(block_ids)})
+
+
 @app.command("export-markdown", epilog=epilog_for("doc export-markdown"))
 def export_markdown_cmd(
     ctx: typer.Context,
@@ -1268,7 +1366,11 @@ def export_markdown_cmd(
         _fail_with_object_id_hint(
             opts, result.get("error") or "export_markdown_from_doc failed", doc_id
         )
-    markdown = result.get("markdown") or ""
+    from mondo.docs import coalesce_markdown_emphasis
+
+    # Monday's exporter fragments contiguous bold runs into adjacent `**…**`
+    # spans; rejoin them so the markdown reads as one span (#62).
+    markdown = coalesce_markdown_emphasis(result.get("markdown") or "")
     if out is not None:
         from mondo.cli._doc_images import localize_markdown_images
 

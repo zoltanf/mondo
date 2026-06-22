@@ -10,8 +10,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from mondo.api.errors import MondoError
-from mondo.api.queries import DOC_HEAD_BY_OBJECT_ID
+from mondo.api.errors import MondoError, ValidationError
+from mondo.api.queries import (
+    ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
+    DOC_GET_BY_ID_BLOCKS_PAGE,
+    DOC_HEAD_BY_OBJECT_ID,
+)
+
+_DOC_BLOCKS_PAGE_SIZE = 100
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -27,6 +33,118 @@ def last_block_id(doc: dict[str, Any]) -> str | None:
         return None
     last_id = last.get("id")
     return str(last_id) if last_id else None
+
+
+def top_level_block_ids(doc: dict[str, Any]) -> list[str]:
+    """Ids of a doc's top-level blocks (those without a `parent_block_id`).
+
+    Deleting a container block (e.g. a `table`) cascades its child blocks
+    server-side, and a follow-up delete of an already-cascaded child id 400s,
+    so callers that delete a doc's blocks must restrict to top-level ids.
+    """
+    return [
+        str(b["id"])
+        for b in (doc.get("blocks") or [])
+        if isinstance(b, dict) and b.get("id") and not b.get("parent_block_id")
+    ]
+
+
+def _last_root_block_id(
+    client: MondayClient, doc_id: int, *, among: set[str] | None = None
+) -> str | None:
+    """Return the id of a doc's last TOP-LEVEL block (no `parent_block_id`).
+
+    `add_content_to_doc_from_markdown`'s `block_ids` return list also contains
+    nested child blocks (e.g. table cells); anchoring the next chunk's
+    `afterBlockId` to such a child is rejected server-side with
+    INTERNAL_SERVER_ERROR. We re-read the doc and take a root block as the safe
+    insertion anchor instead.
+
+    `among` restricts the result to blocks whose id is in that set — used to
+    anchor the next chunk to the *previous chunk's* own last root block, so a
+    multi-chunk insert stays contiguous even when the initial `after` points
+    into the middle of the doc. Without this, the anchor would jump to the
+    whole doc's tail and scatter later chunks past pre-existing content.
+    """
+    page = 1
+    last_root: str | None = None
+    while True:
+        data = client.execute(
+            DOC_GET_BY_ID_BLOCKS_PAGE,
+            variables={"ids": [doc_id], "limit": _DOC_BLOCKS_PAGE_SIZE, "page": page},
+        )
+        docs = (data.get("data") or {}).get("docs") or []
+        if not docs:
+            break
+        blocks = docs[0].get("blocks") or []
+        for b in blocks:
+            if isinstance(b, dict) and b.get("id") and not b.get("parent_block_id"):
+                bid = str(b["id"])
+                if among is None or bid in among:
+                    last_root = bid
+        if len(blocks) < _DOC_BLOCKS_PAGE_SIZE:
+            break
+        page += 1
+    return last_root
+
+
+def add_markdown_chunked(
+    client: MondayClient,
+    doc_id: int,
+    md: str,
+    *,
+    after: str | None,
+) -> dict[str, Any]:
+    """Add markdown to a doc via `add_content_to_doc_from_markdown`, splitting
+    large input into safe chunks (issue #59).
+
+    A single call with a large doc (~18KB) returns INTERNAL_SERVER_ERROR and
+    writes nothing, so we split on top-level block boundaries and loop. Between
+    chunks the next `afterBlockId` is re-resolved to the doc's last *root*
+    block — the returned `block_ids` can include nested children (e.g. table
+    cells), and anchoring to one of those is itself rejected with
+    INTERNAL_SERVER_ERROR. Block ids are accumulated across chunks. Returns the
+    merged `{success, block_ids, error}` envelope.
+
+    A failed chunk short-circuits and surfaces a clear error noting how much
+    content (if any) was already added — the caller decides what to do with a
+    partial write.
+    """
+    from mondo.docs import split_markdown_for_upload
+
+    chunks = split_markdown_for_upload(md)
+    if not chunks:
+        return {"success": True, "block_ids": [], "error": None}
+
+    all_block_ids: list[str] = []
+    prev_after = after
+    for idx, chunk in enumerate(chunks):
+        data = client.execute(
+            ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
+            variables={"doc": doc_id, "md": chunk, "after": prev_after},
+        )
+        result = (data.get("data") or {}).get("add_content_to_doc_from_markdown") or {}
+        if not result.get("success"):
+            base = result.get("error") or "add_content_to_doc_from_markdown failed"
+            if idx > 0:
+                raise ValidationError(
+                    f"{base} (partial content added: {len(all_block_ids)} blocks "
+                    f"from {idx} of {len(chunks)} chunks before the failure)"
+                )
+            raise ValidationError(base)
+        chunk_block_ids = result.get("block_ids") or []
+        all_block_ids.extend(chunk_block_ids)
+        # Only re-fetch the anchor when more chunks remain (saves one read on
+        # the common single-chunk path). Anchor to the last root block *this
+        # chunk* produced, so the next chunk lands right after it — not after
+        # the whole doc's tail (which would scatter chunks when `after` points
+        # mid-doc).
+        if idx < len(chunks) - 1:
+            prev_after = (
+                _last_root_block_id(client, doc_id, among=set(chunk_block_ids)) or prev_after
+            )
+
+    return {"success": True, "block_ids": all_block_ids, "error": None}
 
 
 def resolve_doc_id_from_object_id(
