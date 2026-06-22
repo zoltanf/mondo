@@ -95,11 +95,20 @@ def _split_table_row(line: str) -> list[str]:
     return [c.strip() for c in cells]
 
 
+def _is_indented_code(line: str) -> bool:
+    """True when `line` is a markdown indented code block (4+ leading spaces or
+    a leading tab). Such a line is code, never a GFM table row — even if it
+    happens to contain pipes."""
+    return line[:1] == "\t" or (len(line) - len(line.lstrip(" "))) >= 4
+
+
 def _is_table_header(lines: list[str], i: int) -> bool:
     """True when line `i` is a GFM table header: a non-blank `| … |` row
-    immediately followed by a `|---|---|` separator row."""
+    immediately followed by a `|---|---|` separator row. Indented code blocks
+    are excluded so a code sample containing pipes is never rewritten."""
     return (
         i + 1 < len(lines)
+        and not _is_indented_code(lines[i])
         and "|" in lines[i]
         and bool(lines[i].strip())
         and _TABLE_SEPARATOR_RE.match(lines[i + 1]) is not None
@@ -382,8 +391,24 @@ _CODE_SPAN_OR_FENCE_RE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
 
 # Zero-width bold boundary: a bold-close immediately followed by a bold-open,
 # i.e. a literal `****` that isn't part of a `***bold-italic***` triple span.
-# Bracketed by non-`*` (or string edge) so `***` runs are left intact.
+# Bracketed by non-`*` (or string edge) so `***` runs are left intact. The
+# exporter scatters these seams next to spaces too (`here, ****an`, `it**** **
+# **i`), so no non-space guard — instead `_collapse_bold_seams` skips whole
+# lines that are thematic breaks (a lone `****`), the one false positive.
 _FRAGMENTED_BOLD_RE = re.compile(r"(?<!\*)\*\*\*\*(?!\*)")
+
+# A line that is *only* asterisks (3+) is a thematic break / horizontal rule,
+# not a fragmented-bold seam — never strip its asterisks.
+_THEMATIC_BREAK_RE = re.compile(r"^\s*\*{3,}\s*$")
+
+
+def _collapse_bold_seams(text: str) -> str:
+    """Strip `****` seams from `text`, but leave a standalone thematic-break
+    line (a lone `****`) intact."""
+    return "\n".join(
+        line if _THEMATIC_BREAK_RE.match(line) else _FRAGMENTED_BOLD_RE.sub("", line)
+        for line in text.split("\n")
+    )
 
 
 def coalesce_markdown_emphasis(md: str) -> str:
@@ -397,8 +422,9 @@ def coalesce_markdown_emphasis(md: str) -> str:
     non-`*` chars and can never manufacture a fresh seam.
 
     Content inside backtick code spans / fenced blocks is preserved verbatim,
-    and `***bold-italic***` triple-asterisk spans are left intact (the pattern
-    only matches an isolated four-asterisk seam).
+    `***bold-italic***` triple-asterisk spans are left intact (the pattern only
+    matches an isolated four-asterisk seam), and a standalone `****` line — a
+    thematic break / horizontal rule — is never stripped.
     """
     if "****" not in md:
         return md
@@ -406,10 +432,10 @@ def coalesce_markdown_emphasis(md: str) -> str:
     segments: list[str] = []
     last = 0
     for m in _CODE_SPAN_OR_FENCE_RE.finditer(md):
-        segments.append(_FRAGMENTED_BOLD_RE.sub("", md[last : m.start()]))
+        segments.append(_collapse_bold_seams(md[last : m.start()]))
         segments.append(m.group(0))  # code content: untouched
         last = m.end()
-    segments.append(_FRAGMENTED_BOLD_RE.sub("", md[last:]))
+    segments.append(_collapse_bold_seams(md[last:]))
     return "".join(segments)
 
 

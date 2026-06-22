@@ -2036,7 +2036,7 @@ class TestAddMarkdownChunking:
 class TestDocSetChunking:
     """Issue #59: `doc set` chunks too, and never deletes on a failed add."""
 
-    def test_failed_add_chunk_does_not_delete(self, httpx_mock: HTTPXMock) -> None:
+    def test_failed_add_chunk_rolls_back_partial_and_keeps_old(self, httpx_mock: HTTPXMock) -> None:
         big = "\n\n".join("para " + str(i) + " " + "x" * 9000 for i in range(3))
         # 1) fetch existing blocks
         httpx_mock.add_response(
@@ -2044,7 +2044,7 @@ class TestDocSetChunking:
             method="POST",
             json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "old2"}]}]}),
         )
-        # 2) first add chunk succeeds
+        # 2) first add chunk succeeds, appending n0
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -2064,7 +2064,7 @@ class TestDocSetChunking:
             method="POST",
             json=_ok({"docs": [{"id": "10", "blocks": [{"id": "n0"}]}]}),
         )
-        # 3) second add chunk FAILS — no deletes must follow
+        # 3) second add chunk FAILS
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -2078,15 +2078,31 @@ class TestDocSetChunking:
                 }
             ),
         )
+        # 4) rollback re-fetch: doc now holds the old blocks + the appended n0
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "old2"}, {"id": "n0"}]}]}
+            ),
+        )
+        # 5) rollback deletes the partial block
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "n0"}})
+        )
         # any further calls (object-id probe) answer "no match"
         httpx_mock.add_response(
             url=ENDPOINT, method="POST", json=_ok({"docs": []}), is_reusable=True
         )
         result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", big])
         assert result.exit_code != 0
-        bodies = json.dumps([json.loads(r.content) for r in httpx_mock.get_requests()])
-        # The original blocks are preserved — the delete loop never ran.
-        assert "delete_doc_block" not in bodies
+        deleted = [
+            json.loads(r.content)["variables"].get("block")
+            for r in httpx_mock.get_requests()
+            if "delete_doc_block" in json.loads(r.content).get("query", "")
+        ]
+        # Only the partially-added block is rolled back; the old content stays.
+        assert deleted == ["n0"]
 
 
 class TestDocClear:

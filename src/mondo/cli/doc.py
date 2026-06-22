@@ -16,6 +16,7 @@ workspace with a block-structured body. The CLI covers:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sys
@@ -1058,6 +1059,31 @@ def add_markdown_cmd(
     opts.emit({**result, "blocks_added": len(result.get("block_ids") or [])})
 
 
+def _rollback_added_blocks(client: MondayClient, doc_id: int, *, keep: list[str]) -> None:
+    """Best-effort: delete any top-level blocks added during a failed chunked
+    `set`, restoring the doc to its pre-add block set (`keep`).
+
+    A multi-chunk add can append some new blocks before a later chunk fails;
+    without this the doc would be left with the old content *plus* a partial
+    replacement. Swallows its own errors — the caller surfaces the original
+    failure, which must not be masked by a rollback hiccup.
+    """
+    keep_set = set(keep)
+    try:
+        # _fetch_doc_by_id_all_blocks → exec_or_exit raises typer.Exit (not
+        # MondoError) on failure; swallow both so a rollback hiccup can't mask
+        # the original error.
+        doc = _fetch_doc_by_id_all_blocks(client, doc_id)
+    except MondoError, typer.Exit:
+        return
+    if doc is None:
+        return
+    for bid in top_level_block_ids(doc):
+        if bid not in keep_set:
+            with contextlib.suppress(MondoError):
+                client.execute(DELETE_DOC_BLOCK, variables={"block": bid})
+
+
 def set_cmd(
     ctx: typer.Context,
     doc_id: DocIdOpt = None,
@@ -1071,8 +1097,10 @@ def set_cmd(
     Writes the new markdown via monday's server-side parser, then removes the
     doc's prior blocks. The new content is added *before* the old blocks are
     deleted, so a failed write leaves the original content intact rather than
-    blanking the doc. The doc id / object_id / URL are preserved — only the
-    body changes. Mirrors `column doc set` overwrite semantics.
+    blanking the doc; if a multi-chunk add fails partway, the blocks it already
+    appended are rolled back so the doc is left exactly as it was. The doc id /
+    object_id / URL are preserved — only the body changes. Mirrors `column doc
+    set` overwrite semantics.
     """
     from mondo.docs import normalize_markdown_tables
     from mondo.services.docs import add_markdown_chunked
@@ -1121,8 +1149,10 @@ def set_cmd(
                 )
             except MondoError as e:
                 # No deletes have run, so the original content is intact; but a
-                # partial multi-chunk add may have appended blocks, so drop the
-                # now-stale docs_blocks cache before surfacing the error.
+                # partial multi-chunk add may have appended blocks. Roll those
+                # back (best-effort) so the failed replace leaves the doc as it
+                # was, then drop the now-stale docs_blocks cache.
+                _rollback_added_blocks(client, resolved_doc, keep=old_block_ids)
                 invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
                 suffix = None
                 if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
@@ -1288,12 +1318,15 @@ def clear_cmd(
                 _emit_doc_id_not_found(client, resolved_doc, probe=doc_id is not None)
                 raise typer.Exit(code=6)
             block_ids = top_level_block_ids(existing_doc)
+            if block_ids:
+                # Deletes mutate the doc; drop the cache up front so a failure
+                # partway through the loop can't leave a stale docs_blocks entry.
+                invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
             for block_id in block_ids:
                 exec_or_exit(client, DELETE_DOC_BLOCK, {"block": block_id})
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
     opts.emit({"id": resolved_doc, "cleared_blocks": len(block_ids)})
 
 

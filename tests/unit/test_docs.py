@@ -768,6 +768,12 @@ class TestNormalizeMarkdownTables:
         out = normalize_markdown_tables(md)
         assert out.splitlines()[2] == "| x \\| y | z |"
 
+    def test_indented_code_block_not_treated_as_table(self) -> None:
+        # A 4-space indented code block whose lines look like a ragged table
+        # is code, not a GFM table — it must be left byte-for-byte unchanged.
+        md = "    | A | B |\n    | --- | --- |\n    | 1 |\n"
+        assert normalize_markdown_tables(md) == md
+
 
 class TestCoalesceMarkdownEmphasis:
     """Issue #62: rejoin fragmented bold runs from the server exporter."""
@@ -791,3 +797,9 @@ class TestCoalesceMarkdownEmphasis:
     def test_no_op_without_fragmentation(self) -> None:
         md = "**bold** and *italic* text"
         assert coalesce_markdown_emphasis(md) == md
+
+    def test_standalone_thematic_break_preserved(self) -> None:
+        # A lone `****` line is a horizontal rule, not a bold seam — keep it,
+        # while still collapsing a real seam elsewhere in the same document.
+        md = "**a ****b**\n\n****\n\nmore"
+        assert coalesce_markdown_emphasis(md) == "**a b**\n\n****\n\nmore"
