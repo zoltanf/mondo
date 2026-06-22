@@ -1059,16 +1059,22 @@ def add_markdown_cmd(
     opts.emit({**result, "blocks_added": len(result.get("block_ids") or [])})
 
 
-def _rollback_added_blocks(client: MondayClient, doc_id: int, *, keep: list[str]) -> None:
-    """Best-effort: delete any top-level blocks added during a failed chunked
-    `set`, restoring the doc to its pre-add block set (`keep`).
+def _rollback_added_blocks(
+    client: MondayClient, doc_id: int, *, added: list[str], keep: list[str]
+) -> None:
+    """Best-effort: delete the top-level blocks a failed chunked `set` already
+    created, restoring the doc to its pre-add block set.
 
-    A multi-chunk add can append some new blocks before a later chunk fails;
-    without this the doc would be left with the old content *plus* a partial
-    replacement. Swallows its own errors — the caller surfaces the original
-    failure, which must not be masked by a rollback hiccup.
+    `added` is the ids the add reported (top-level + nested children); `keep`
+    is the doc's pre-add top-level ids. We delete only blocks that are BOTH
+    currently top-level AND in `added` — so a concurrent edit landing between
+    the original fetch and this rollback is never touched, and child ids (whose
+    parent's deletion cascades them, and which 400 on direct delete) are
+    skipped. Swallows its own errors — the caller surfaces the original failure.
     """
-    keep_set = set(keep)
+    targets = set(added) - set(keep)
+    if not targets:
+        return
     try:
         # _fetch_doc_by_id_all_blocks → exec_or_exit raises typer.Exit (not
         # MondoError) on failure; swallow both so a rollback hiccup can't mask
@@ -1079,7 +1085,7 @@ def _rollback_added_blocks(client: MondayClient, doc_id: int, *, keep: list[str]
     if doc is None:
         return
     for bid in top_level_block_ids(doc):
-        if bid not in keep_set:
+        if bid in targets:
             with contextlib.suppress(MondoError):
                 client.execute(DELETE_DOC_BLOCK, variables={"block": bid})
 
@@ -1103,7 +1109,7 @@ def set_cmd(
     set` overwrite semantics.
     """
     from mondo.docs import normalize_markdown_tables
-    from mondo.services.docs import add_markdown_chunked
+    from mondo.services.docs import PartialDocAddError, add_markdown_chunked
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     _require_one_doc_flag(doc_id, object_id)
@@ -1149,10 +1155,13 @@ def set_cmd(
                 )
             except MondoError as e:
                 # No deletes have run, so the original content is intact; but a
-                # partial multi-chunk add may have appended blocks. Roll those
-                # back (best-effort) so the failed replace leaves the doc as it
-                # was, then drop the now-stale docs_blocks cache.
-                _rollback_added_blocks(client, resolved_doc, keep=old_block_ids)
+                # partial multi-chunk add may have appended blocks. Roll back
+                # exactly the blocks that add created (best-effort) so the failed
+                # replace leaves the doc as it was, then drop the stale cache.
+                if isinstance(e, PartialDocAddError):
+                    _rollback_added_blocks(
+                        client, resolved_doc, added=e.block_ids, keep=old_block_ids
+                    )
                 invalidate_entity(opts, "docs_blocks", scope=str(resolved_doc))
                 suffix = None
                 if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:

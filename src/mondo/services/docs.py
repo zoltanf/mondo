@@ -19,6 +19,18 @@ from mondo.api.queries import (
 
 _DOC_BLOCKS_PAGE_SIZE = 100
 
+
+class PartialDocAddError(ValidationError):
+    """A multi-chunk add that failed *after* earlier chunks already wrote
+    blocks. Carries the ids those chunks created (top-level + nested children)
+    so the caller can roll back exactly that content — never a concurrent edit.
+    """
+
+    def __init__(self, message: str, block_ids: list[str]) -> None:
+        super().__init__(message)
+        self.block_ids = block_ids
+
+
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
     from mondo.cli.context import GlobalOpts
@@ -127,9 +139,10 @@ def add_markdown_chunked(
         if not result.get("success"):
             base = result.get("error") or "add_content_to_doc_from_markdown failed"
             if idx > 0:
-                raise ValidationError(
+                raise PartialDocAddError(
                     f"{base} (partial content added: {len(all_block_ids)} blocks "
-                    f"from {idx} of {len(chunks)} chunks before the failure)"
+                    f"from {idx} of {len(chunks)} chunks before the failure)",
+                    list(all_block_ids),
                 )
             raise ValidationError(base)
         chunk_block_ids = result.get("block_ids") or []
