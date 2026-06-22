@@ -27,7 +27,22 @@ when you need to:
 > and runs the value as the GraphQL document anyway (with a stderr
 > note), but the JMESPath projection is disabled for that invocation —
 > the value can't be both. Pass the query positionally to combine it
-> with a projection: `mondo graphql 'query { … }' -q 'data.me'`.
+> with a projection: `mondo graphql 'query { … }' -q 'me'`.
+
+## Output: unwrapped `data` by default
+
+Like the typed subcommands, `mondo graphql` prints the **unwrapped `data`
+object** — not the full `{data, errors, extensions}` envelope. So `-q`
+and jq paths address the result directly, with no `.data` prefix:
+
+    mondo graphql 'query { me { id name } }' -q 'me.name'
+    mondo graphql 'query { boards { id } }' | jq '.boards[]'
+
+A response that carries a GraphQL `errors` array fails loudly (non-zero
+exit), just like a typed subcommand — it does not emit a misleading
+`null`. Pass `--raw` to print the full envelope verbatim instead:
+
+    mondo graphql 'query { me { id } }' --raw
 
 ## Variables
 

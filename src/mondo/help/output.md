@@ -29,7 +29,7 @@ payload into a table-friendly form and still get a rendered table:
 
     # Filter client-side (server has no name filter on `boards`):
     mondo graphql 'query { boards(limit:200) { id name } }' \
-        -q "data.boards[?contains(name,'Pager')]" -o table
+        -q "boards[?contains(name,'Pager')]" -o table
 
 ## CSV-style field projection (`--fields`)
 
@@ -46,7 +46,7 @@ walk nested dicts:
     # Works on single-dict responses too
     mondo item get --id 987 --fields id,name,url --with-url
 
-Pipeline order: `-q` runs first (envelope extraction), then `--fields`
+Pipeline order: `-q` runs first (payload projection), then `--fields`
 (row-shape narrowing). Both compose freely. Reach for `-q` when you
 need filtering / aggregation / re-shaping; reach for `--fields` when you
 just want a smaller dict per row.
