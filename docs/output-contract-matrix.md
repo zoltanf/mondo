@@ -208,14 +208,20 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `CREATE_DOC_BLOCK.create_doc_block[]`
   notes: One emitted row per created block.
 - `doc add-markdown`
-  type: `manual-review`
-  fields: none
-  source: `doc.py`
-  notes: Could not auto-infer. Final emit expression: result
+  type: `object`
+  fields: `success`, `block_ids`, `error`, `blocks_added`
+  source: `ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + blocks_added`
+  notes: Server-side markdown-parser append. blocks_added = len(block_ids). Large input is auto-chunked on top-level block boundaries; empty/whitespace input is refused before any API call.
+- `doc clear`
+  type: `object`
+  fields: `id`, `cleared_blocks`
+  source: `DELETE_DOC_BLOCK (per top-level block) → {id, cleared_blocks}`
+  notes: Empties a doc body but keeps the doc (id/object_id/URL preserved). cleared_blocks counts deleted top-level blocks; 0 when already empty.
 - `doc create`
   type: `object`
   fields: `id`, `object_id`, `name`, `url`
-  source: `CREATE_DOC_IN_WORKSPACE.create_doc`
+  source: `CREATE_DOC_IN_WORKSPACE.create_doc → normalize_doc_entry{id,object_id,name,url}`
+  notes: Slim header for the new (empty) doc; url always present (--with-url is a no-op). On USER_UNAUTHORIZED the error envelope (not this success row) carries a license/policy suggestion.
 - `doc delete`
   type: `manual-review`
   fields: none
@@ -263,7 +269,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `object`
   fields: `success`, `block_ids`, `error`, `replaced_blocks`
   source: `ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks`
-  notes: In-place full content replace. Adds the new markdown first, then deletes the prior blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`.
+  notes: In-place full content replace. Adds the new markdown first (auto-chunked for large input; a failed multi-chunk write rolls back its partial blocks), then deletes the prior blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`.
 - `doc update-block`
   type: `object`
   fields: `id`, `type`

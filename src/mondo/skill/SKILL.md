@@ -1,7 +1,7 @@
 ---
 name: mondo
 description: Use when the user wants to do anything against monday.com via the `mondo` CLI — reading or writing workspaces, folders, boards, groups, items, subitems, columns, updates, docs, files, users, teams, webhooks, or when they paste a monday.com URL.
-version: "1.6.0"
+version: "1.7.0"
 ---
 
 # mondo
@@ -79,7 +79,7 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 - **Never `2>/dev/null` a mondo call.** Errors, recovery hints, and the JSON error envelope live on stderr; suppressed, a failure is just empty stdout + a nonzero exit. Benign notices (cache hits, skill-freshness) are withheld in non-TTY runs, so stderr is errors-only in pipelines — use `2>&1` or leave it attached and branch on the exit code.
 - **Name search over directories is cached.** `board / doc list --name-contains` serves from an 8h directory cache (folders have no name filter — use `folder tree` or plain `folder list`); the first cold search of the day pays the full directory fetch (parallelized, but still the expensive step). Don't add `--no-cache` to name searches out of caution — the cache IS the fast path; use `--refresh-cache` only when you have a concrete staleness reason.
 - **Cleanup:** delete commands soft-archive by default; pass `--hard` for true delete.
-- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. **Pass the query as a positional** — `-q/--query` is the global JMESPath projection, not the GraphQL query. If a GraphQL document lands in `--query` anyway, mondo runs it as the query (stderr note) but disables the projection for that call; pass it positionally to combine with `-q`. Before reaching for `graphql`, check there isn't already a subcommand: a file/asset download link is `mondo file url --asset <id> -q '[0].public_url'`, **not** a hand-written `graphql 'query { assets(ids:[…]) { public_url } }'`.
+- **Escape hatch:** `mondo graphql '<query>'` for anything no subcommand wraps. It emits the **unwrapped `data` object** by default (so `-q`/jq address the payload directly — no `.data` prefix); pass `--raw` for the full `{data, errors, extensions}` envelope. **Pass the query as a positional** — `-q/--query` is the global JMESPath projection, not the GraphQL query. If a GraphQL document lands in `--query` anyway, mondo runs it as the query (stderr note) but disables the projection for that call; pass it positionally to combine with `-q`. Before reaching for `graphql`, check there isn't already a subcommand: a file/asset download link is `mondo file url --asset <id> -q '[0].public_url'`, **not** a hand-written `graphql 'query { assets(ids:[…]) { public_url } }'`.
 - **Cache notice:** read commands may emit `cache: hit (entity=…, age=…)` to stderr. Suppress with `MONDO_NO_CACHE_NOTICE=1`. Force refresh with `--no-cache` or `--refresh-cache` on any cached read (`<entity> list/get` directories plus per-board / per-item / per-doc caches — `item get`, `item list` bare board scope (60s TTL), `subitem list/get`, `update list --item`, `doc get`, `board get`, `webhook list`, `tag list/get`). Filtered `item list` variants, account-wide `update list`, and `mondo graphql` stay live. See `docs/caching.md` for the per-entity TTL table.
 
 ## When references aren't enough

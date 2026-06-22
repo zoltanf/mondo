@@ -342,6 +342,43 @@ MANUAL_ROWS: dict[str, Row] = {
         notes="Single created block payload.",
         source="CREATE_DOC_BLOCK.create_doc_block",
     ),
+    # `add-markdown` emit is `{**result, "blocks_added": ...}` where result is
+    # the chunked add envelope — AST can't infer the spread, so it's manual.
+    "doc add-markdown": Row(
+        command="doc add-markdown",
+        output_type="object",
+        fields=["success", "block_ids", "error", "blocks_added"],
+        notes=(
+            "Server-side markdown-parser append. blocks_added = len(block_ids). Large input is "
+            "auto-chunked on top-level block boundaries; empty/whitespace input is refused before "
+            "any API call."
+        ),
+        source="ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + blocks_added",
+    ),
+    # `create` emit is `normalize_doc_entry(create_doc)` — AST can't infer it, so
+    # the slim doc header is pinned here.
+    "doc create": Row(
+        command="doc create",
+        output_type="object",
+        fields=["id", "object_id", "name", "url"],
+        notes=(
+            "Slim header for the new (empty) doc; url always present (--with-url is a no-op). On "
+            "USER_UNAUTHORIZED the error envelope (not this success row) carries a license/policy "
+            "suggestion."
+        ),
+        source="CREATE_DOC_IN_WORKSPACE.create_doc → normalize_doc_entry{id,object_id,name,url}",
+    ),
+    # `clear` deletes every top-level block then emits a count — manual.
+    "doc clear": Row(
+        command="doc clear",
+        output_type="object",
+        fields=["id", "cleared_blocks"],
+        notes=(
+            "Empties a doc body but keeps the doc (id/object_id/URL preserved). cleared_blocks "
+            "counts deleted top-level blocks; 0 when already empty."
+        ),
+        source="DELETE_DOC_BLOCK (per top-level block) → {id, cleared_blocks}",
+    ),
     # `doc set` / `doc replace` share one handler (set_cmd), registered via
     # `app.command(...)(set_cmd)` rather than a decorator, so the AST walk
     # below cannot discover them — they live here as manual rows. The emit is
@@ -352,8 +389,9 @@ MANUAL_ROWS: dict[str, Row] = {
         output_type="object",
         fields=["success", "block_ids", "error", "replaced_blocks"],
         notes=(
-            "In-place full content replace. Adds the new markdown first, then deletes the prior "
-            "blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`."
+            "In-place full content replace. Adds the new markdown first (auto-chunked for large "
+            "input; a failed multi-chunk write rolls back its partial blocks), then deletes the "
+            "prior blocks; replaced_blocks counts the deleted originals. Alias: `doc replace`."
         ),
         source="ADD_CONTENT_TO_DOC_FROM_MARKDOWN.add_content_to_doc_from_markdown + replaced_blocks",
     ),
