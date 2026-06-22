@@ -1466,6 +1466,13 @@ class TestDocNewOps:
         body = _last_body(httpx_mock)
         assert body["variables"] == {"doc": 10, "md": "# Hi", "after": None}
 
+    def test_add_markdown_empty_input_errors_without_api_call(self, httpx_mock: HTTPXMock) -> None:
+        # Whitespace-only markdown must not silently report success; it errors
+        # before any client/API call (mirrors `add-content`'s no-blocks guard).
+        result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", "   "])
+        assert result.exit_code != 0
+        assert httpx_mock.get_requests() == []
+
     def test_import_html(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
@@ -1610,6 +1617,105 @@ class TestDocSet:
         bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
         # the delete loop never runs, so the original blocks are not lost
         assert "delete_doc_block" not in json.dumps(bodies)
+
+    def test_set_deletes_only_top_level_blocks(self, httpx_mock: HTTPXMock) -> None:
+        # Deleting a container cascades its children server-side; re-deleting an
+        # already-cascaded child id 400s. So a child block (parent_block_id set)
+        # must NOT appear in the delete loop — only top-level ids are deleted.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "10",
+                            "blocks": [
+                                {"id": "t1"},
+                                {"id": "c1", "parent_block_id": "t1"},
+                                {"id": "b2"},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["n1"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "t1"}})
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "b2"}})
+        )
+        result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", "# New"])
+        assert result.exit_code == 0, result.stdout
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        deleted = [
+            b["variables"]["block"] for b in bodies if "delete_doc_block" in b.get("query", "")
+        ]
+        assert deleted == ["t1", "b2"]
+        assert json.loads(result.stdout)["replaced_blocks"] == 2
+
+    def test_set_anchors_add_to_last_root_not_child(self, httpx_mock: HTTPXMock) -> None:
+        # The doc ends with a container child (c1, parent t1). The add must
+        # anchor to the last TOP-LEVEL block (t1), never the child — anchoring
+        # `add_content_to_doc_from_markdown` to a child id 500s server-side.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "10",
+                            "blocks": [
+                                {"id": "b1"},
+                                {"id": "t1"},
+                                {"id": "c1", "parent_block_id": "t1"},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["n1"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "b1"}})
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "t1"}})
+        )
+        result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", "# New"])
+        assert result.exit_code == 0, result.stdout
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        add_body = next(
+            b for b in bodies if "add_content_to_doc_from_markdown" in b.get("query", "")
+        )
+        assert add_body["variables"]["after"] == "t1"
 
     def test_empty_markdown_rejected_without_mutating(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", "   "])
@@ -1774,3 +1880,493 @@ class TestImageExportOutputGuards:
         md = out.read_text()
         assert "![](https://x/img.png)" in md
         assert json.loads(result.stdout)["images"] == []
+
+
+class TestAddMarkdownChunking:
+    """Issues #59 / #63: auto-chunk large markdown and report blocks_added."""
+
+    def test_blocks_added_counts_block_ids(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["b1", "b2", "b3"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", "# Hi"])
+        assert result.exit_code == 0, result.stdout
+        emitted = json.loads(result.stdout)
+        assert emitted["blocks_added"] == 3
+        assert emitted["block_ids"] == ["b1", "b2", "b3"]
+
+    def test_large_input_chunks_with_chained_after(self, httpx_mock: HTTPXMock) -> None:
+        # Three big paragraphs, each its own chunk under the (small) limit.
+        big = "\n\n".join("para " + str(i) + " " + "x" * 9000 for i in range(3))
+        # The loop interleaves: add chunk → re-fetch last ROOT block → add next
+        # chunk, anchoring afterBlockId to the re-fetched root (NOT the raw
+        # block_ids[-1], which can be a nested child).
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["c0"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        # Re-fetch after chunk 0: its root c0 plus a pre-existing tail block.
+        # The anchor must be c0 (this chunk's root), NOT the later tail.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "c0"}, {"id": "tail"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["c1"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "10", "blocks": [{"id": "c0"}, {"id": "c1"}, {"id": "tail"}]}]}
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["c2"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", big])
+        assert result.exit_code == 0, result.stdout
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        # add, fetch, add, fetch, add = 5 requests.
+        assert len(bodies) == 5
+        adds = [b for b in bodies if "markdown:" in b["query"] or "add_content" in b["query"]]
+        # First chunk uses the supplied after (None); each later chunk anchors
+        # to the last root block *that chunk* produced (per the intervening
+        # re-fetch), never the doc's pre-existing tail.
+        assert adds[0]["variables"]["after"] is None
+        assert adds[1]["variables"]["after"] == "c0"
+        assert adds[2]["variables"]["after"] == "c1"
+        emitted = json.loads(result.stdout)
+        assert emitted["block_ids"] == ["c0", "c1", "c2"]
+        assert emitted["blocks_added"] == 3
+
+    def test_code_fence_not_split_across_chunks(self, httpx_mock: HTTPXMock) -> None:
+        # A fence with internal blank lines must stay one chunk (one call).
+        fence = "```\n" + "\n\n".join(f"line {i}" for i in range(5)) + "\n```"
+        md = f"# Title\n\n{fence}"
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["b1"],
+                        "error": None,
+                    }
+                }
+            ),
+            is_reusable=True,
+        )
+        result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", md])
+        assert result.exit_code == 0, result.stdout
+        # Whichever chunk carries the fence keeps both ``` delimiters together.
+        sent = [
+            json.loads(r.content)["variables"].get("md")
+            for r in httpx_mock.get_requests()
+            if "md" in json.loads(r.content)["variables"]
+        ]
+        fence_payloads = [s for s in sent if s and "```" in s]
+        assert len(fence_payloads) == 1
+        assert fence_payloads[0].count("```") == 2
+
+    def test_table_normalized_before_send(self, httpx_mock: HTTPXMock) -> None:
+        # #61 wired into add-markdown: a ragged body row is normalized first.
+        md = "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 | 3 | 4 |\n"
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["b1"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "add-markdown", "--doc", "10", "--markdown", md])
+        assert result.exit_code == 0, result.stdout
+        sent_md = json.loads(httpx_mock.get_requests()[-1].content)["variables"]["md"]
+        # The 4th cell is merged into column C; no runaway extra column.
+        assert "| 3 4 |" in sent_md
+
+
+class TestDocSetChunking:
+    """Issue #59: `doc set` chunks too, and never deletes on a failed add."""
+
+    def test_failed_add_chunk_rolls_back_partial_and_keeps_old(self, httpx_mock: HTTPXMock) -> None:
+        big = "\n\n".join("para " + str(i) + " " + "x" * 9000 for i in range(3))
+        # 1) fetch existing blocks
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "old2"}]}]}),
+        )
+        # 2) first add chunk succeeds, appending n0
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["n0"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        # 2b) re-fetch the last root block to anchor the next chunk
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "n0"}]}]}),
+        )
+        # 3) second add chunk FAILS
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": False,
+                        "block_ids": None,
+                        "error": "INTERNAL_SERVER_ERROR",
+                    }
+                }
+            ),
+        )
+        # 4) rollback re-fetch: doc now holds the old blocks + the appended n0
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "old2"}, {"id": "n0"}]}]}
+            ),
+        )
+        # 5) rollback deletes the partial block
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "n0"}})
+        )
+        # any further calls (object-id probe) answer "no match"
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"docs": []}), is_reusable=True
+        )
+        result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", big])
+        assert result.exit_code != 0
+        deleted = [
+            json.loads(r.content)["variables"].get("block")
+            for r in httpx_mock.get_requests()
+            if "delete_doc_block" in json.loads(r.content).get("query", "")
+        ]
+        # Only the partially-added block is rolled back; the old content stays.
+        assert deleted == ["n0"]
+
+    def test_rollback_spares_concurrent_block(self, httpx_mock: HTTPXMock) -> None:
+        # A block another user added between the initial fetch and the rollback
+        # is NOT in the add's reported ids, so rollback must not delete it.
+        big = "\n\n".join("para " + str(i) + " " + "x" * 9000 for i in range(3))
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["n0"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "n0"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": False,
+                        "block_ids": None,
+                        "error": "INTERNAL_SERVER_ERROR",
+                    }
+                }
+            ),
+        )
+        # rollback re-fetch: old1, the added n0, AND a concurrent block "conc1"
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "n0"}, {"id": "conc1"}]}]}
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "n0"}})
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"docs": []}), is_reusable=True
+        )
+        result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", big])
+        assert result.exit_code != 0
+        deleted = [
+            json.loads(r.content)["variables"].get("block")
+            for r in httpx_mock.get_requests()
+            if "delete_doc_block" in json.loads(r.content).get("query", "")
+        ]
+        # n0 (added by the failed run) is rolled back; conc1 (concurrent) is spared.
+        assert deleted == ["n0"]
+
+    def test_raised_error_mid_chunk_still_rolls_back(self, httpx_mock: HTTPXMock) -> None:
+        # When a later chunk *raises* (server/network error) rather than
+        # returning success:false, the already-added blocks must still roll back.
+        big = "\n\n".join("para " + str(i) + " " + "x" * 9000 for i in range(3))
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["n0"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "n0"}]}]}),
+        )
+        # chunk 2 raises (GraphQL error envelope → MondoError), not success:false
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={
+                "errors": [{"message": "boom", "extensions": {"code": "BANG", "request_id": "r"}}]
+            },
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "n0"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "n0"}})
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"docs": []}), is_reusable=True
+        )
+        result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", big])
+        assert result.exit_code != 0
+        deleted = [
+            json.loads(r.content)["variables"].get("block")
+            for r in httpx_mock.get_requests()
+            if "delete_doc_block" in json.loads(r.content).get("query", "")
+        ]
+        assert deleted == ["n0"]
+
+
+class TestDocClear:
+    """Issue #60: `doc clear` empties a doc but keeps the document."""
+
+    def test_clears_all_blocks(self, httpx_mock: HTTPXMock) -> None:
+        # 1) fetch existing blocks
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "b1"}, {"id": "b2"}]}]}),
+        )
+        # 2) delete b1, 3) delete b2
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "b1"}})
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "b2"}})
+        )
+        result = runner.invoke(app, ["doc", "clear", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        bodies = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        assert len(bodies) == 3
+        assert bodies[1]["variables"]["block"] == "b1"
+        assert bodies[2]["variables"]["block"] == "b2"
+        emitted = json.loads(result.stdout)
+        assert emitted == {"id": 10, "cleared_blocks": 2}
+
+    def test_empty_doc_is_noop(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"docs": [{"id": "10", "blocks": []}]})
+        )
+        result = runner.invoke(app, ["doc", "clear", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        # Only the fetch happened — no deletes.
+        assert len(httpx_mock.get_requests()) == 1
+        assert json.loads(result.stdout) == {"id": 10, "cleared_blocks": 0}
+
+    def test_requires_one_doc_flag(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["doc", "clear"])
+        assert result.exit_code == 2
+
+    def test_dry_run_prints_plan(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["--dry-run", "doc", "clear", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        assert httpx_mock.get_requests() == []
+        plan = json.loads(result.stdout)
+        assert plan["variables"] == {"doc": 10}
+        assert "delete_doc_block" in plan["query"].lower() or "DELETE" in plan["query"]
+
+
+class TestExportMarkdownCoalesce:
+    """Issue #62: fragmented bold runs are rejoined in export-markdown output."""
+
+    def test_fragmented_bold_collapsed(self, httpx_mock: HTTPXMock) -> None:
+        fragmented = "**Caching is ****not**** a win**"
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "export_markdown_from_doc": {
+                        "success": True,
+                        "error": None,
+                        "markdown": fragmented,
+                    }
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
+        assert result.exit_code == 0, result.stdout
+        assert "**Caching is not a win**" in result.stdout
+        assert "****" not in result.stdout
+
+    def test_coalesce_applied_to_out_path(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        fragmented = "**a ****b**"
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "export_markdown_from_doc": {
+                        "success": True,
+                        "error": None,
+                        "markdown": fragmented,
+                    }
+                }
+            ),
+        )
+        out = tmp_path / "exported.md"
+        result = runner.invoke(
+            app, ["doc", "export-markdown", "--doc", "10", "--out", str(out), "--no-images"]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert out.read_text() == "**a b**"
+
+
+class TestDocCreateUnauthorizedSuggestion:
+    """Issue #64: actionable suggestion on USER_UNAUTHORIZED doc create."""
+
+    def test_unauthorized_carries_license_suggestion(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={
+                "errors": [
+                    {
+                        "message": "User is not permitted to create public doc in this workspace",
+                        "extensions": {"code": "USER_UNAUTHORIZED", "request_id": "r"},
+                    }
+                ]
+            },
+        )
+        result = runner.invoke(
+            app,
+            ["-o", "json", "doc", "create", "--workspace", "42", "--name", "Spec"],
+        )
+        assert result.exit_code == 3
+        # The structured envelope (stderr) carries the suggestion field.
+        env_line = [
+            line
+            for line in result.stderr.splitlines()
+            if line.strip().startswith("{") and "suggestion" in line
+        ]
+        assert env_line, result.stderr
+        env = json.loads(env_line[-1])
+        assert env["code"] == "USER_UNAUTHORIZED"
+        assert "doc-creation license/policy" in env["suggestion"]
+
+    def test_other_errors_unchanged(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={
+                "errors": [
+                    {
+                        "message": "Workspace not found",
+                        "extensions": {"code": "ResourceNotFoundException", "request_id": "r"},
+                    }
+                ]
+            },
+        )
+        result = runner.invoke(
+            app,
+            ["-o", "json", "doc", "create", "--workspace", "42", "--name", "Spec"],
+        )
+        assert result.exit_code == 6
+        assert "doc-creation license" not in (result.stderr + result.stdout)

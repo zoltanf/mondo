@@ -8,9 +8,12 @@ from mondo.docs import (
     blocks_to_html,
     blocks_to_markdown,
     blocks_to_mdx,
+    coalesce_markdown_emphasis,
     collect_image_asset_ids,
     extract_doc_ids_from_column_value,
     markdown_to_blocks,
+    normalize_markdown_tables,
+    split_markdown_for_upload,
 )
 
 
@@ -673,6 +676,154 @@ class TestRoundTrip:
                 content = line.lstrip("# -1234567890.>").strip()
                 if content and content != "---":
                     assert content in back
+
+
+class TestSplitMarkdownForUpload:
+    """Issue #59: auto-chunk large markdown on top-level block boundaries."""
+
+    def test_small_input_single_chunk(self) -> None:
+        assert split_markdown_for_upload("# Hi\n\nBody") == ["# Hi\n\nBody"]
+
+    def test_empty_returns_empty(self) -> None:
+        assert split_markdown_for_upload("   \n\n") == []
+
+    def test_splits_on_blank_lines_under_limit(self) -> None:
+        blocks = [f"Paragraph number {i} " + "x" * 50 for i in range(10)]
+        md = "\n\n".join(blocks)
+        chunks = split_markdown_for_upload(md, max_chars=200)
+        assert len(chunks) > 1
+        # Every chunk stays under the limit and round-trips to the original set.
+        assert all(len(c) <= 200 for c in chunks)
+        rejoined = "\n\n".join(chunks)
+        for b in blocks:
+            assert b in rejoined
+
+    def test_never_splits_inside_code_fence(self) -> None:
+        # A fenced block longer than the limit must stay a single chunk.
+        code = "```\n" + "\n".join(f"line {i}" for i in range(40)) + "\n```"
+        md = f"# Title\n\n{code}\n\nAfter"
+        chunks = split_markdown_for_upload(md, max_chars=80)
+        # Exactly one chunk contains the fence, fully intact.
+        fence_chunks = [c for c in chunks if "```" in c]
+        assert len(fence_chunks) == 1
+        assert fence_chunks[0].count("```") == 2
+        assert "line 0" in fence_chunks[0] and "line 39" in fence_chunks[0]
+
+    def test_never_splits_inside_table(self) -> None:
+        rows = "\n".join(f"| a{i} | b{i} |" for i in range(30))
+        table = "| H1 | H2 |\n| --- | --- |\n" + rows
+        md = f"Intro\n\n{table}\n\nOutro"
+        chunks = split_markdown_for_upload(md, max_chars=120)
+        table_chunks = [c for c in chunks if "| H1 | H2 |" in c]
+        assert len(table_chunks) == 1
+        # The whole table (header + separator + every body row) is one unit.
+        assert "| a0 | b0 |" in table_chunks[0]
+        assert "| a29 | b29 |" in table_chunks[0]
+
+    def test_oversized_atomic_block_is_own_chunk(self) -> None:
+        big = "word " * 4000  # one paragraph well over the limit
+        chunks = split_markdown_for_upload(big, max_chars=1000)
+        assert len(chunks) == 1
+        assert chunks[0].strip() == big.strip()
+
+
+class TestNormalizeMarkdownTables:
+    """Issue #61: normalize ragged GFM table rows to the header column count."""
+
+    def test_overflow_row_merges_into_last_column(self) -> None:
+        md = (
+            "| Date | iOS | Android | Web | Backend | DB | Notes |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| 2024-01 | 1 | 2 | 3 | 4 | 5 | release | <- iOS 4407 released |\n"
+        )
+        out = normalize_markdown_tables(md)
+        body = out.splitlines()[2]
+        cells = [c.strip() for c in body.strip().strip("|").split("|")]
+        assert len(cells) == 7
+        # The 8th trailing cell is merged into the last (7th) column.
+        assert cells[-1] == "release <- iOS 4407 released"
+
+    def test_short_row_is_padded(self) -> None:
+        md = "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |\n"
+        out = normalize_markdown_tables(md)
+        body = out.splitlines()[2]
+        cells = [c.strip() for c in body.strip().strip("|").split("|")]
+        assert cells == ["1", "2", ""]
+
+    def test_code_fence_pipes_untouched(self) -> None:
+        md = "```\n| a | b | c | d |\n```\n"
+        assert normalize_markdown_tables(md) == md
+
+    def test_non_table_text_unchanged(self) -> None:
+        md = "# Title\n\nA paragraph with a | pipe but no table.\n"
+        assert normalize_markdown_tables(md) == md
+
+    def test_inline_code_pipe_in_cell_not_split(self) -> None:
+        # A `|` inside an inline-code span is cell content, not a separator, so
+        # a well-formed row keeps its column count instead of being mangled.
+        md = "| Cmd | Note |\n| --- | --- |\n| `a | b` | ok |\n"
+        out = normalize_markdown_tables(md)
+        assert out.splitlines()[2] == "| `a | b` | ok |"
+
+    def test_escaped_pipe_in_cell_not_split(self) -> None:
+        md = "| A | B |\n| --- | --- |\n| x \\| y | z |\n"
+        out = normalize_markdown_tables(md)
+        assert out.splitlines()[2] == "| x \\| y | z |"
+
+    def test_multi_backtick_inline_code_pipe_not_split(self) -> None:
+        # A double-backtick code span closes only on another double backtick,
+        # so a `|` inside it is cell content, not a separator.
+        md = "| Cmd | Note |\n| --- | --- |\n| ``a | b`` | ok |\n"
+        out = normalize_markdown_tables(md)
+        assert out.splitlines()[2] == "| ``a | b`` | ok |"
+
+    def test_indented_code_block_not_treated_as_table(self) -> None:
+        # A 4-space indented code block whose lines look like a ragged table
+        # is code, not a GFM table — it must be left byte-for-byte unchanged.
+        md = "    | A | B |\n    | --- | --- |\n    | 1 |\n"
+        assert normalize_markdown_tables(md) == md
+
+    def test_indented_separator_not_treated_as_table(self) -> None:
+        # Header is unindented but the separator is indented 4 spaces (code),
+        # so this is not a GFM table and following pipe text must be left as-is.
+        md = "| A | B |\n    | --- | --- |\n| 1 |\n"
+        assert normalize_markdown_tables(md) == md
+
+
+class TestCoalesceMarkdownEmphasis:
+    """Issue #62: rejoin fragmented bold runs from the server exporter."""
+
+    def test_fragmented_bold_collapses_to_single_span(self) -> None:
+        fragmented = (
+            "**Caching is not a clear win here, ****an****d ****it**** ****i****s "
+            "****not what resolved the incident**"
+        )
+        assert coalesce_markdown_emphasis(fragmented) == (
+            "**Caching is not a clear win here, and it is not what resolved the incident**"
+        )
+
+    def test_bold_italic_triple_span_left_intact(self) -> None:
+        assert coalesce_markdown_emphasis("***x***") == "***x***"
+
+    def test_code_span_pipes_not_corrupted(self) -> None:
+        md = "before `a****b` after"
+        assert coalesce_markdown_emphasis(md) == md
+
+    def test_multi_backtick_code_span_not_corrupted(self) -> None:
+        # A literal `****` inside a double-backtick code span is real content,
+        # not an export seam — leave it untouched.
+        md = "before ``a****b`` after"
+        assert coalesce_markdown_emphasis(md) == md
+
+    def test_no_op_without_fragmentation(self) -> None:
+        md = "**bold** and *italic* text"
+        assert coalesce_markdown_emphasis(md) == md
+
+    def test_standalone_thematic_break_preserved(self) -> None:
+        # A lone `****` line is a horizontal rule, not a bold seam — keep it,
+        # while still collapsing a real seam elsewhere in the same document.
+        md = "**a ****b**\n\n****\n\nmore"
+        assert coalesce_markdown_emphasis(md) == "**a b**\n\n****\n\nmore"
 
 
 def _b(bid, btype, text="", parent=None):
