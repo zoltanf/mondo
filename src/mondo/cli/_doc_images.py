@@ -155,21 +155,43 @@ _EXT_MIME = {
 }
 
 
+# Hard ceiling on a single embedded asset. base64-inlining holds the whole
+# image in memory *and* in the HTML string, so an unbounded read is an
+# OOM/denial-of-service risk on a pathologically large asset.
+_MAX_EMBED_BYTES = 25 * 1024 * 1024
+
+
 def _download_bytes(url: str) -> tuple[bytes, str | None]:
-    """Fetch an asset into memory, returning `(bytes, content_type)`."""
+    """Fetch an asset into memory (capped at `_MAX_EMBED_BYTES`), returning
+    `(bytes, content_type)`. Streams with a hard byte limit so an oversized
+    asset is rejected instead of exhausting memory."""
     try:
-        resp = httpx.get(url, follow_redirects=True)
-        resp.raise_for_status()
+        with httpx.stream("GET", url, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            declared = resp.headers.get("content-length")
+            if declared is not None and declared.isdigit() and int(declared) > _MAX_EMBED_BYTES:
+                raise NetworkError(
+                    f"image too large to embed: {int(declared)} bytes exceeds the "
+                    f"{_MAX_EMBED_BYTES}-byte limit"
+                )
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in resp.iter_bytes():
+                total += len(chunk)
+                if total > _MAX_EMBED_BYTES:
+                    raise NetworkError(
+                        f"image too large to embed: exceeds the {_MAX_EMBED_BYTES}-byte limit"
+                    )
+                chunks.append(chunk)
+            content_type = resp.headers.get("content-type")
     except httpx.HTTPStatusError as e:
         raise NetworkError(f"image download failed: HTTP {e.response.status_code}") from e
     except httpx.RequestError as e:
         raise NetworkError(f"image download failed: {e}") from e
-    return resp.content, resp.headers.get("content-type")
+    return b"".join(chunks), content_type
 
 
-def embed_doc_images(
-    opts: GlobalOpts, blocks: list[dict[str, Any]]
-) -> dict[str, tuple[str, str]]:
+def embed_doc_images(opts: GlobalOpts, blocks: list[dict[str, Any]]) -> dict[str, tuple[str, str]]:
     """Resolve + download every image block's asset and base64-embed it.
 
     Returns the map `blocks_to_html` expects: `str(assetId)` → `(alt_text,

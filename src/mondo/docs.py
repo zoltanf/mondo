@@ -584,6 +584,33 @@ def _mdx_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("<", r"\<").replace("{", r"\{")
 
 
+# MDX parses a line that begins (after up to 3 spaces) with `import`/`export`
+# as an ESM statement, so doc prose starting with either word would be compiled
+# as module code instead of rendered as text — a hard failure, not cosmetic. A
+# 4+ space indent is an indented code block, not ESM, so it's excluded.
+_MDX_ESM_LINE_RE = re.compile(r"^( {0,3})(import|export)\b")
+
+
+def _neutralize_mdx_esm(md: str) -> str:
+    """Stop a prose line that opens with `import`/`export` from being parsed as
+    MDX ESM by encoding its leading letter as a numeric character reference:
+    the line no longer starts with the bare keyword, but renders identically.
+    Fenced code blocks are left untouched."""
+    out: list[str] = []
+    in_fence = False
+    for line in md.split("\n"):
+        if _CODE_FENCE_RE.match(line):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        m = None if in_fence else _MDX_ESM_LINE_RE.match(line)
+        if m:
+            kw = m.group(2)
+            line = f"{m.group(1)}&#{ord(kw[0])};{kw[1:]}{line[m.end() :]}"
+        out.append(line)
+    return "\n".join(out)
+
+
 def blocks_to_mdx(
     blocks: list[dict[str, Any]],
     images: dict[str, tuple[str, str]] | None = None,
@@ -594,9 +621,10 @@ def blocks_to_mdx(
     rendering with JSX-significant characters escaped in prose. monday's
     notice/callout containers stay as GFM `> [!NOTE]` blockquotes — MDX renders
     them as ordinary blockquotes, and we make no assumption about the caller's
-    component library.
+    component library. A prose line opening with `import`/`export` is
+    neutralized so MDX doesn't compile it as an ESM statement.
     """
-    return blocks_to_markdown(blocks, images=images, text_filter=_mdx_escape)
+    return _neutralize_mdx_esm(blocks_to_markdown(blocks, images=images, text_filter=_mdx_escape))
 
 
 # --- blocks → HTML ----------------------------------------------------------
@@ -644,9 +672,7 @@ def _html_text(content: Any) -> str:
     return html.escape(_extract_text(content))
 
 
-def _render_html_image(
-    block: dict[str, Any], images: dict[str, tuple[str, str]] | None
-) -> str:
+def _render_html_image(block: dict[str, Any], images: dict[str, tuple[str, str]] | None) -> str:
     """`<img>` for an image block; `src` is the embedded data URI (or, without
     a map, the browser-only monday url so the image isn't dropped)."""
     content = _as_content_dict(block.get("content")) or {}

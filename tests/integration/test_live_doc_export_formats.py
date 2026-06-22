@@ -46,8 +46,15 @@ def test_live_doc_get_html_no_images_keeps_urls(live_test_doc_id: int, tmp_path)
     out = tmp_path / "doc.html"
     invoke_json(
         [
-            "doc", "get", "--object-id", str(live_test_doc_id),
-            "--format", "html", "--out", str(out), "--no-images",
+            "doc",
+            "get",
+            "--object-id",
+            str(live_test_doc_id),
+            "--format",
+            "html",
+            "--out",
+            str(out),
+            "--no-images",
         ]
     )
     html = out.read_text()
@@ -80,8 +87,14 @@ def test_live_doc_get_mdx_downloads_images(live_test_doc_id: int, tmp_path) -> N
 def test_live_doc_get_html_out_rejected_for_json(live_test_doc_id: int, tmp_path) -> None:
     result = invoke(
         [
-            "doc", "get", "--object-id", str(live_test_doc_id),
-            "--format", "json", "--out", str(tmp_path / "doc.json"),
+            "doc",
+            "get",
+            "--object-id",
+            str(live_test_doc_id),
+            "--format",
+            "json",
+            "--out",
+            str(tmp_path / "doc.json"),
         ],
         expect_exit=None,
     )

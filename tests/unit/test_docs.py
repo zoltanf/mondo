@@ -710,9 +710,7 @@ class TestBlocksToMdx:
         assert r"\<div>" not in out
 
     def test_callouts_stay_gfm_blockquotes(self) -> None:
-        out = blocks_to_mdx(
-            [_b("n", "notice_box"), _b("c", "normal_text", "inside", parent="n")]
-        )
+        out = blocks_to_mdx([_b("n", "notice_box"), _b("c", "normal_text", "inside", parent="n")])
         assert "> [!NOTE]" in out
 
     def test_escapes_table_cell_text(self) -> None:
@@ -723,6 +721,31 @@ class TestBlocksToMdx:
         ]
         out = blocks_to_mdx(blocks)
         assert r"a \<b> c" in out
+
+    def test_neutralizes_leading_import_keyword(self) -> None:
+        # A prose line opening with `import` would be parsed as MDX ESM; the
+        # leading letter is encoded so it renders as text instead.
+        out = blocks_to_mdx([_b("p", "normal_text", "import the data first")])
+        assert "&#105;mport the data first" in out  # 105 == ord('i')
+        assert not out.strip().startswith("import")
+
+    def test_neutralizes_leading_export_keyword(self) -> None:
+        out = blocks_to_mdx([_b("p", "normal_text", "export your results")])
+        assert "&#101;xport your results" in out  # 101 == ord('e')
+
+    def test_import_mid_sentence_left_intact(self) -> None:
+        out = blocks_to_mdx([_b("p", "normal_text", "we import the data")])
+        assert "we import the data" in out
+
+    def test_leading_import_inside_code_fence_left_intact(self) -> None:
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "import os"}]},
+        }
+        out = blocks_to_mdx([block])
+        assert "import os" in out
+        assert "&#105;mport" not in out
 
 
 class TestBlocksToHtml:
@@ -786,16 +809,12 @@ class TestBlocksToHtml:
         assert "<blockquote>wise</blockquote>" in out
 
     def test_notice_box_renders_as_aside(self) -> None:
-        out = blocks_to_html(
-            [_b("n", "notice_box"), _b("c", "normal_text", "inside", parent="n")]
-        )
+        out = blocks_to_html([_b("n", "notice_box"), _b("c", "normal_text", "inside", parent="n")])
         assert '<aside class="notice">' in out
         assert "<p>inside</p>" in out
 
     def test_layout_renders_children_in_div(self) -> None:
-        out = blocks_to_html(
-            [_b("l", "layout"), _b("c", "normal_text", "col", parent="l")]
-        )
+        out = blocks_to_html([_b("l", "layout"), _b("c", "normal_text", "col", parent="l")])
         assert '<div class="layout">' in out
         assert "<p>col</p>" in out
 
@@ -806,10 +825,32 @@ class TestBlocksToHtml:
 
     def test_image_with_map_embeds_data_uri(self) -> None:
         block = {"id": "i", "type": "image", "content": {"assetId": 7, "url": "https://x/a.png"}}
-        out = blocks_to_html(
-            [block], images={"7": ("photo.png", "data:image/png;base64,AAA")}
-        )
+        out = blocks_to_html([block], images={"7": ("photo.png", "data:image/png;base64,AAA")})
         assert '<img src="data:image/png;base64,AAA" alt="photo.png">' in out
+
+    def test_escapes_hostile_image_url(self) -> None:
+        block = {
+            "id": "i",
+            "type": "image",
+            "content": {"assetId": 7, "url": 'https://x/a.png"><script>alert(1)</script>'},
+        }
+        out = blocks_to_html([block])
+        assert "<script>alert(1)</script>" not in out
+        assert "&lt;script&gt;" in out
+
+    def test_escapes_hostile_image_alt(self) -> None:
+        block = {"id": "i", "type": "image", "content": {"assetId": 7, "url": "https://x/a.png"}}
+        out = blocks_to_html(
+            [block], images={"7": ('"><script>x</script>', "data:image/png;base64,AAA")}
+        )
+        assert "<script>x</script>" not in out
+
+    def test_escapes_hostile_title(self) -> None:
+        out = blocks_to_html(
+            [_b("p", "normal_text", "hi")], title="</title><script>alert(1)</script>"
+        )
+        assert "<script>alert(1)</script>" not in out
+        assert "&lt;/title&gt;" in out
 
     def test_table_renders_html_table(self) -> None:
         # Matrix references *cell* blocks (parented to the table); each cell's

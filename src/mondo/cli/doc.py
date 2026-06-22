@@ -668,7 +668,7 @@ def get_cmd(
         html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
         if out is not None:
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(html_text)
+            out.write_text(html_text, encoding="utf-8")
             opts.emit({"out": str(out), "images": len(images)})
             return
         typer.echo(html_text)
@@ -686,7 +686,7 @@ def get_cmd(
 
                 images = download_doc_images(opts, blocks, out.parent)
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(render(blocks, images=images))
+            out.write_text(render(blocks, images=images), encoding="utf-8")
             opts.emit(
                 {
                     "out": str(out),
