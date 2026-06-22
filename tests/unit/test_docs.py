@@ -759,6 +759,18 @@ class TestBlocksToMdx:
         assert "import std" in out
         assert "&#105;mport" not in out
 
+    def test_tilde_line_inside_backtick_fence_does_not_desync(self) -> None:
+        # A ``` block whose content has a ~~~ line must NOT be treated as a
+        # fence close, or `import` after it would be wrongly neutralized.
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "~~~\nimport os"}]},
+        }
+        out = blocks_to_mdx([block])
+        assert "import os" in out
+        assert "&#105;mport" not in out
+
 
 class TestBlocksToHtml:
     def test_wraps_in_self_contained_document(self) -> None:

@@ -595,26 +595,36 @@ def _mdx_escape(text: str) -> str:
 # 4+ space indent is an indented code block, not ESM, so it's excluded.
 _MDX_ESM_LINE_RE = re.compile(r"^( {0,3})(import|export)\b")
 
-# Any fenced-code delimiter line, regardless of info string. Unlike
-# `_CODE_FENCE_RE` (whose `[\w-]*` info string misses `c++`, `c#`, etc.), this
-# only needs to recognize the opening/closing run so fence tracking can't
-# desync and rewrite real code as prose.
-_MDX_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+# A fenced-code opener, regardless of info string. Unlike `_CODE_FENCE_RE`
+# (whose `[\w-]*` info string misses `c++`, `c#`, etc.), this recognizes any
+# ``` or ~~~ run so fence tracking can't desync and rewrite real code as prose.
+_MDX_FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def _neutralize_mdx_esm(md: str) -> str:
     """Stop a prose line that opens with `import`/`export` from being parsed as
     MDX ESM by encoding its leading letter as a numeric character reference:
     the line no longer starts with the bare keyword, but renders identically.
-    Fenced code blocks are left untouched."""
+    Fenced code blocks are left untouched — a fence closes only on a run of the
+    *same* delimiter char (length ≥ the opener), so e.g. a `~~~` line inside a
+    ```` ``` ```` block doesn't prematurely end tracking (GFM rule)."""
     out: list[str] = []
-    in_fence = False
+    fence_char = ""  # "" when outside a fence; "`" or "~" inside one
+    fence_len = 0
     for line in md.split("\n"):
-        if _MDX_FENCE_RE.match(line):
-            in_fence = not in_fence
+        if fence_char:
+            stripped = line.strip()
+            if stripped and stripped == fence_char * len(stripped) and len(stripped) >= fence_len:
+                fence_char, fence_len = "", 0
             out.append(line)
             continue
-        m = None if in_fence else _MDX_ESM_LINE_RE.match(line)
+        opener = _MDX_FENCE_OPEN_RE.match(line)
+        if opener:
+            fence_char = opener.group(1)[0]
+            fence_len = len(opener.group(1))
+            out.append(line)
+            continue
+        m = _MDX_ESM_LINE_RE.match(line)
         if m:
             kw = m.group(2)
             line = f"{m.group(1)}&#{ord(kw[0])};{kw[1:]}{line[m.end() :]}"
