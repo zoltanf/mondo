@@ -747,6 +747,18 @@ class TestBlocksToMdx:
         assert "import os" in out
         assert "&#105;mport" not in out
 
+    def test_leading_import_inside_unusual_lang_fence_left_intact(self) -> None:
+        # A fence whose info string isn't plain `[\w-]*` (e.g. `c++`/`c#`) must
+        # still be recognized so code content isn't rewritten as prose.
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "import std"}], "language": "c++"},
+        }
+        out = blocks_to_mdx([block])
+        assert "import std" in out
+        assert "&#105;mport" not in out
+
 
 class TestBlocksToHtml:
     def test_wraps_in_self_contained_document(self) -> None:

@@ -373,6 +373,28 @@ def _container_marker(btype: str, has_children: bool) -> str | None:
     return None
 
 
+def _build_block_tree(
+    blocks: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    """Split the flat `parent_block_id` graph into `(roots, children_of)`.
+
+    A block is a root when it has no parent, its parent is missing from this
+    list (orphan — surfaced at top level so it's never silently dropped), or it
+    points at itself (self-cycle). Shared by the markdown and HTML renderers.
+    """
+    by_id = {str(b["id"]): b for b in blocks if b.get("id") is not None}
+    children_of: dict[str, list[dict[str, Any]]] = {}
+    roots: list[dict[str, Any]] = []
+    for b in blocks:
+        parent = b.get("parent_block_id")
+        bid = b.get("id")
+        if parent is None or str(parent) == str(bid) or str(parent) not in by_id:
+            roots.append(b)
+        else:
+            children_of.setdefault(str(parent), []).append(b)
+    return roots, children_of
+
+
 def blocks_to_markdown(
     blocks: list[dict[str, Any]],
     images: dict[str, tuple[str, str]] | None = None,
@@ -397,24 +419,7 @@ def blocks_to_markdown(
     if not blocks:
         return ""
 
-    by_id: dict[str, dict[str, Any]] = {}
-    for b in blocks:
-        bid = b.get("id")
-        if bid is not None:
-            by_id[str(bid)] = b
-
-    children_of: dict[str, list[dict[str, Any]]] = {}
-    roots: list[dict[str, Any]] = []
-    for b in blocks:
-        bid = b.get("id")
-        parent = b.get("parent_block_id")
-        # Treat as root when: no parent set, parent missing from this list
-        # (orphan — render at top so we don't silently drop), or self-cycle.
-        if parent is None or str(parent) == str(bid) or str(parent) not in by_id:
-            roots.append(b)
-        else:
-            children_of.setdefault(str(parent), []).append(b)
-
+    roots, children_of = _build_block_tree(blocks)
     lines: list[str] = []
     _render_block_list(roots, children_of, "", lines, images, text_filter)
     return "\n".join(lines).rstrip() + "\n"
@@ -590,6 +595,12 @@ def _mdx_escape(text: str) -> str:
 # 4+ space indent is an indented code block, not ESM, so it's excluded.
 _MDX_ESM_LINE_RE = re.compile(r"^( {0,3})(import|export)\b")
 
+# Any fenced-code delimiter line, regardless of info string. Unlike
+# `_CODE_FENCE_RE` (whose `[\w-]*` info string misses `c++`, `c#`, etc.), this
+# only needs to recognize the opening/closing run so fence tracking can't
+# desync and rewrite real code as prose.
+_MDX_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+
 
 def _neutralize_mdx_esm(md: str) -> str:
     """Stop a prose line that opens with `import`/`export` from being parsed as
@@ -599,7 +610,7 @@ def _neutralize_mdx_esm(md: str) -> str:
     out: list[str] = []
     in_fence = False
     for line in md.split("\n"):
-        if _CODE_FENCE_RE.match(line):
+        if _MDX_FENCE_RE.match(line):
             in_fence = not in_fence
             out.append(line)
             continue
@@ -852,22 +863,7 @@ def blocks_to_html(
     the file works offline with no sibling assets. Without the map, image
     `src`s keep their browser-only monday urls.
     """
-    by_id: dict[str, dict[str, Any]] = {}
-    for b in blocks:
-        bid = b.get("id")
-        if bid is not None:
-            by_id[str(bid)] = b
-
-    children_of: dict[str, list[dict[str, Any]]] = {}
-    roots: list[dict[str, Any]] = []
-    for b in blocks:
-        parent = b.get("parent_block_id")
-        bid = b.get("id")
-        if parent is None or str(parent) == str(bid) or str(parent) not in by_id:
-            roots.append(b)
-        else:
-            children_of.setdefault(str(parent), []).append(b)
-
+    roots, children_of = _build_block_tree(blocks)
     body = _render_html_blocks(roots, children_of, images)
     doc_title = title or "Document"
     heading = f'<h1 class="doc-title">{html.escape(doc_title)}</h1>\n' if title else ""
