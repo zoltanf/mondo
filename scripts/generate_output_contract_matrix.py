@@ -535,13 +535,15 @@ MANUAL_ROWS: dict[str, Row] = {
     "graphql": Row(
         command="graphql",
         output_type="dynamic object",
-        fields=["data?", "errors?", "extensions?"],
+        fields=["<unwrapped data> | data?, errors?, extensions? (--raw)"],
         notes=(
-            "Raw GraphQL response envelope from monday; shape depends entirely "
-            "on the submitted query. --dry-run is not supported (refused with "
+            "Default emits the unwrapped `data` object, so shape depends "
+            "entirely on the submitted query; --raw keeps monday's full "
+            "{data, errors, extensions} envelope. Erroring queries fail "
+            "non-zero on both paths. --dry-run is not supported (refused with "
             "exit 2 — mondo can't safely preview a query it doesn't parse)."
         ),
-        source="client.execute(..., raw=True)",
+        source="client.execute(..., raw=True) → data (or full envelope with --raw)",
     ),
     "help": Row(
         command="help",

@@ -42,7 +42,7 @@ class TestGraphqlFormats:
         result = runner.invoke(app, ["graphql", "query { me { id } }"])
         assert result.exit_code == 0
         parsed = json.loads(result.stdout)
-        assert parsed["data"]["me"]["id"] == "1"
+        assert parsed["me"]["id"] == "1"
 
     def test_output_yaml(self, httpx_mock: HTTPXMock) -> None:
         _graphql_ok(httpx_mock, {"me": {"id": "1"}})
@@ -54,7 +54,7 @@ class TestGraphqlFormats:
         _graphql_ok(httpx_mock, {"me": {"id": "42", "name": "Alice"}})
         result = runner.invoke(
             app,
-            ["-q", "data.me.name", "-o", "none", "graphql", "query { me { id name } }"],
+            ["-q", "me.name", "-o", "none", "graphql", "query { me { id name } }"],
         )
         assert result.exit_code == 0
         assert result.stdout.strip() == "Alice"
@@ -73,7 +73,7 @@ class TestGraphqlFormats:
             app,
             [
                 "-q",
-                "data.users",
+                "users",
                 "-o",
                 "csv",
                 "graphql",

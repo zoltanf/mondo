@@ -106,7 +106,7 @@ each entry as `_fuzzy_score` and sorts by it.
 For ad-hoc predicates not covered above, use JMESPath:
 
     mondo graphql 'query { boards(limit:200) { id name } }' \
-        -q "data.boards[?contains(name,'Pager')]" -o table
+        -q "boards[?contains(name,'Pager')]" -o table
 
 See also: `mondo help output` for JMESPath projection, `mondo help
 complexity` for how filtering affects cost.

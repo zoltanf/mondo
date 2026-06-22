@@ -63,6 +63,14 @@ EXAMPLES: dict[str, list[Example]] = {
             "cat mutation.graphql | mondo graphql -",
         ),
         Example(
+            "Project the unwrapped data (no `.data` prefix)",
+            "mondo graphql 'query { me { id name } }' -q 'me.name'",
+        ),
+        Example(
+            "Keep the full {data, errors, extensions} envelope",
+            "mondo graphql 'query { me { id } }' --raw",
+        ),
+        Example(
             "Tip: prefer positional GraphQL; a GraphQL-looking `-q` value is "
             "accepted as the query (JMESPath disabled)",
             "mondo graphql 'query { me { id } }'",

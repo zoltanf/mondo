@@ -811,7 +811,17 @@ mondo graphql 'query ($ids:[ID!]!){items(ids:$ids){id name}}' --vars '{"ids":[1,
 # From a file or stdin:
 mondo graphql @query.graphql
 cat mutation.graphql | mondo graphql -
+
+# Unwrapped `data` by default (no `.data` prefix); `--raw` keeps the envelope:
+mondo graphql 'query { boards { id } }' | jq '.boards[]'
+mondo graphql 'query { me { id } }' --raw
 ```
+
+> **Output is the unwrapped `data` object by default**, matching the typed
+> subcommands — so `-q`/jq paths address the result directly (no `.data`
+> prefix), and a GraphQL `errors` response fails non-zero instead of
+> emitting `null`. Pass `--raw` for the full `{data, errors, extensions}`
+> envelope.
 
 > **`--dry-run` is rejected on `mondo graphql`.** Unlike typed mutations,
 > the raw passthrough can't safely preview your query (mondo doesn't
@@ -830,7 +840,7 @@ cat mutation.graphql | mondo graphql -
 ```
 
 All three live in the "Output / Query" panel of every `--help` page.
-Pipeline: `-q` first (envelope extraction / filtering), then `--fields`
+Pipeline: `-q` first (payload projection / filtering), then `--fields`
 (row-shape narrowing), then `-o` (serialize).
 
 Global flags are accepted **anywhere on the command line** (az-style):
@@ -848,7 +858,7 @@ mondo item list --board 42 --fields id,name,status
 
 # Find boards by name (server has no name filter; JMESPath handles it):
 mondo graphql 'query { boards(limit:200) { id name items_count } }' \
-    -q "data.boards[?contains(name,'Pager')]" -o table
+    -q "boards[?contains(name,'Pager')]" -o table
 
 # Extract a scalar with --output none for shell pipelines:
 count=$(mondo item list --board 42 -q "length(@)" -o none)
