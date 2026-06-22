@@ -1351,7 +1351,7 @@ def update_block_cmd(
     ignored: block IDs are globally unique, so the block ID alone targets it.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    del doc_id, object_id  # tolerated for ergonomic symmetry; block ID suffices
+    del doc_id, object_id  # flags kept for symmetry; block ID alone targets the block
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     parsed_content = parse_json_flag(content, flag_name="--content")
     # monday's JSON scalar wants the content as a JSON-encoded string (matches
@@ -1377,7 +1377,7 @@ def delete_block_cmd(
     ignored: block IDs are globally unique, so the block ID alone targets it.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    del doc_id, object_id  # tolerated for ergonomic symmetry; block ID suffices
+    del doc_id, object_id  # flags kept for symmetry; block ID alone targets the block
     block_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="block")
     variables = {"block": block_id}
     data = execute(opts, DELETE_DOC_BLOCK, variables)
