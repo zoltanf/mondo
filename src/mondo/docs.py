@@ -69,8 +69,9 @@ def _split_table_row(line: str) -> list[str]:
 
     Strips one leading/trailing border pipe, then splits on each remaining
     cell-separator `|`. A `\\|` escape and any `|` inside an inline-code span
-    (backtick-delimited) stay inside their cell, so a cell like `` `a|b` `` is
-    not mis-split into two columns.
+    stay inside their cell, so a cell like `` `a|b` `` is not mis-split. Code
+    spans may use a run of N backticks, closed only by another run of N (GFM),
+    so `` ``a|b`` `` is handled too — not just single-backtick spans.
     """
     body = line.strip()
     if body.startswith("|"):
@@ -79,18 +80,29 @@ def _split_table_row(line: str) -> list[str]:
         body = body[:-1]
     cells: list[str] = []
     buf: list[str] = []
-    in_code = False
-    prev = ""
-    for ch in body:
+    fence = 0  # length of the backtick run that opened the current span; 0 = outside code
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
         if ch == "`":
-            in_code = not in_code
-            buf.append(ch)
-        elif ch == "|" and not in_code and prev != "\\":
+            j = i
+            while j < n and body[j] == "`":
+                j += 1
+            run = j - i
+            if fence == 0:
+                fence = run  # open a span
+            elif run == fence:
+                fence = 0  # a matching run closes it
+            buf.append("`" * run)
+            i = j
+            continue
+        if ch == "|" and fence == 0 and (i == 0 or body[i - 1] != "\\"):
             cells.append("".join(buf))
             buf = []
         else:
             buf.append(ch)
-        prev = ch
+        i += 1
     cells.append("".join(buf))
     return [c.strip() for c in cells]
 

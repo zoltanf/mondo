@@ -768,6 +768,13 @@ class TestNormalizeMarkdownTables:
         out = normalize_markdown_tables(md)
         assert out.splitlines()[2] == "| x \\| y | z |"
 
+    def test_multi_backtick_inline_code_pipe_not_split(self) -> None:
+        # A double-backtick code span closes only on another double backtick,
+        # so a `|` inside it is cell content, not a separator.
+        md = "| Cmd | Note |\n| --- | --- |\n| ``a | b`` | ok |\n"
+        out = normalize_markdown_tables(md)
+        assert out.splitlines()[2] == "| ``a | b`` | ok |"
+
     def test_indented_code_block_not_treated_as_table(self) -> None:
         # A 4-space indented code block whose lines look like a ragged table
         # is code, not a GFM table — it must be left byte-for-byte unchanged.
