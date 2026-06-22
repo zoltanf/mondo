@@ -2168,6 +2168,61 @@ class TestDocSetChunking:
         # n0 (added by the failed run) is rolled back; conc1 (concurrent) is spared.
         assert deleted == ["n0"]
 
+    def test_raised_error_mid_chunk_still_rolls_back(self, httpx_mock: HTTPXMock) -> None:
+        # When a later chunk *raises* (server/network error) rather than
+        # returning success:false, the already-added blocks must still roll back.
+        big = "\n\n".join("para " + str(i) + " " + "x" * 9000 for i in range(3))
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "add_content_to_doc_from_markdown": {
+                        "success": True,
+                        "block_ids": ["n0"],
+                        "error": None,
+                    }
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "n0"}]}]}),
+        )
+        # chunk 2 raises (GraphQL error envelope → MondoError), not success:false
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={
+                "errors": [{"message": "boom", "extensions": {"code": "BANG", "request_id": "r"}}]
+            },
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"docs": [{"id": "10", "blocks": [{"id": "old1"}, {"id": "n0"}]}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"delete_doc_block": {"id": "n0"}})
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_ok({"docs": []}), is_reusable=True
+        )
+        result = runner.invoke(app, ["doc", "set", "--doc", "10", "--markdown", big])
+        assert result.exit_code != 0
+        deleted = [
+            json.loads(r.content)["variables"].get("block")
+            for r in httpx_mock.get_requests()
+            if "delete_doc_block" in json.loads(r.content).get("query", "")
+        ]
+        assert deleted == ["n0"]
+
 
 class TestDocClear:
     """Issue #60: `doc clear` empties a doc but keeps the document."""

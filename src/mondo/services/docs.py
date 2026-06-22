@@ -131,31 +131,38 @@ def add_markdown_chunked(
     all_block_ids: list[str] = []
     prev_after = after
     for idx, chunk in enumerate(chunks):
-        data = client.execute(
-            ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
-            variables={"doc": doc_id, "md": chunk, "after": prev_after},
-        )
-        result = (data.get("data") or {}).get("add_content_to_doc_from_markdown") or {}
-        if not result.get("success"):
-            base = result.get("error") or "add_content_to_doc_from_markdown failed"
-            if idx > 0:
-                raise PartialDocAddError(
-                    f"{base} (partial content added: {len(all_block_ids)} blocks "
-                    f"from {idx} of {len(chunks)} chunks before the failure)",
-                    list(all_block_ids),
-                )
-            raise ValidationError(base)
-        chunk_block_ids = result.get("block_ids") or []
-        all_block_ids.extend(chunk_block_ids)
-        # Only re-fetch the anchor when more chunks remain (saves one read on
-        # the common single-chunk path). Anchor to the last root block *this
-        # chunk* produced, so the next chunk lands right after it — not after
-        # the whole doc's tail (which would scatter chunks when `after` points
-        # mid-doc).
-        if idx < len(chunks) - 1:
-            prev_after = (
-                _last_root_block_id(client, doc_id, among=set(chunk_block_ids)) or prev_after
+        try:
+            data = client.execute(
+                ADD_CONTENT_TO_DOC_FROM_MARKDOWN,
+                variables={"doc": doc_id, "md": chunk, "after": prev_after},
             )
+            result = (data.get("data") or {}).get("add_content_to_doc_from_markdown") or {}
+            if not result.get("success"):
+                raise ValidationError(
+                    result.get("error") or "add_content_to_doc_from_markdown failed"
+                )
+            all_block_ids.extend(result.get("block_ids") or [])
+            # Only re-fetch the anchor when more chunks remain (saves one read on
+            # the common single-chunk path). Anchor to the last root block *this
+            # chunk* produced, so the next chunk lands right after it — not after
+            # the whole doc's tail (which would scatter chunks when `after`
+            # points mid-doc).
+            if idx < len(chunks) - 1:
+                prev_after = (
+                    _last_root_block_id(client, doc_id, among=set(result.get("block_ids") or []))
+                    or prev_after
+                )
+        except MondoError as e:
+            # ANY failure (success:false, a raised network/server error, or a
+            # failed anchor re-fetch) after earlier chunks already wrote blocks
+            # must carry the created ids so `doc set` can roll back exactly that
+            # content. A first-chunk failure wrote nothing, so it surfaces as-is.
+            if all_block_ids and not isinstance(e, PartialDocAddError):
+                raise PartialDocAddError(
+                    f"{e} (partial content added: {len(all_block_ids)} blocks before the failure)",
+                    list(all_block_ids),
+                ) from e
+            raise
 
     return {"success": True, "block_ids": all_block_ids, "error": None}
 
