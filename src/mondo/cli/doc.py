@@ -87,6 +87,8 @@ class DocsOrderBy(StrEnum):
 class DocFormat(StrEnum):
     json = "json"
     markdown = "markdown"
+    mdx = "mdx"
+    html = "html"
 
 
 class DuplicateDocType(StrEnum):
@@ -529,23 +531,25 @@ def get_cmd(
     fmt: DocFormat = typer.Option(
         DocFormat.json,
         "--format",
-        help="Emit raw JSON (blocks as-is) or render blocks to markdown.",
+        help="Emit raw JSON (blocks as-is) or render blocks to markdown, mdx, or html.",
         case_sensitive=False,
     ),
     out: Path | None = typer.Option(
         None,
         "--out",
         help=(
-            "Write markdown to this file and download embedded images into "
-            "the same folder, referenced by local filename (requires "
-            "--format markdown). Without it, markdown goes to stdout and "
-            "images keep their (browser-only) monday URLs."
+            "Write the rendered doc to this file (requires --format "
+            "markdown/mdx/html). For markdown/mdx, embedded images are "
+            "downloaded into the same folder and referenced by local filename; "
+            "for html they are base64-embedded so the file is self-contained. "
+            "Without --out, output goes to stdout (markdown/mdx keep monday "
+            "image URLs; html still embeds images)."
         ),
     ),
     no_images: bool = typer.Option(
         False,
         "--no-images",
-        help="With --out, skip downloading images; keep their monday URLs.",
+        help="Skip downloading/embedding images; keep their (browser-only) monday URLs.",
     ),
     with_url: bool = typer.Option(
         False,
@@ -580,13 +584,13 @@ def get_cmd(
     """
     from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
     from mondo.cli._normalize import normalize_doc_entry
-    from mondo.docs import blocks_to_markdown
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
-    if out is not None and fmt is not DocFormat.markdown:
-        usage_error_or_exit("--out is only valid with --format markdown.")
+    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html}
+    if out is not None and fmt not in _RENDER_FORMATS:
+        usage_error_or_exit("--out is only valid with --format markdown, mdx, or html.")
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
         usage_error_or_exit("pass exactly one of --id or --object-id.")
@@ -652,16 +656,37 @@ def get_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    if fmt is DocFormat.markdown:
+    if fmt is DocFormat.html:
+        from mondo.docs import blocks_to_html
+
+        blocks = doc.get("blocks") or []
+        images: dict[str, tuple[str, str]] = {}
+        if not no_images:
+            from mondo.cli._doc_images import embed_doc_images
+
+            images = embed_doc_images(opts, blocks)
+        html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
+        if out is not None:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(html_text)
+            opts.emit({"out": str(out), "images": len(images)})
+            return
+        typer.echo(html_text)
+        return
+
+    if fmt in (DocFormat.markdown, DocFormat.mdx):
+        from mondo.docs import blocks_to_markdown, blocks_to_mdx
+
+        render = blocks_to_markdown if fmt is DocFormat.markdown else blocks_to_mdx
         blocks = doc.get("blocks") or []
         if out is not None:
-            images: dict[str, tuple[str, str]] = {}
+            images = {}
             if not no_images:
                 from mondo.cli._doc_images import download_doc_images
 
                 images = download_doc_images(opts, blocks, out.parent)
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(blocks_to_markdown(blocks, images=images))
+            out.write_text(render(blocks, images=images))
             opts.emit(
                 {
                     "out": str(out),
@@ -669,7 +694,7 @@ def get_cmd(
                 }
             )
             return
-        typer.echo(blocks_to_markdown(blocks))
+        typer.echo(render(blocks))
         return
     doc = normalize_doc_entry(doc)
     opts.emit(doc)

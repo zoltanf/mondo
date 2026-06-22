@@ -15,6 +15,7 @@ share the name `image-from-clipboard.png` — don't collide.
 
 from __future__ import annotations
 
+import base64
 import re
 from pathlib import Path
 from typing import Any
@@ -138,6 +139,64 @@ def download_doc_images(
     asset_ids = collect_image_asset_ids(blocks)
     downloaded = _download_assets(opts, asset_ids, folder)
     return {str(aid): (info["name"], info["filename"]) for aid, info in downloaded.items()}
+
+
+# Map a monday asset `file_extension` to a MIME type when the download
+# response carries no usable Content-Type header.
+_EXT_MIME = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+    "bmp": "image/bmp",
+    "tiff": "image/tiff",
+}
+
+
+def _download_bytes(url: str) -> tuple[bytes, str | None]:
+    """Fetch an asset into memory, returning `(bytes, content_type)`."""
+    try:
+        resp = httpx.get(url, follow_redirects=True)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise NetworkError(f"image download failed: HTTP {e.response.status_code}") from e
+    except httpx.RequestError as e:
+        raise NetworkError(f"image download failed: {e}") from e
+    return resp.content, resp.headers.get("content-type")
+
+
+def embed_doc_images(
+    opts: GlobalOpts, blocks: list[dict[str, Any]]
+) -> dict[str, tuple[str, str]]:
+    """Resolve + download every image block's asset and base64-embed it.
+
+    Returns the map `blocks_to_html` expects: `str(assetId)` → `(alt_text,
+    data_uri)`, with the asset name as alt. Unlike `download_doc_images` this
+    writes nothing to disk — the bytes go inline as `data:` URIs so the HTML is
+    a single self-contained file.
+    """
+    asset_ids = collect_image_asset_ids(blocks)
+    meta = _resolve_assets(opts, asset_ids)
+    if not meta:
+        return {}
+    embedded: dict[str, tuple[str, str]] = {}
+    for aid in asset_ids:
+        asset = meta.get(aid)
+        if asset is None:
+            continue
+        url = asset.get("public_url") or asset.get("url")
+        if not url:
+            continue
+        data, ctype = _download_bytes(url)
+        mime = (ctype or "").split(";")[0].strip()
+        if not mime:
+            ext = (asset.get("file_extension") or "").lstrip(".").lower()
+            mime = _EXT_MIME.get(ext, "application/octet-stream")
+        b64 = base64.b64encode(data).decode("ascii")
+        embedded[str(aid)] = (asset.get("name") or "", f"data:{mime};base64,{b64}")
+    return embedded
 
 
 def localize_markdown_images(
