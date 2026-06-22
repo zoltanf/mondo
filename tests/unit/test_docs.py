@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 
 from mondo.docs import (
+    blocks_to_html,
     blocks_to_markdown,
+    blocks_to_mdx,
     coalesce_markdown_emphasis,
     collect_image_asset_ids,
     extract_doc_ids_from_column_value,
@@ -822,3 +824,238 @@ class TestCoalesceMarkdownEmphasis:
         # while still collapsing a real seam elsewhere in the same document.
         md = "**a ****b**\n\n****\n\nmore"
         assert coalesce_markdown_emphasis(md) == "**a b**\n\n****\n\nmore"
+
+
+def _b(bid, btype, text="", parent=None):
+    """Block fixture: text becomes deltaFormat content; empty → {}."""
+    return {
+        "id": bid,
+        "type": btype,
+        "content": {"deltaFormat": [{"insert": text}]} if text else {},
+        "parent_block_id": parent,
+    }
+
+
+class TestBlocksToMdx:
+    def test_markdown_passthrough_when_no_special_chars(self) -> None:
+        blocks = [_b("h", "large_title", "Title"), _b("p", "normal_text", "plain prose")]
+        assert blocks_to_mdx(blocks) == blocks_to_markdown(blocks)
+
+    def test_escapes_angle_bracket_in_prose(self) -> None:
+        out = blocks_to_mdx([_b("p", "normal_text", "use <Component> here")])
+        assert r"use \<Component> here" in out
+
+    def test_escapes_brace_in_prose(self) -> None:
+        out = blocks_to_mdx([_b("p", "normal_text", "value {x}")])
+        assert r"value \{x}" in out
+
+    def test_does_not_escape_inside_code_block(self) -> None:
+        """MDX never parses inside fenced code — escaping there would corrupt it."""
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "<div>{x}</div>"}]},
+        }
+        out = blocks_to_mdx([block])
+        assert "<div>{x}</div>" in out
+        assert r"\<div>" not in out
+
+    def test_callouts_stay_gfm_blockquotes(self) -> None:
+        out = blocks_to_mdx([_b("n", "notice_box"), _b("c", "normal_text", "inside", parent="n")])
+        assert "> [!NOTE]" in out
+
+    def test_escapes_table_cell_text(self) -> None:
+        blocks = [
+            {"id": "t", "type": "table", "content": {"cells": [[{"blockId": "cell"}]]}},
+            _b("cell", "table_cell", parent="t"),
+            _b("txt", "normal_text", "a <b> c", parent="cell"),
+        ]
+        out = blocks_to_mdx(blocks)
+        assert r"a \<b> c" in out
+
+    def test_neutralizes_leading_import_keyword(self) -> None:
+        # A prose line opening with `import` would be parsed as MDX ESM; the
+        # leading letter is encoded so it renders as text instead.
+        out = blocks_to_mdx([_b("p", "normal_text", "import the data first")])
+        assert "&#105;mport the data first" in out  # 105 == ord('i')
+        assert not out.strip().startswith("import")
+
+    def test_neutralizes_leading_export_keyword(self) -> None:
+        out = blocks_to_mdx([_b("p", "normal_text", "export your results")])
+        assert "&#101;xport your results" in out  # 101 == ord('e')
+
+    def test_import_mid_sentence_left_intact(self) -> None:
+        out = blocks_to_mdx([_b("p", "normal_text", "we import the data")])
+        assert "we import the data" in out
+
+    def test_leading_import_inside_code_fence_left_intact(self) -> None:
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "import os"}]},
+        }
+        out = blocks_to_mdx([block])
+        assert "import os" in out
+        assert "&#105;mport" not in out
+
+    def test_leading_import_inside_unusual_lang_fence_left_intact(self) -> None:
+        # A fence whose info string isn't plain `[\w-]*` (e.g. `c++`/`c#`) must
+        # still be recognized so code content isn't rewritten as prose.
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "import std"}], "language": "c++"},
+        }
+        out = blocks_to_mdx([block])
+        assert "import std" in out
+        assert "&#105;mport" not in out
+
+    def test_tilde_line_inside_backtick_fence_does_not_desync(self) -> None:
+        # A ``` block whose content has a ~~~ line must NOT be treated as a
+        # fence close, or `import` after it would be wrongly neutralized.
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "~~~\nimport os"}]},
+        }
+        out = blocks_to_mdx([block])
+        assert "import os" in out
+        assert "&#105;mport" not in out
+
+
+class TestBlocksToHtml:
+    def test_wraps_in_self_contained_document(self) -> None:
+        out = blocks_to_html([_b("p", "normal_text", "hi")], title="My Doc")
+        assert out.startswith("<!DOCTYPE html>")
+        assert "<style>" in out
+        assert "<title>My Doc</title>" in out
+        assert '<h1 class="doc-title">My Doc</h1>' in out
+        assert "<p>hi</p>" in out
+
+    def test_headings(self) -> None:
+        out = blocks_to_html(
+            [
+                _b("a", "large_title", "H1"),
+                _b("b", "medium_title", "H2"),
+                _b("c", "small_title", "H3"),
+            ]
+        )
+        assert "<h1>H1</h1>" in out
+        assert "<h2>H2</h2>" in out
+        assert "<h3>H3</h3>" in out
+
+    def test_escapes_html_in_text(self) -> None:
+        out = blocks_to_html([_b("p", "normal_text", "a <b> & c")])
+        assert "<p>a &lt;b&gt; &amp; c</p>" in out
+
+    def test_bulleted_list_groups_into_ul(self) -> None:
+        out = blocks_to_html([_b("1", "bulleted_list", "a"), _b("2", "bulleted_list", "b")])
+        assert "<ul>" in out and "</ul>" in out
+        assert out.count("<li>") == 2
+
+    def test_numbered_list_groups_into_ol(self) -> None:
+        out = blocks_to_html([_b("1", "numbered_list", "a"), _b("2", "numbered_list", "b")])
+        assert "<ol>" in out and "</ol>" in out
+
+    def test_checklist_renders_disabled_checkbox(self) -> None:
+        checked = {
+            "id": "1",
+            "type": "check_list",
+            "content": {"deltaFormat": [{"insert": "done"}], "checked": True},
+        }
+        unchecked = _b("2", "check_list", "todo")
+        out = blocks_to_html([checked, unchecked])
+        assert 'class="checklist"' in out
+        assert '<input type="checkbox" disabled checked>' in out
+        assert '<input type="checkbox" disabled>' in out
+
+    def test_code_block(self) -> None:
+        block = {
+            "id": "c",
+            "type": "code",
+            "content": {"deltaFormat": [{"insert": "x = 1 < 2"}], "language": "python"},
+        }
+        out = blocks_to_html([block])
+        assert '<pre><code class="language-python">x = 1 &lt; 2</code></pre>' in out
+
+    def test_divider_and_quote(self) -> None:
+        out = blocks_to_html([_b("d", "divider"), _b("q", "quote", "wise")])
+        assert "<hr>" in out
+        assert "<blockquote>wise</blockquote>" in out
+
+    def test_notice_box_renders_as_aside(self) -> None:
+        out = blocks_to_html([_b("n", "notice_box"), _b("c", "normal_text", "inside", parent="n")])
+        assert '<aside class="notice">' in out
+        assert "<p>inside</p>" in out
+
+    def test_layout_renders_children_in_div(self) -> None:
+        out = blocks_to_html([_b("l", "layout"), _b("c", "normal_text", "col", parent="l")])
+        assert '<div class="layout">' in out
+        assert "<p>col</p>" in out
+
+    def test_image_without_map_keeps_url(self) -> None:
+        block = {"id": "i", "type": "image", "content": {"assetId": 7, "url": "https://x/a.png"}}
+        out = blocks_to_html([block])
+        assert '<img src="https://x/a.png" alt="">' in out
+
+    def test_image_with_map_embeds_data_uri(self) -> None:
+        block = {"id": "i", "type": "image", "content": {"assetId": 7, "url": "https://x/a.png"}}
+        out = blocks_to_html([block], images={"7": ("photo.png", "data:image/png;base64,AAA")})
+        assert '<img src="data:image/png;base64,AAA" alt="photo.png">' in out
+
+    def test_escapes_hostile_image_url(self) -> None:
+        block = {
+            "id": "i",
+            "type": "image",
+            "content": {"assetId": 7, "url": 'https://x/a.png"><script>alert(1)</script>'},
+        }
+        out = blocks_to_html([block])
+        assert "<script>alert(1)</script>" not in out
+        assert "&lt;script&gt;" in out
+
+    def test_escapes_hostile_image_alt(self) -> None:
+        block = {"id": "i", "type": "image", "content": {"assetId": 7, "url": "https://x/a.png"}}
+        out = blocks_to_html(
+            [block], images={"7": ('"><script>x</script>', "data:image/png;base64,AAA")}
+        )
+        assert "<script>x</script>" not in out
+
+    def test_escapes_hostile_title(self) -> None:
+        out = blocks_to_html(
+            [_b("p", "normal_text", "hi")], title="</title><script>alert(1)</script>"
+        )
+        assert "<script>alert(1)</script>" not in out
+        assert "&lt;/title&gt;" in out
+
+    def test_table_renders_html_table(self) -> None:
+        # Matrix references *cell* blocks (parented to the table); each cell's
+        # visible text lives in a child block parented to the cell.
+        blocks = [
+            {
+                "id": "t",
+                "type": "table",
+                "content": {
+                    "cells": [
+                        [{"blockId": "h1"}, {"blockId": "h2"}],
+                        [{"blockId": "c1"}, {"blockId": "c2"}],
+                    ]
+                },
+            },
+            _b("h1", "table_cell", parent="t"),
+            _b("h2", "table_cell", parent="t"),
+            _b("c1", "table_cell", parent="t"),
+            _b("c2", "table_cell", parent="t"),
+            _b("h1t", "normal_text", "A", parent="h1"),
+            _b("h2t", "normal_text", "B", parent="h2"),
+            _b("c1t", "normal_text", "1", parent="c1"),
+            _b("c2t", "normal_text", "2", parent="c2"),
+        ]
+        out = blocks_to_html(blocks)
+        assert "<table>" in out
+        assert "<th>A</th>" in out and "<th>B</th>" in out
+        assert "<td>1</td>" in out and "<td>2</td>" in out
+
+    def test_empty_blocks(self) -> None:
+        out = blocks_to_html([], title="Empty")
+        assert out.startswith("<!DOCTYPE html>")
+        assert "<title>Empty</title>" in out

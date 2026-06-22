@@ -1,8 +1,9 @@
 """`mondo graphql '<query>'` — raw GraphQL passthrough.
 
 Reads a query (positional, from stdin via `-`, or from a file via `@path`) and
-emits the parsed response envelope `{data, errors, extensions}` through the
-global formatter pipeline (so `-o json` / `-q` / etc. work uniformly).
+emits the unwrapped `data` object through the global formatter pipeline (so
+`-o json` / `-q` / etc. work uniformly, matching typed subcommands). Pass
+`--raw` to emit the full `{data, errors, extensions}` envelope instead.
 """
 
 from __future__ import annotations
@@ -47,8 +48,20 @@ def graphql_command(
         metavar="JSON",
         help="Variables as a JSON string. Use `@path` to read from a file.",
     ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Emit the full {data, errors, extensions} envelope instead of "
+        "just the unwrapped `data` object.",
+    ),
 ) -> None:
     """Send a raw GraphQL query to monday.com and print the response.
+
+    By default the unwrapped `data` object is printed (matching typed
+    subcommands), so `-q`/jq paths address the result directly — e.g.
+    `mondo graphql 'query { boards { id } }' | jq '.boards[]'`. GraphQL
+    errors fail loudly (non-zero exit), just like typed subcommands. Pass
+    `--raw` to print the full `{data, errors, extensions}` envelope.
 
     Pass the query positionally. As a convenience, a GraphQL document
     passed to the global `-q/--query` (JMESPath projection) flag is run
@@ -101,8 +114,15 @@ def graphql_command(
 
     try:
         with client:
+            # raw=True keeps the user's query verbatim (no complexity rewrite).
+            # GraphQL-layer errors still raise here (and retry on transient ones
+            # like rate-limit/complexity), exactly as typed subcommands do, so a
+            # failing query fails loudly via the handler below.
             result = client.execute(query_text, variables=vars_dict, raw=True)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    opts.emit(result)
+    # Success: emit the full {data, errors, extensions} envelope under --raw, or
+    # the unwrapped `data` object by default (matching typed subcommands, so
+    # `-q`/jq paths address the payload directly without a `.data` prefix).
+    opts.emit(result if raw else result.get("data"))

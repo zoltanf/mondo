@@ -77,10 +77,12 @@ def test_live_favorite_list(live_workspace_id: int) -> None:
 
 @pytest.mark.integration
 def test_live_graphql_read_query(live_workspace_id: int) -> None:
-    """Raw passthrough returns monday's `{data: {...}}` envelope."""
+    """Default unwraps `data`; `--raw` keeps monday's full envelope."""
     del live_workspace_id
     out = invoke_json(["graphql", "query { me { id name } }"])
-    assert out["data"]["me"]["id"], out
+    assert out["me"]["id"], out
+    raw = invoke_json(["graphql", "--raw", "query { me { id name } }"])
+    assert raw["data"]["me"]["id"], raw
 
 
 @pytest.mark.integration

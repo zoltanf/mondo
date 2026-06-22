@@ -389,10 +389,12 @@ MANUAL_ROWS: dict[str, Row] = {
             "blocks{id,type,content,parent_block_id}",
         ],
         notes=(
-            "Default format is JSON object above. --format markdown prints markdown text "
-            "instead. With --format markdown --out FILE, writes the markdown to FILE and emits "
-            "{out, images} where images is the list of localized image filenames downloaded "
-            "beside it (empty with --no-images). --out requires --format markdown (exit 2 otherwise)."
+            "Default format is JSON object above. --format markdown/mdx/html render to stdout "
+            "instead (mdx is JSX-safe markdown; html is a single self-contained document). With "
+            "--out FILE: markdown/mdx write the text to FILE and emit {out, images} where images is "
+            "the list of localized image filenames downloaded beside it; html embeds images as "
+            "base64 and emits {out, images} where images is the embedded count. --no-images keeps "
+            "the monday URLs. --out requires --format markdown/mdx/html (exit 2 otherwise)."
         ),
         source="DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]",
     ),
@@ -535,13 +537,15 @@ MANUAL_ROWS: dict[str, Row] = {
     "graphql": Row(
         command="graphql",
         output_type="dynamic object",
-        fields=["data?", "errors?", "extensions?"],
+        fields=["<unwrapped data> | data?, errors?, extensions? (--raw)"],
         notes=(
-            "Raw GraphQL response envelope from monday; shape depends entirely "
-            "on the submitted query. --dry-run is not supported (refused with "
+            "Default emits the unwrapped `data` object, so shape depends "
+            "entirely on the submitted query; --raw keeps monday's full "
+            "{data, errors, extensions} envelope. Erroring queries fail "
+            "non-zero on both paths. --dry-run is not supported (refused with "
             "exit 2 — mondo can't safely preview a query it doesn't parse)."
         ),
-        source="client.execute(..., raw=True)",
+        source="client.execute(..., raw=True) → data (or full envelope with --raw)",
     ),
     "help": Row(
         command="help",

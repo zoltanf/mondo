@@ -6,7 +6,13 @@ exercised by the live integration suite; here we cover the pure logic.
 
 from __future__ import annotations
 
+import pytest
+from pytest_httpx import HTTPXMock
+
+from mondo.api.errors import NetworkError
+from mondo.cli import _doc_images
 from mondo.cli._doc_images import (
+    _download_bytes,
     extract_asset_ids_from_markdown,
     local_filename,
     rewrite_markdown_images,
@@ -74,3 +80,23 @@ class TestRewriteMarkdownImages:
     def test_external_image_untouched(self) -> None:
         md = "![](https://example.test/img.png)"
         assert rewrite_markdown_images(md, {1: "x.png"}) == md
+
+
+class TestDownloadBytesSizeCap:
+    """`_download_bytes` caps embedded assets so a huge image can't OOM."""
+
+    def test_small_asset_downloads(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url="https://x/a.png", content=b"hello", headers={"content-type": "image/png"}
+        )
+        data, ctype = _download_bytes("https://x/a.png")
+        assert data == b"hello"
+        assert ctype == "image/png"
+
+    def test_rejects_oversized_via_content_length(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(_doc_images, "_MAX_EMBED_BYTES", 4)
+        httpx_mock.add_response(url="https://x/big.png", content=b"way too many bytes")
+        with pytest.raises(NetworkError, match="too large to embed"):
+            _download_bytes("https://x/big.png")

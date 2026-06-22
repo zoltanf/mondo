@@ -52,7 +52,7 @@ def test_fields_trims_a_list_payload(httpx_mock: HTTPXMock) -> None:
             "--fields",
             "id,name",
             "-q",
-            "data.users",
+            "users",
             "-o",
             "json",
             "graphql",
@@ -79,7 +79,7 @@ def test_fields_with_csv_output(httpx_mock: HTTPXMock) -> None:
             "--fields",
             "id,name",
             "-q",
-            "data.users",
+            "users",
             "-o",
             "csv",
             "graphql",
@@ -93,16 +93,16 @@ def test_fields_with_csv_output(httpx_mock: HTTPXMock) -> None:
 
 
 def test_fields_without_query_projects_dict(httpx_mock: HTTPXMock) -> None:
-    """--fields without -q operates on the whole envelope, not just the data
-    payload. That mirrors how -q sees the entire envelope by default."""
+    """--fields without -q operates on the unwrapped `data` object that
+    `mondo graphql` emits by default (the same payload -q would see)."""
     _graphql_ok(httpx_mock, {"me": {"id": "1", "name": "Alice", "email": "a@x"}})
     result = runner.invoke(
         app,
-        ["--fields", "data", "-o", "json", "graphql", "query { me { id name email } }"],
+        ["--fields", "me", "-o", "json", "graphql", "query { me { id name email } }"],
     )
     assert result.exit_code == 0, result.output
     parsed = json.loads(result.stdout)
-    assert parsed == {"data": {"me": {"id": "1", "name": "Alice", "email": "a@x"}}}
+    assert parsed == {"me": {"id": "1", "name": "Alice", "email": "a@x"}}
 
 
 def test_fields_appears_in_help_as_global_option() -> None:
@@ -129,13 +129,13 @@ def test_query_runs_before_fields(httpx_mock: HTTPXMock) -> None:
             ]
         },
     )
-    # Without --fields, -q 'data.users' returns the list.
+    # Without --fields, -q 'users' returns the list.
     # With --fields id, each row is trimmed to {id}.
     result = runner.invoke(
         app,
         [
             "-q",
-            "data.users",
+            "users",
             "--fields",
             "id",
             "-o",

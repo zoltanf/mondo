@@ -24,7 +24,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("MONDAY_API_TOKEN", "test-token-12345-abcdef-long-enough")
 
 
-def test_graphql_sends_query_and_prints_envelope(httpx_mock: HTTPXMock) -> None:
+def test_graphql_unwraps_data_by_default(httpx_mock: HTTPXMock) -> None:
     httpx_mock.add_response(
         url=ENDPOINT,
         method="POST",
@@ -33,7 +33,49 @@ def test_graphql_sends_query_and_prints_envelope(httpx_mock: HTTPXMock) -> None:
     result = runner.invoke(app, ["graphql", "query { me { id name } }"])
     assert result.exit_code == 0, result.stdout
     out = json.loads(result.stdout)
+    # Unwrapped: the `data` object is emitted directly, no envelope.
+    assert out == {"me": {"id": "1", "name": "Alice"}}
+    assert "extensions" not in out
+
+
+def test_graphql_raw_prints_full_envelope(httpx_mock: HTTPXMock) -> None:
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={"data": {"me": {"id": "1", "name": "Alice"}}, "extensions": {"request_id": "r"}},
+    )
+    result = runner.invoke(app, ["graphql", "--raw", "query { me { id name } }"])
+    assert result.exit_code == 0, result.stdout
+    out = json.loads(result.stdout)
     assert out["data"]["me"]["name"] == "Alice"
+    assert out["extensions"] == {"request_id": "r"}
+
+
+def test_graphql_graphql_errors_fail_nonzero(httpx_mock: HTTPXMock) -> None:
+    """A 200 response carrying a GraphQL `errors` array must fail loudly in
+    the unwrap path, not emit a misleading null `data`."""
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={"data": None, "errors": [{"message": "Field 'bogus' doesn't exist"}]},
+    )
+    result = runner.invoke(app, ["graphql", "query { bogus }"])
+    assert result.exit_code != 0
+    combined = ((result.stdout or "") + (result.stderr or "")).lower()
+    assert "bogus" in combined
+
+
+def test_graphql_raw_errors_fail_nonzero(httpx_mock: HTTPXMock) -> None:
+    """`--raw` also fails loudly on a GraphQL error: the client raises (and
+    retries transient ones) rather than emitting an error envelope, matching
+    typed-subcommand exit codes."""
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={"data": None, "errors": [{"message": "Field 'bogus' doesn't exist"}]},
+    )
+    result = runner.invoke(app, ["graphql", "--raw", "query { bogus }"])
+    assert result.exit_code != 0
 
 
 def test_graphql_with_variables(httpx_mock: HTTPXMock) -> None:
@@ -103,9 +145,9 @@ def test_graphql_query_flag_runs_as_document(httpx_mock: HTTPXMock) -> None:
     assert result.exit_code == 0, result.output
     body = json.loads(httpx_mock.get_request().content)  # type: ignore[union-attr]
     assert body["query"] == "query { me { id name } }"
-    # Projection is disabled: the full envelope is printed, un-projected.
+    # Projection is disabled: the unwrapped `data` object is printed.
     out = json.loads(result.stdout)
-    assert out["data"]["me"]["name"] == "Alice"
+    assert out == {"me": {"id": "1", "name": "Alice"}}
     assert "note:" in (result.stderr or "")
     assert "positionally" in (result.stderr or "")
 
@@ -130,7 +172,7 @@ def test_graphql_query_flag_through_main(
     except SystemExit as e:  # main() may sys.exit(0)
         assert not e.code, f"expected success, got exit {e.code}"
     captured = capsys.readouterr()
-    assert json.loads(captured.out)["data"]["me"]["id"] == "1"
+    assert json.loads(captured.out) == {"me": {"id": "1"}}
     assert "note:" in captured.err
 
 
@@ -141,9 +183,7 @@ def test_graphql_positional_plus_projection_unchanged(httpx_mock: HTTPXMock) -> 
         method="POST",
         json={"data": {"me": {"id": "1", "name": "Alice"}}, "extensions": {"request_id": "r"}},
     )
-    result = runner.invoke(
-        app, ["-o", "json", "-q", "data.me", "graphql", "query { me { id name } }"]
-    )
+    result = runner.invoke(app, ["-o", "json", "-q", "me", "graphql", "query { me { id name } }"])
     assert result.exit_code == 0, result.output
     body = json.loads(httpx_mock.get_request().content)  # type: ignore[union-attr]
     assert body["query"] == "query { me { id name } }"

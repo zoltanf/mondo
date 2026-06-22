@@ -29,7 +29,7 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 
 *Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the (also numeric) URL-visible doc id (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
-## Get a doc — JSON or Markdown
+## Get a doc — JSON, Markdown, MDX, or HTML
 
 ```bash
 # Structured JSON (blocks, deltas, types):
@@ -42,20 +42,28 @@ mondo doc get --object-id 5098297247 --format json -o json
 mondo doc export-markdown --object-id 5098297247
 mondo doc export-markdown --doc 5095668848
 
-# Client-side render via `doc get` (prints markdown to stdout):
+# Client-side render via `doc get` (prints to stdout) — markdown, mdx, or html:
 mondo doc get --object-id 5098297247 --format markdown
+mondo doc get --object-id 5098297247 --format mdx
+mondo doc get --object-id 5098297247 --format html
 ```
 
-Two markdown paths exist: `doc export-markdown` (monday's server-side renderer) and `doc get --format markdown` (mondo's client-side block renderer). Both print to stdout by default.
+`doc get --format` renders client-side and supports `markdown`, `mdx`, and `html`; `doc export-markdown` is monday's server-side markdown renderer (markdown only — the API offers no server-side HTML/MDX export). All print to stdout by default.
+
+- **mdx** is the markdown rendering with JSX-significant characters (`<`, `{`) escaped in prose (never inside code fences); monday notice/callout boxes stay as GFM `> [!NOTE]` blockquotes.
+- **html** is a single self-contained document (inline `<style>`, base64-embedded images) — see below.
 
 *Note:* `export-markdown` is always live (it has no per-doc cache), so `--no-cache` / `--refresh-cache` are accepted as no-ops purely for symmetry with the other doc commands.
 
-### Write markdown to a file (and download embedded images)
+### Write to a file (and handle embedded images)
 
-Add `--out FILE` to either command to write the markdown to a file. Embedded monday images are downloaded into the **same folder** and referenced by a local `<assetId>-<name>` filename — because the raw `protected_static` image URLs only resolve in a logged-in browser, so the bare markdown is useless off-platform.
+Add `--out FILE` to write the rendered doc to a file (valid for `markdown`, `mdx`, and `html`; rejected with exit 2 for `json`).
+
+For **markdown** and **mdx**, embedded monday images are downloaded into the **same folder** and referenced by a local `<assetId>-<name>` filename — because the raw `protected_static` image URLs only resolve in a logged-in browser, so the bare file is useless off-platform.
 
 ```bash
 mondo doc get --object-id 5098297247 --format markdown --out ./spec.md
+mondo doc get --object-id 5098297247 --format mdx --out ./spec.mdx
 mondo doc export-markdown --object-id 5098297247 --out ./spec.md
 ```
 
@@ -63,7 +71,17 @@ mondo doc export-markdown --object-id 5098297247 --out ./spec.md
 {"out": "spec.md", "images": ["238776078-image-from-clipboard.png", "238776079-diagram.png"]}
 ```
 
-*Gotchas:* `--out` requires `--format markdown` on `doc get` (it's rejected with exit 2 for JSON). Pass `--no-images` to skip the download and leave the original monday URLs in place. The `images` field lists the local filenames actually written next to the markdown (images inside table cells are downloaded too, so references aren't orphaned).
+For **html**, images are base64-embedded directly in the file (no sidecar assets), so the output is a single portable file — this holds even when printing to stdout. The summary reports the embedded image *count*, not filenames:
+
+```bash
+mondo doc get --object-id 5098297247 --format html --out ./spec.html
+```
+
+```json
+{"out": "spec.html", "images": 3}
+```
+
+*Gotchas:* Pass `--no-images` to skip downloading/embedding and leave the original (browser-only) monday URLs in place — for markdown/mdx the `images` field then lists the local filenames actually written (images inside table cells are downloaded too, so references aren't orphaned).
 
 ```json
 {
