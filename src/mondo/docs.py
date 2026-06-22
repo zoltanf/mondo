@@ -19,8 +19,10 @@ Unsupported markdown (nested lists, inline formatting) round-trips through
 
 from __future__ import annotations
 
+import html
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 # --- doc column value parser ------------------------------------------------
@@ -325,7 +327,11 @@ _LEAF_TYPES = frozenset(
 )
 
 
-def _render_image(block: dict[str, Any], images: dict[str, tuple[str, str]] | None) -> str:
+def _render_image(
+    block: dict[str, Any],
+    images: dict[str, tuple[str, str]] | None,
+    text_filter: Callable[[str], str] | None = None,
+) -> str:
     """`![alt](ref)` for an `image` block.
 
     With an `images` map the asset's downloaded local filename (ref) and name
@@ -340,6 +346,8 @@ def _render_image(block: dict[str, Any], images: dict[str, tuple[str, str]] | No
         entry = images.get(str(asset_id))
         if entry is not None:
             alt, ref = entry
+    if text_filter is not None:
+        alt = text_filter(alt)
     # Escape `]` so an asset name like "a]b.png" can't close the alt span
     # early and corrupt the surrounding markdown.
     return f"![{alt.replace(']', r'\]')}]({ref})"
@@ -365,9 +373,32 @@ def _container_marker(btype: str, has_children: bool) -> str | None:
     return None
 
 
+def _build_block_tree(
+    blocks: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    """Split the flat `parent_block_id` graph into `(roots, children_of)`.
+
+    A block is a root when it has no parent, its parent is missing from this
+    list (orphan — surfaced at top level so it's never silently dropped), or it
+    points at itself (self-cycle). Shared by the markdown and HTML renderers.
+    """
+    by_id = {str(b["id"]): b for b in blocks if b.get("id") is not None}
+    children_of: dict[str, list[dict[str, Any]]] = {}
+    roots: list[dict[str, Any]] = []
+    for b in blocks:
+        parent = b.get("parent_block_id")
+        bid = b.get("id")
+        if parent is None or str(parent) == str(bid) or str(parent) not in by_id:
+            roots.append(b)
+        else:
+            children_of.setdefault(str(parent), []).append(b)
+    return roots, children_of
+
+
 def blocks_to_markdown(
     blocks: list[dict[str, Any]],
     images: dict[str, tuple[str, str]] | None = None,
+    text_filter: Callable[[str], str] | None = None,
 ) -> str:
     """Render a list of monday doc blocks as a markdown string.
 
@@ -379,30 +410,18 @@ def blocks_to_markdown(
     `images` maps `str(assetId)` → `(alt_text, ref)`; when an `image` block's
     asset is in the map its `ref` (a downloaded local filename) is emitted
     instead of the browser-only monday `url`.
+
+    `text_filter`, when given, post-processes every piece of *prose* text
+    (titles, list items, quotes, paragraphs, table cells, image alt) — code
+    block contents are passed through untouched. `blocks_to_mdx` uses it to
+    escape JSX-significant characters; markdown callers leave it `None`.
     """
     if not blocks:
         return ""
 
-    by_id: dict[str, dict[str, Any]] = {}
-    for b in blocks:
-        bid = b.get("id")
-        if bid is not None:
-            by_id[str(bid)] = b
-
-    children_of: dict[str, list[dict[str, Any]]] = {}
-    roots: list[dict[str, Any]] = []
-    for b in blocks:
-        bid = b.get("id")
-        parent = b.get("parent_block_id")
-        # Treat as root when: no parent set, parent missing from this list
-        # (orphan — render at top so we don't silently drop), or self-cycle.
-        if parent is None or str(parent) == str(bid) or str(parent) not in by_id:
-            roots.append(b)
-        else:
-            children_of.setdefault(str(parent), []).append(b)
-
+    roots, children_of = _build_block_tree(blocks)
     lines: list[str] = []
-    _render_block_list(roots, children_of, "", lines, images)
+    _render_block_list(roots, children_of, "", lines, images, text_filter)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -412,6 +431,7 @@ def _render_table(
     prefix: str,
     lines: list[str],
     images: dict[str, tuple[str, str]] | None = None,
+    text_filter: Callable[[str], str] | None = None,
 ) -> bool:
     """Render a `table` block as a markdown pipe table.
 
@@ -447,11 +467,11 @@ def _render_table(
             pieces: list[str] = []
             for child in children_of.get(cell_id, []):
                 if _normalize_type(child.get("type") or "") == "image":
-                    pieces.append(_render_image(child, images))
+                    pieces.append(_render_image(child, images, text_filter))
                     continue
                 t = _extract_text(child.get("content"))
                 if t:
-                    pieces.append(t)
+                    pieces.append(text_filter(t) if text_filter else t)
             cell_text = " ".join(pieces)
             # Escape pipes and collapse newlines so the row syntax stays valid.
             cell_text = cell_text.replace("|", r"\|").replace("\n", " ")
@@ -480,6 +500,7 @@ def _render_block_list(
     prefix: str,
     lines: list[str],
     images: dict[str, tuple[str, str]] | None = None,
+    text_filter: Callable[[str], str] | None = None,
 ) -> None:
     """Render a sibling group at indentation `prefix`.
 
@@ -490,13 +511,18 @@ def _render_block_list(
     for block in siblings:
         btype = _normalize_type(block.get("type") or "")
         text = _extract_text(block.get("content"))
+        # Prose text is filtered (e.g. MDX escaping); code content is not —
+        # MDX never parses inside a fenced code block.
+        ptext = text_filter(text) if text_filter else text
         bid = str(block.get("id") or "")
         kids = children_of.get(bid, [])
 
         if btype != "numbered_list":
             numbered_counter = 0
 
-        if btype == "table" and _render_table(block, children_of, prefix, lines, images):
+        if btype == "table" and _render_table(
+            block, children_of, prefix, lines, images, text_filter
+        ):
             continue
 
         marker = _container_marker(btype, has_children=bool(kids))
@@ -504,7 +530,7 @@ def _render_block_list(
             child_prefix = prefix + "> " if marker else prefix
             if marker:
                 lines.append(f"{prefix}> {marker}")
-            _render_block_list(kids, children_of, child_prefix, lines, images)
+            _render_block_list(kids, children_of, child_prefix, lines, images, text_filter)
             lines.append("")
             continue
 
@@ -512,21 +538,21 @@ def _render_block_list(
         if btype == "divider":
             lines.append(f"{prefix}---")
         elif btype == "large_title":
-            lines.append(f"{prefix}# {text}")
+            lines.append(f"{prefix}# {ptext}")
         elif btype == "medium_title":
-            lines.append(f"{prefix}## {text}")
+            lines.append(f"{prefix}## {ptext}")
         elif btype == "small_title":
-            lines.append(f"{prefix}### {text}")
+            lines.append(f"{prefix}### {ptext}")
         elif btype == "bulleted_list":
-            lines.append(f"{prefix}- {text}")
+            lines.append(f"{prefix}- {ptext}")
         elif btype == "numbered_list":
             numbered_counter += 1
-            lines.append(f"{prefix}{numbered_counter}. {text}")
+            lines.append(f"{prefix}{numbered_counter}. {ptext}")
         elif btype == "check_list":
             mark = "x" if _extract_checked(block.get("content")) else " "
-            lines.append(f"{prefix}- [{mark}] {text}")
+            lines.append(f"{prefix}- [{mark}] {ptext}")
         elif btype == "quote":
-            lines.append(f"{prefix}> {text}")
+            lines.append(f"{prefix}> {ptext}")
         elif btype == "code":
             content = _as_content_dict(block.get("content")) or {}
             lang = content.get("language", "")
@@ -535,14 +561,328 @@ def _render_block_list(
                 lines.append(f"{prefix}{text}")
             lines.append(f"{prefix}```")
         elif btype == "image":
-            lines.append(f"{prefix}{_render_image(block, images)}")
-        elif text:
+            lines.append(f"{prefix}{_render_image(block, images, text_filter)}")
+        elif ptext:
             # normal_text + any other leaf type we haven't taught.
-            lines.append(f"{prefix}{text}")
+            lines.append(f"{prefix}{ptext}")
 
         # Defensive: a leaf block with unexpected children would otherwise
         # drop them. Render at same prefix so content survives.
         if kids:
-            _render_block_list(kids, children_of, prefix, lines, images)
+            _render_block_list(kids, children_of, prefix, lines, images, text_filter)
 
         lines.append("")
+
+
+# --- blocks → MDX -----------------------------------------------------------
+
+
+def _mdx_escape(text: str) -> str:
+    """Escape characters MDX would otherwise parse as JSX.
+
+    MDX treats `<` as the start of a JSX element and `{` as the start of a JS
+    expression; an unescaped one in plain prose is a hard compile error, not a
+    cosmetic glitch. Backslash is escaped first so we don't double-process the
+    escapes we add. Code-block contents are never passed here (see
+    `blocks_to_markdown`'s `text_filter` contract).
+    """
+    return text.replace("\\", "\\\\").replace("<", r"\<").replace("{", r"\{")
+
+
+# MDX parses a line that begins (after up to 3 spaces) with `import`/`export`
+# as an ESM statement, so doc prose starting with either word would be compiled
+# as module code instead of rendered as text — a hard failure, not cosmetic. A
+# 4+ space indent is an indented code block, not ESM, so it's excluded.
+_MDX_ESM_LINE_RE = re.compile(r"^( {0,3})(import|export)\b")
+
+# A fenced-code opener, regardless of info string. Unlike `_CODE_FENCE_RE`
+# (whose `[\w-]*` info string misses `c++`, `c#`, etc.), this recognizes any
+# ``` or ~~~ run so fence tracking can't desync and rewrite real code as prose.
+_MDX_FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+
+
+def _neutralize_mdx_esm(md: str) -> str:
+    """Stop a prose line that opens with `import`/`export` from being parsed as
+    MDX ESM by encoding its leading letter as a numeric character reference:
+    the line no longer starts with the bare keyword, but renders identically.
+    Fenced code blocks are left untouched — a fence closes only on a run of the
+    *same* delimiter char (length ≥ the opener), so e.g. a `~~~` line inside a
+    ```` ``` ```` block doesn't prematurely end tracking (GFM rule)."""
+    out: list[str] = []
+    fence_char = ""  # "" when outside a fence; "`" or "~" inside one
+    fence_len = 0
+    for line in md.split("\n"):
+        if fence_char:
+            stripped = line.strip()
+            if stripped and stripped == fence_char * len(stripped) and len(stripped) >= fence_len:
+                fence_char, fence_len = "", 0
+            out.append(line)
+            continue
+        opener = _MDX_FENCE_OPEN_RE.match(line)
+        if opener:
+            fence_char = opener.group(1)[0]
+            fence_len = len(opener.group(1))
+            out.append(line)
+            continue
+        m = _MDX_ESM_LINE_RE.match(line)
+        if m:
+            kw = m.group(2)
+            line = f"{m.group(1)}&#{ord(kw[0])};{kw[1:]}{line[m.end() :]}"
+        out.append(line)
+    return "\n".join(out)
+
+
+def blocks_to_mdx(
+    blocks: list[dict[str, Any]],
+    images: dict[str, tuple[str, str]] | None = None,
+) -> str:
+    """Render doc blocks as MDX.
+
+    MDX is GitHub-flavored markdown plus JSX, so the output is the markdown
+    rendering with JSX-significant characters escaped in prose. monday's
+    notice/callout containers stay as GFM `> [!NOTE]` blockquotes — MDX renders
+    them as ordinary blockquotes, and we make no assumption about the caller's
+    component library. A prose line opening with `import`/`export` is
+    neutralized so MDX doesn't compile it as an ESM statement.
+    """
+    return _neutralize_mdx_esm(blocks_to_markdown(blocks, images=images, text_filter=_mdx_escape))
+
+
+# --- blocks → HTML ----------------------------------------------------------
+
+_HTML_STYLE = """\
+:root { color-scheme: light dark; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6; max-width: 48rem; margin: 2rem auto; padding: 0 1rem;
+  color: #1a1a1a;
+}
+h1, h2, h3 { line-height: 1.25; margin: 1.4em 0 0.5em; }
+h1.doc-title { margin-top: 0; }
+img { max-width: 100%; height: auto; }
+hr { border: none; border-top: 1px solid #ddd; margin: 1.5em 0; }
+blockquote {
+  margin: 1em 0; padding: 0.2em 1em; border-left: 4px solid #ddd; color: #555;
+}
+pre {
+  background: #f5f5f5; padding: 0.8em 1em; border-radius: 6px; overflow-x: auto;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #ddd; padding: 0.4em 0.7em; text-align: left; }
+th { background: #f5f5f5; }
+ul.checklist { list-style: none; padding-left: 1.2em; }
+ul.checklist li { text-indent: -1.2em; }
+aside.notice {
+  margin: 1em 0; padding: 0.8em 1em; border-left: 4px solid #4a90d9;
+  background: #eef5fc; border-radius: 0 6px 6px 0;
+}
+.layout { display: flow-root; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6e6e6; background: #1a1a1a; }
+  pre, th { background: #2a2a2a; }
+  blockquote, hr, th, td { border-color: #444; }
+  aside.notice { background: #16283a; }
+}
+"""
+
+
+def _html_text(content: Any) -> str:
+    """Extract a block's text and HTML-escape it."""
+    return html.escape(_extract_text(content))
+
+
+def _render_html_image(block: dict[str, Any], images: dict[str, tuple[str, str]] | None) -> str:
+    """`<img>` for an image block; `src` is the embedded data URI (or, without
+    a map, the browser-only monday url so the image isn't dropped)."""
+    content = _as_content_dict(block.get("content")) or {}
+    asset_id = content.get("assetId")
+    alt = ""
+    src = content.get("url") or ""
+    if images is not None and asset_id is not None:
+        entry = images.get(str(asset_id))
+        if entry is not None:
+            alt, src = entry
+    return f'<img src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}">'
+
+
+def _render_html_table(
+    block: dict[str, Any],
+    children_of: dict[str, list[dict[str, Any]]],
+    images: dict[str, tuple[str, str]] | None,
+) -> list[str] | None:
+    """Render a `table` block as an HTML `<table>`.
+
+    Mirrors `_render_table`'s reading of `content.cells` (a row-major matrix of
+    `{"blockId": ...}` references). Returns None when the schema is
+    missing/malformed so the caller can fall back to a generic container.
+    """
+    content = _as_content_dict(block.get("content"))
+    if content is None:
+        return None
+    cells_matrix = content.get("cells")
+    if not isinstance(cells_matrix, list) or not cells_matrix:
+        return None
+
+    grid: list[list[str]] = []
+    for row in cells_matrix:
+        if not isinstance(row, list):
+            return None
+        row_html: list[str] = []
+        for cell_ref in row:
+            cell_id = ""
+            if isinstance(cell_ref, dict) and cell_ref.get("blockId") is not None:
+                cell_id = str(cell_ref["blockId"])
+            pieces: list[str] = []
+            for child in children_of.get(cell_id, []):
+                if _normalize_type(child.get("type") or "") == "image":
+                    pieces.append(_render_html_image(child, images))
+                else:
+                    t = _html_text(child.get("content"))
+                    if t:
+                        pieces.append(t)
+            row_html.append(" ".join(pieces))
+        grid.append(row_html)
+
+    if not grid or not grid[0]:
+        return None
+    col_count = max(len(row) for row in grid)
+    grid = [row + [""] * (col_count - len(row)) for row in grid]
+
+    out = ["<table>", "<thead><tr>"]
+    out += [f"<th>{c}</th>" for c in grid[0]]
+    out.append("</tr></thead>")
+    out.append("<tbody>")
+    for row in grid[1:]:
+        out.append("<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>")
+    out += ["</tbody>", "</table>"]
+    return out
+
+
+_HTML_HEADINGS = {"large_title": "h1", "medium_title": "h2", "small_title": "h3"}
+_HTML_LIST_TYPES = ("bulleted_list", "numbered_list", "check_list")
+
+
+def _render_html_blocks(
+    siblings: list[dict[str, Any]],
+    children_of: dict[str, list[dict[str, Any]]],
+    images: dict[str, tuple[str, str]] | None,
+) -> list[str]:
+    """Render a sibling group to HTML fragment lines.
+
+    Consecutive list items of the same type are grouped into one `<ul>`/`<ol>`,
+    which the line-oriented markdown renderer doesn't need to do.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(siblings)
+    while i < n:
+        block = siblings[i]
+        btype = _normalize_type(block.get("type") or "")
+        if btype in _HTML_LIST_TYPES:
+            tag = "ol" if btype == "numbered_list" else "ul"
+            cls = ' class="checklist"' if btype == "check_list" else ""
+            out.append(f"<{tag}{cls}>")
+            while i < n and _normalize_type(siblings[i].get("type") or "") == btype:
+                out.append(_render_html_list_item(siblings[i], btype, children_of, images))
+                i += 1
+            out.append(f"</{tag}>")
+            continue
+        out += _render_html_block(block, children_of, images)
+        i += 1
+    return out
+
+
+def _render_html_list_item(
+    block: dict[str, Any],
+    btype: str,
+    children_of: dict[str, list[dict[str, Any]]],
+    images: dict[str, tuple[str, str]] | None,
+) -> str:
+    text = _html_text(block.get("content"))
+    if btype == "check_list":
+        checked = " checked" if _extract_checked(block.get("content")) else ""
+        text = f'<input type="checkbox" disabled{checked}> {text}'
+    kids = children_of.get(str(block.get("id") or ""), [])
+    inner = "".join(_render_html_blocks(kids, children_of, images)) if kids else ""
+    return f"<li>{text}{inner}</li>"
+
+
+def _render_html_block(
+    block: dict[str, Any],
+    children_of: dict[str, list[dict[str, Any]]],
+    images: dict[str, tuple[str, str]] | None,
+) -> list[str]:
+    """Render a single non-list block to HTML fragment lines."""
+    btype = _normalize_type(block.get("type") or "")
+    bid = str(block.get("id") or "")
+    kids = children_of.get(bid, [])
+    text = _html_text(block.get("content"))
+
+    if btype == "table":
+        table = _render_html_table(block, children_of, images)
+        if table is not None:
+            return table
+        # malformed schema → fall through to the generic container below.
+
+    marker = _container_marker(btype, has_children=bool(kids))
+    if marker is not None:
+        inner = _render_html_blocks(kids, children_of, images)
+        if btype in ("notice_box", "notice", "callout"):
+            return ['<aside class="notice">', *inner, "</aside>"]
+        if btype == "layout":
+            return ['<div class="layout">', *inner, "</div>"]
+        return ['<div class="container">', *inner, "</div>"]
+
+    if btype == "divider":
+        return ["<hr>"]
+    if btype in _HTML_HEADINGS:
+        tag = _HTML_HEADINGS[btype]
+        return [f"<{tag}>{text}</{tag}>"]
+    if btype == "quote":
+        return [f"<blockquote>{text}</blockquote>"]
+    if btype == "code":
+        content = _as_content_dict(block.get("content")) or {}
+        lang = content.get("language", "")
+        cls = f' class="language-{html.escape(lang, quote=True)}"' if lang else ""
+        # Code text is escaped directly (not via _html_text) for clarity.
+        return [f"<pre><code{cls}>{html.escape(_extract_text(content))}</code></pre>"]
+    if btype == "image":
+        out = [_render_html_image(block, images)]
+    elif text:
+        out = [f"<p>{text}</p>"]
+    else:
+        out = []
+
+    # Defensive: a leaf with unexpected children — render them rather than drop.
+    if kids:
+        out += _render_html_blocks(kids, children_of, images)
+    return out
+
+
+def blocks_to_html(
+    blocks: list[dict[str, Any]],
+    images: dict[str, tuple[str, str]] | None = None,
+    title: str | None = None,
+) -> str:
+    """Render doc blocks as a single self-contained HTML document.
+
+    The result has an inline `<style>` and (when an `images` map of
+    `str(assetId)` → `(alt, data-uri)` is supplied) base64-embedded images, so
+    the file works offline with no sibling assets. Without the map, image
+    `src`s keep their browser-only monday urls.
+    """
+    roots, children_of = _build_block_tree(blocks)
+    body = _render_html_blocks(roots, children_of, images)
+    doc_title = title or "Document"
+    heading = f'<h1 class="doc-title">{html.escape(doc_title)}</h1>\n' if title else ""
+    body_html = "\n".join(body)
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<title>{html.escape(doc_title)}</title>\n"
+        f"<style>\n{_HTML_STYLE}</style>\n</head>\n<body>\n"
+        f"{heading}{body_html}\n</body>\n</html>\n"
+    )

@@ -618,6 +618,14 @@ EXAMPLES: dict[str, list[Example]] = {
             "Save to a file but keep image URLs (skip download)",
             "mondo doc get --id 7 --format markdown --out ./doc.md --no-images",
         ),
+        Example(
+            "Render as MDX (JSX-safe markdown)",
+            "mondo doc get --id 7 --format mdx --out ./doc.mdx",
+        ),
+        Example(
+            "Render as a single self-contained HTML file (images base64-embedded)",
+            "mondo doc get --id 7 --format html --out ./doc.html",
+        ),
         Example("Just the doc name", "mondo doc get --id 7 -q name -o none"),
     ],
     "doc create": [
