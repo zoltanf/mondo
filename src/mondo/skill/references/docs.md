@@ -38,22 +38,27 @@ mondo doc get --id 5095668848 --format json -o json
 # Or address by object_id (the URL form):
 mondo doc get --object-id 5098297247 --format json -o json
 
-# Render to Markdown (--object-id for the URL-visible id, --doc for the internal id):
-mondo doc export-markdown --object-id 5098297247
-mondo doc export-markdown --doc 5095668848
-
-# Client-side render via `doc get` (prints to stdout) — markdown, mdx, or html:
+# Render via `doc get` (prints to stdout) — markdown, mdx, or html:
 mondo doc get --object-id 5098297247 --format markdown
 mondo doc get --object-id 5098297247 --format mdx
 mondo doc get --object-id 5098297247 --format html
+
+# Markdown via monday's server-side exporter instead of the local renderer:
+mondo doc get --object-id 5098297247 --format markdown --engine server
+mondo doc get --doc 5095668848 --format markdown --engine server
 ```
 
-`doc get --format` renders client-side and supports `markdown`, `mdx`, and `html`; `doc export-markdown` is monday's server-side markdown renderer (markdown only — the API offers no server-side HTML/MDX export). All print to stdout by default.
+`doc get --format` renders all four shapes. Markdown has **two engines**, selected with `--engine`:
+
+- `--engine client` (default) — mondo's local block renderer. It also powers `mdx`/`html`, honours the per-doc cache, and downloads images from the block tree.
+- `--engine server` — monday's server-side `export_markdown_from_doc` exporter (markdown only — the API offers no server-side HTML/MDX export). Always live, and it unlocks two extras the client renderer doesn't have: `--block <id>` (repeatable) to export a subset of blocks, and `--raw` to emit monday's `{success, markdown, error}` envelope. `--engine server` is rejected (exit 2) with any `--format` other than `markdown`, and `--block`/`--raw` are rejected with `--engine client`.
+
+All print to stdout by default.
 
 - **mdx** is the markdown rendering with JSX-significant characters (`<`, `{`) escaped in prose (never inside code fences); monday notice/callout boxes stay as GFM `> [!NOTE]` blockquotes.
 - **html** is a single self-contained document (inline `<style>`, base64-embedded images) — see below.
 
-*Note:* `export-markdown` is always live (it has no per-doc cache), so `--no-cache` / `--refresh-cache` are accepted as no-ops purely for symmetry with the other doc commands.
+*Note:* `--engine server` is always live (it never consults the per-doc cache), so `--no-cache` / `--refresh-cache` have no effect there.
 
 ### Write to a file (and handle embedded images)
 
@@ -64,7 +69,7 @@ For **markdown** and **mdx**, embedded monday images are downloaded into the **s
 ```bash
 mondo doc get --object-id 5098297247 --format markdown --out ./spec.md
 mondo doc get --object-id 5098297247 --format mdx --out ./spec.mdx
-mondo doc export-markdown --object-id 5098297247 --out ./spec.md
+mondo doc get --object-id 5098297247 --format markdown --engine server --out ./spec.md
 ```
 
 ```json
@@ -95,7 +100,7 @@ mondo doc get --object-id 5098297247 --format html --out ./spec.html
 }
 ```
 
-*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. The doc-*targeting* subcommands (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `set`/`replace`, `clear`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accept `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. The two *block*-scoped commands are the exception: `update-block` and `delete-block` operate on a globally-unique block id, so they take `--id`/`--block` (or the positional `BLOCK_ID`) and do **not** accept `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
+*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. The doc-*targeting* subcommands (`get`, `add-block`, `add-content`, `add-markdown`, `set`/`replace`, `clear`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accept `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. The two *block*-scoped commands are the exception: `update-block` and `delete-block` operate on a globally-unique block id, so they take `--id`/`--block` (or the positional `BLOCK_ID`) and do **not** accept `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
 
 ## Create a doc
 
@@ -146,7 +151,7 @@ The **strict subset** round-trips with content equality after whitespace normali
 ```bash
 # Round-trip pattern:
 mondo doc add-markdown --doc 5095668850 --markdown "$(cat strict_input.md)"
-mondo doc export-markdown --doc 5095668850 > exported.md
+mondo doc get --doc 5095668850 --format markdown --engine server > exported.md
 ```
 
 *Gotcha:* if you need pixel-perfect markdown out, stick to the strict subset on input. For richer formatting, accept that the export will look different and treat monday as the source of truth.
@@ -162,7 +167,7 @@ mondo doc rename --doc 5095668850 --name "Spec — Q3 launch (v2)"
 {"id": 5095668870, "name": "Spec — Q3 launch — Copy"}
 ```
 
-*Gotcha:* `doc duplicate` and `doc rename` may currently `xfail` against monday's API due to an `Int!` vs `ID!` schema mismatch — check the test status if these regress (`tests/integration/test_live_doc_md_roundtrip.py::test_live_doc_duplicate_preserves_content`). If you need a guaranteed copy, export-markdown + create + add-markdown is a safe fallback.
+*Gotcha:* `doc duplicate` and `doc rename` may currently `xfail` against monday's API due to an `Int!` vs `ID!` schema mismatch — check the test status if these regress (`tests/integration/test_live_doc_md_roundtrip.py::test_live_doc_duplicate_preserves_content`). If you need a guaranteed copy, `doc get --format markdown --engine server` + `create` + `add-markdown` is a safe fallback.
 
 ## Delete a doc
 

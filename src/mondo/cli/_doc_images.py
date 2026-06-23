@@ -1,7 +1,7 @@
 """Download monday doc images into a local folder for markdown export.
 
 Shared by `doc get --format markdown --out` (block-tree path) and
-`doc export-markdown --out` (server-rendered-string path).
+`doc get --format markdown --engine server --out` (server-rendered-string path).
 
 monday image blocks carry a numeric `assetId` plus a protected_static `url`
 that only resolves in a logged-in browser. We resolve each asset to its

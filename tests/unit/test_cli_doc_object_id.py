@@ -58,7 +58,7 @@ def _bodies(httpx_mock: HTTPXMock) -> list[dict]:
     return [json.loads(r.content) for r in httpx_mock.get_requests()]
 
 
-class TestExportMarkdownObjectId:
+class TestServerMarkdownObjectId:
     def test_object_id_resolves_then_exports(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_head_hit())
         httpx_mock.add_response(
@@ -74,7 +74,10 @@ class TestExportMarkdownObjectId:
                 }
             ),
         )
-        result = runner.invoke(app, ["doc", "export-markdown", "--object-id", OBJECT_ID])
+        result = runner.invoke(
+            app,
+            ["doc", "get", "--format", "markdown", "--engine", "server", "--object-id", OBJECT_ID],
+        )
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "# Hello"
         head, export = _bodies(httpx_mock)
@@ -84,19 +87,33 @@ class TestExportMarkdownObjectId:
     def test_doc_and_object_id_together_is_usage_error(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
-            ["doc", "export-markdown", "--doc", INTERNAL_ID, "--object-id", OBJECT_ID],
+            [
+                "doc",
+                "get",
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--doc",
+                INTERNAL_ID,
+                "--object-id",
+                OBJECT_ID,
+            ],
         )
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
     def test_neither_flag_is_usage_error(self, httpx_mock: HTTPXMock) -> None:
-        result = runner.invoke(app, ["doc", "export-markdown"])
+        result = runner.invoke(app, ["doc", "get", "--format", "markdown", "--engine", "server"])
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
     def test_object_id_miss_exits_6(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
-        result = runner.invoke(app, ["doc", "export-markdown", "--object-id", OBJECT_ID])
+        result = runner.invoke(
+            app,
+            ["doc", "get", "--format", "markdown", "--engine", "server", "--object-id", OBJECT_ID],
+        )
         assert result.exit_code == 6
         assert "not found" in result.stderr
 
@@ -118,7 +135,9 @@ class TestExportMarkdownObjectId:
         )
         # Probe resolves the id as an object_id → targeted hint.
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_head_hit())
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", OBJECT_ID])
+        result = runner.invoke(
+            app, ["doc", "get", "--format", "markdown", "--engine", "server", "--doc", OBJECT_ID]
+        )
         assert result.exit_code == 5
         assert "status=500" in result.stderr
         assert f"--object-id {OBJECT_ID}" in result.stderr
@@ -140,7 +159,9 @@ class TestExportMarkdownObjectId:
             },
         )
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_head_hit())
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", OBJECT_ID])
+        result = runner.invoke(
+            app, ["doc", "get", "--format", "markdown", "--engine", "server", "--doc", OBJECT_ID]
+        )
         assert result.exit_code != 0
         assert f"--object-id {OBJECT_ID}" in result.stderr
 
@@ -160,7 +181,9 @@ class TestExportMarkdownObjectId:
         )
         # Probe misses — the id is not an object id; no hint.
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", INTERNAL_ID])
+        result = runner.invoke(
+            app, ["doc", "get", "--format", "markdown", "--engine", "server", "--doc", INTERNAL_ID]
+        )
         assert result.exit_code == 5
         assert "--object-id" not in result.stderr
 
@@ -265,7 +288,7 @@ class TestUniformObjectIdSurface:
     @pytest.mark.parametrize(
         "args",
         [
-            ["doc", "export-markdown"],
+            ["doc", "get"],
             ["doc", "rename", "--name", "n"],
             ["doc", "delete"],
             ["doc", "duplicate"],

@@ -632,8 +632,8 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
     """Read-only verification against the user-prepared doc.
 
     Confirms `doc get` returns blocks (one of which is a notice-box-style
-    block), `doc export-markdown` renders to non-empty markdown, and
-    `doc list --no-cache` finds the doc by name.
+    block), `doc get --format markdown --engine server` renders to non-empty
+    markdown, and `doc list --no-cache` finds the doc by name.
     """
     doc = invoke_json(
         [
@@ -662,12 +662,16 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
     md_result = invoke(
         [
             "doc",
-            "export-markdown",
+            "get",
             "--doc",
             str(int(doc["id"])),
+            "--format",
+            "markdown",
+            "--engine",
+            "server",
         ]
     )
-    assert md_result.stdout.strip(), "export-markdown produced no output"
+    assert md_result.stdout.strip(), "server markdown produced no output"
 
     workspace_id = int(
         os.environ.get(MONDAY_TEST_WORKSPACE_ID_ENV)
@@ -692,28 +696,30 @@ def test_live_doc_read_with_notice_box(live_test_doc_id: int) -> None:
 
 
 @pytest.mark.integration
-def test_live_doc_export_markdown_object_id(live_test_doc_id: int) -> None:
-    """Read-only #24 coverage: `export-markdown --object-id` works directly,
+def test_live_doc_server_markdown_object_id(live_test_doc_id: int) -> None:
+    """Read-only #24 coverage: server markdown via `--object-id` works directly,
     and the same id passed as `--doc` fails with the targeted retry hint
     instead of an opaque server 500."""
-    md_result = invoke(["doc", "export-markdown", "--object-id", str(live_test_doc_id)])
-    assert md_result.stdout.strip(), "export-markdown --object-id produced no output"
+    server_md = ["--format", "markdown", "--engine", "server"]
+    md_result = invoke(["doc", "get", "--object-id", str(live_test_doc_id), *server_md])
+    assert md_result.stdout.strip(), "server markdown --object-id produced no output"
 
     wrong = invoke(
-        ["doc", "export-markdown", "--doc", str(live_test_doc_id)],
+        ["doc", "get", "--doc", str(live_test_doc_id), *server_md],
         expect_exit=None,
     )
-    assert wrong.exit_code != 0, format_failure(["doc", "export-markdown"], wrong)
+    assert wrong.exit_code != 0, format_failure(["doc", "get", *server_md], wrong)
     assert f"--object-id {live_test_doc_id}" in wrong.stderr, wrong.stderr
 
     both = invoke(
         [
             "doc",
-            "export-markdown",
+            "get",
             "--doc",
             str(live_test_doc_id),
             "--object-id",
             str(live_test_doc_id),
+            *server_md,
         ],
         expect_exit=2,
     )

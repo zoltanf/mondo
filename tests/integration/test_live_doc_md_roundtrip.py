@@ -109,11 +109,11 @@ def test_live_doc_markdown_strict_roundtrip_equality(
 
     def _exported() -> str:
         result = invoke(
-            ["doc", "export-markdown", "--doc", str(doc_id)],
+            ["doc", "get", "--doc", str(doc_id), "--format", "markdown", "--engine", "server"],
             expect_exit=0,
         )
         text = result.stdout
-        assert text.strip(), "export-markdown empty"
+        assert text.strip(), "server markdown empty"
         return text
 
     exported = wait_for("doc export visible", _exported)
@@ -169,11 +169,11 @@ def test_live_doc_markdown_rich_roundtrip_golden(
 
     def _exported() -> str:
         result = invoke(
-            ["doc", "export-markdown", "--doc", str(doc_id)],
+            ["doc", "get", "--doc", str(doc_id), "--format", "markdown", "--engine", "server"],
             expect_exit=0,
         )
         text = result.stdout
-        assert text.strip(), "export-markdown empty"
+        assert text.strip(), "server markdown empty"
         return text
 
     exported = _normalize_md(wait_for("doc export visible", _exported))

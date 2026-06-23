@@ -158,9 +158,10 @@ Live integration tests live under `tests/integration/`, split by feature:
 - `test_live_folders.py` — folder tree, parent linking, rename, delete
   archives contained boards.
 - `test_live_doc_column.py` — `column doc set/get/append/clear`.
-- `test_live_doc_images.py` — `doc get --format markdown --out` and
-  `doc export-markdown --out` download embedded images into the markdown's
-  folder and reference them by `<assetId>-<name>` local filename.
+- `test_live_doc_images.py` — `doc get --format markdown --out` (client
+  renderer) and `doc get --format markdown --engine server --out`
+  download embedded images into the markdown's folder and reference them
+  by `<assetId>-<name>` local filename.
 - `test_live_doc_md_roundtrip.py` — standalone-doc markdown round-trip
   (strict subset + rich golden) plus `doc duplicate`/`doc rename`
   (currently `xfail`-pinned for the `Int!` vs `ID!` schema mismatch).

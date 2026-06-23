@@ -1386,7 +1386,7 @@ class TestDocNewOps:
         body = _last_body(httpx_mock)
         assert body["variables"] == {"doc": 10}
 
-    def test_export_markdown_plain(self, httpx_mock: HTTPXMock) -> None:
+    def test_server_markdown_plain(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -1400,13 +1400,15 @@ class TestDocNewOps:
                 }
             ),
         )
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
+        result = runner.invoke(
+            app, ["doc", "get", "--doc", "10", "--format", "markdown", "--engine", "server"]
+        )
         assert result.exit_code == 0, result.stdout
         assert "# Title" in result.stdout
         body = _last_body(httpx_mock)
         assert body["variables"] == {"doc": 10, "blocks": None}
 
-    def test_export_markdown_failure_exits_5(self, httpx_mock: HTTPXMock) -> None:
+    def test_server_markdown_failure_exits_5(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -1422,12 +1424,14 @@ class TestDocNewOps:
         )
         # Object-id probe on the success=False failure (the #24 guardrail).
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"docs": []}))
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
+        result = runner.invoke(
+            app, ["doc", "get", "--doc", "10", "--format", "markdown", "--engine", "server"]
+        )
         assert result.exit_code == 5
 
-    def test_export_markdown_accepts_no_cache_noop(self, httpx_mock: HTTPXMock) -> None:
-        """Issue #34: `--no-cache` is accepted as a no-op (export is always
-        live) rather than failing with a usage error (exit 2)."""
+    def test_server_markdown_accepts_no_cache_noop(self, httpx_mock: HTTPXMock) -> None:
+        """Issue #34: `--engine server` is always live, so `--no-cache` is
+        accepted as a no-op rather than failing with a usage error (exit 2)."""
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -1435,17 +1439,87 @@ class TestDocNewOps:
                 {"export_markdown_from_doc": {"success": True, "error": None, "markdown": "# T"}}
             ),
         )
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10", "--no-cache"])
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "get",
+                "--doc",
+                "10",
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--no-cache",
+            ],
+        )
         assert result.exit_code == 0, result.stderr
         assert "# T" in result.stdout
 
-    def test_export_markdown_no_cache_refresh_cache_mutually_exclusive(self) -> None:
+    def test_server_markdown_no_cache_refresh_cache_mutually_exclusive(self) -> None:
         result = runner.invoke(
             app,
-            ["doc", "export-markdown", "--doc", "10", "--no-cache", "--refresh-cache"],
+            [
+                "doc",
+                "get",
+                "--doc",
+                "10",
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--no-cache",
+                "--refresh-cache",
+            ],
         )
         assert result.exit_code == 2
         assert "mutually exclusive" in (result.stderr or result.stdout).lower()
+
+    def test_server_engine_requires_markdown_format(self) -> None:
+        result = runner.invoke(app, ["doc", "get", "--doc", "10", "--engine", "server"])
+        assert result.exit_code == 2
+        assert "only supports --format markdown" in (result.stderr or result.stdout)
+
+    def test_block_requires_server_engine(self) -> None:
+        result = runner.invoke(
+            app, ["doc", "get", "--doc", "10", "--format", "markdown", "--block", "b1"]
+        )
+        assert result.exit_code == 2
+        assert "--block requires --engine server" in (result.stderr or result.stdout)
+
+    def test_raw_requires_server_engine(self) -> None:
+        result = runner.invoke(app, ["doc", "get", "--doc", "10", "--raw"])
+        assert result.exit_code == 2
+        assert "--raw requires --engine server" in (result.stderr or result.stdout)
+
+    def test_server_markdown_blocks_subset_passed_through(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {"export_markdown_from_doc": {"success": True, "error": None, "markdown": "# T"}}
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "doc",
+                "get",
+                "--doc",
+                "10",
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--block",
+                "b1",
+                "--block",
+                "b2",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        body = _last_body(httpx_mock)
+        assert body["variables"] == {"doc": 10, "blocks": ["b1", "b2"]}
 
     def test_add_markdown(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(
@@ -1824,10 +1898,22 @@ class TestImageExportOutputGuards:
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
 
-    def test_export_markdown_raw_and_out_mutually_exclusive(self, httpx_mock: HTTPXMock) -> None:
+    def test_server_markdown_raw_and_out_mutually_exclusive(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(
             app,
-            ["doc", "export-markdown", "--doc", "10", "--raw", "--out", "x.md"],
+            [
+                "doc",
+                "get",
+                "--doc",
+                "10",
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--raw",
+                "--out",
+                "x.md",
+            ],
         )
         assert result.exit_code == 2
         assert httpx_mock.get_requests() == []
@@ -2274,7 +2360,7 @@ class TestDocClear:
 
 
 class TestExportMarkdownCoalesce:
-    """Issue #62: fragmented bold runs are rejoined in export-markdown output."""
+    """Issue #62: fragmented bold runs are rejoined in server-markdown output."""
 
     def test_fragmented_bold_collapsed(self, httpx_mock: HTTPXMock) -> None:
         fragmented = "**Caching is ****not**** a win**"
@@ -2291,7 +2377,9 @@ class TestExportMarkdownCoalesce:
                 }
             ),
         )
-        result = runner.invoke(app, ["doc", "export-markdown", "--doc", "10"])
+        result = runner.invoke(
+            app, ["doc", "get", "--doc", "10", "--format", "markdown", "--engine", "server"]
+        )
         assert result.exit_code == 0, result.stdout
         assert "**Caching is not a win**" in result.stdout
         assert "****" not in result.stdout
@@ -2313,7 +2401,20 @@ class TestExportMarkdownCoalesce:
         )
         out = tmp_path / "exported.md"
         result = runner.invoke(
-            app, ["doc", "export-markdown", "--doc", "10", "--out", str(out), "--no-images"]
+            app,
+            [
+                "doc",
+                "get",
+                "--doc",
+                "10",
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--out",
+                str(out),
+                "--no-images",
+            ],
         )
         assert result.exit_code == 0, result.stdout
         assert out.read_text() == "**a b**"

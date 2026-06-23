@@ -148,10 +148,9 @@ circuit through the directory cache (`workspace / folder / team get`,
 force a fresh fetch use `--no-cache` or `--refresh-cache` on the same
 command. See `docs/caching.md` for the per-entity TTL table.
 
-`doc export-markdown` has no per-doc cache (it's always live), so it
-accepts `--no-cache` / `--refresh-cache` as no-ops — purely for flag
-symmetry with the other doc commands; they neither error nor change the
-result.
+`doc get --format markdown --engine server` has no per-doc cache (it's
+always live), so `--no-cache` / `--refresh-cache` have no effect there;
+they neither error nor change the result.
 
 ## Structured error envelope (`-o json|jsonc|yaml`)
 
