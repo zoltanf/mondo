@@ -67,7 +67,7 @@ monday image URLs only resolve in a logged-in browser):
     mondo doc get --object-id <id> --format mdx --out ./doc.mdx
     mondo doc get --object-id <id> --format html --out ./doc.html
     mondo doc get --object-id <id> --format pdf --out ./doc.pdf
-    mondo doc export-markdown --object-id <id> --out ./doc.md   # server-side render
+    mondo doc get --object-id <id> --format markdown --engine server --out ./doc.md  # server-side render
 
 `--format pdf` always requires `--out` and renders the html through WeasyPrint
 (monday has no PDF export, so it's client-side). WeasyPrint isn't bundled —

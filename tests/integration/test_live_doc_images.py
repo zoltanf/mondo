@@ -5,7 +5,7 @@ folder and reference them by local filename instead of the browser-only
 `protected_static` URL:
 
 - `doc get --format markdown --out` (our client-side block renderer).
-- `doc export-markdown --out` (monday's server-side markdown).
+- `doc get --format markdown --engine server --out` (monday's server-side markdown).
 
 Gated by MONDO_TEST_DOC_ID; the prepared doc carries image blocks (one
 top-level, two inside a table).
@@ -54,14 +54,18 @@ def test_live_doc_get_markdown_downloads_images(live_test_doc_id: int, tmp_path)
 
 
 @pytest.mark.integration
-def test_live_doc_export_markdown_downloads_images(live_test_doc_id: int, tmp_path) -> None:
+def test_live_doc_server_markdown_downloads_images(live_test_doc_id: int, tmp_path) -> None:
     out = tmp_path / "exp.md"
     summary = invoke_json(
         [
             "doc",
-            "export-markdown",
+            "get",
             "--object-id",
             str(live_test_doc_id),
+            "--format",
+            "markdown",
+            "--engine",
+            "server",
             "--out",
             str(out),
         ]
@@ -105,9 +109,13 @@ def test_live_doc_export_no_images_keeps_urls(live_test_doc_id: int, tmp_path) -
     invoke_json(
         [
             "doc",
-            "export-markdown",
+            "get",
             "--object-id",
             str(live_test_doc_id),
+            "--format",
+            "markdown",
+            "--engine",
+            "server",
             "--out",
             str(exp_out),
             "--no-images",

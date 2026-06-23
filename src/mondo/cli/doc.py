@@ -5,13 +5,14 @@ Distinct from the `doc` **column** type (which is handled by
 workspace with a block-structured body. The CLI covers:
 
 - `list` / `get` — page-based listing with optional workspace / object-id
-  filters; get emits the full block tree (or a markdown rendering).
+  filters; get emits the full block tree, or renders to markdown/mdx/html
+  (markdown also via monday's server exporter with `--engine server`).
 - `create` — bootstrap a doc inside a workspace (`CreateDocInput.workspace`).
 - `add-block` / `add-content` — single / bulk block inserts.
 - `add-markdown` / `import-html` — server-side markdown/html conversion flows.
 - `update-block` / `delete-block` — edit individual blocks.
 - `rename` / `duplicate` / `delete` — document-level mutations.
-- `export-markdown` / `version-history` / `version-diff` — read-side extras.
+- `version-history` / `version-diff` — read-side extras.
 """
 
 from __future__ import annotations
@@ -93,6 +94,11 @@ class DocFormat(StrEnum):
     mdx = "mdx"
     html = "html"
     pdf = "pdf"
+
+
+class DocEngine(StrEnum):
+    client = "client"
+    server = "server"
 
 
 class DuplicateDocType(StrEnum):
@@ -586,6 +592,26 @@ def get_cmd(
         help="Emit raw JSON (blocks as-is) or render blocks to markdown, mdx, html, or pdf.",
         case_sensitive=False,
     ),
+    engine: DocEngine = typer.Option(
+        DocEngine.client,
+        "--engine",
+        help=(
+            "Markdown renderer: `client` (local block renderer, default — and the "
+            "only engine for json/mdx/html) or `server` (monday's exporter, markdown "
+            "only; enables --block/--raw and is always live, ignoring the cache flags)."
+        ),
+        case_sensitive=False,
+    ),
+    block_id: list[str] | None = typer.Option(
+        None,
+        "--block",
+        help="With --engine server: block ID to export (repeatable). Default: whole doc.",
+    ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="With --engine server: emit monday's API JSON envelope instead of plain markdown.",
+    ),
     out: Path | None = typer.Option(
         None,
         "--out",
@@ -613,28 +639,32 @@ def get_cmd(
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
-        help="Bypass the per-doc blocks cache; fetch live.",
+        help="Bypass the per-doc blocks cache; fetch live. (No effect with --engine server.)",
         rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
         "--refresh-cache",
-        help="Force-refresh the per-doc blocks cache before serving.",
+        help="Force-refresh the per-doc blocks cache before serving. "
+        "(No effect with --engine server.)",
         rich_help_panel="Cache",
     ),
     explain_cache: bool = typer.Option(
         False,
         "--explain-cache",
-        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr. "
+        "(No effect with --engine server.)",
         rich_help_panel="Cache",
     ),
 ) -> None:
     """Fetch a single doc by id or object_id, with its full block tree.
 
-    Served from `docs_blocks/<doc_id>.json` (default TTL 5m — set via
-    `MONDO_CACHE_TTL_DOCS_BLOCKS`). `--object-id` callers resolve to
-    `doc_id` via the existing docs directory cache so both paths share
-    one on-disk cache key.
+    Default (`--engine client`) is served from `docs_blocks/<doc_id>.json`
+    (default TTL 5m — set via `MONDO_CACHE_TTL_DOCS_BLOCKS`); `--object-id`
+    callers resolve to `doc_id` via the docs directory cache so both paths
+    share one on-disk cache key. With `--format markdown --engine server`,
+    markdown comes from monday's server-side exporter instead (always live;
+    supports `--block` subset export and `--raw` envelope passthrough).
     """
     from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
     from mondo.cli._normalize import normalize_doc_entry
@@ -642,14 +672,35 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
+    sources = sum(x is not None for x in (doc_id, object_id))
+    if sources != 1:
+        usage_error_or_exit("pass exactly one of --id or --object-id.")
+
+    if engine is DocEngine.server:
+        if fmt is not DocFormat.markdown:
+            usage_error_or_exit("--engine server only supports --format markdown.")
+        if raw and out is not None:
+            usage_error_or_exit("--raw and --out are mutually exclusive.")
+        _emit_server_markdown(
+            opts,
+            doc_id=doc_id,
+            object_id=object_id,
+            block_id=block_id,
+            raw=raw,
+            out=out,
+            no_images=no_images,
+        )
+        return
+    # Client engine from here on: --block/--raw are server-only.
+    if block_id:
+        usage_error_or_exit("--block requires --engine server.")
+    if raw:
+        usage_error_or_exit("--raw requires --engine server.")
     _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html, DocFormat.pdf}
     if out is not None and fmt not in _RENDER_FORMATS:
         usage_error_or_exit("--out is only valid with --format markdown, mdx, html, or pdf.")
     if fmt is DocFormat.pdf and out is None:
         usage_error_or_exit("--format pdf requires --out <file.pdf>.")
-    sources = sum(x is not None for x in (doc_id, object_id))
-    if sources != 1:
-        usage_error_or_exit("pass exactly one of --id or --object-id.")
 
     if doc_id is not None:
         query = DOC_GET_BY_ID_BLOCKS_PAGE
@@ -925,6 +976,53 @@ def _execute_doc_command(
             return (result.get("data") or {}), resolved
     except MondoError as e:
         handle_mondo_error_or_exit(e)
+
+
+def _emit_server_markdown(
+    opts: GlobalOpts,
+    *,
+    doc_id: int | None,
+    object_id: int | None,
+    block_id: list[str] | None,
+    raw: bool,
+    out: Path | None,
+    no_images: bool,
+) -> None:
+    """Render a doc to markdown via monday's server-side `export_markdown_from_doc`
+    (`doc get --format markdown --engine server`). Always live; supports `--block`
+    subset export and `--raw` envelope passthrough.
+    """
+    data, _ = _execute_doc_command(
+        opts,
+        EXPORT_MARKDOWN_FROM_DOC,
+        {"blocks": block_id or None},
+        doc_id=doc_id,
+        object_id=object_id,
+    )
+    result = data.get("export_markdown_from_doc") or {}
+    if raw:
+        opts.emit(result)
+        return
+    if not result.get("success"):
+        _fail_with_object_id_hint(
+            opts, result.get("error") or "export_markdown_from_doc failed", doc_id
+        )
+    from mondo.docs import coalesce_markdown_emphasis
+
+    # Monday's exporter fragments contiguous bold runs into adjacent `**…**`
+    # spans; rejoin them so the markdown reads as one span (#62).
+    markdown = coalesce_markdown_emphasis(result.get("markdown") or "")
+    if out is not None:
+        from mondo.cli._doc_images import localize_markdown_images
+
+        images: list[str] = []
+        if not no_images:
+            markdown, images = localize_markdown_images(opts, markdown, out.parent)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(markdown)
+        opts.emit({"out": str(out), "images": images})
+        return
+    typer.echo(markdown)
 
 
 # ----- write commands -----
@@ -1440,93 +1538,6 @@ def clear_cmd(
         handle_mondo_error_or_exit(e)
 
     opts.emit({"id": resolved_doc, "cleared_blocks": len(block_ids)})
-
-
-@app.command("export-markdown", epilog=epilog_for("doc export-markdown"))
-def export_markdown_cmd(
-    ctx: typer.Context,
-    doc_id: DocIdOpt = None,
-    object_id: DocObjectIdOpt = None,
-    block_id: list[str] | None = typer.Option(
-        None,
-        "--block",
-        help="Block ID to export (repeatable). Default: export full doc.",
-    ),
-    raw: bool = typer.Option(
-        False,
-        "--raw",
-        help="Emit API JSON envelope instead of plain markdown text.",
-    ),
-    out: Path | None = typer.Option(
-        None,
-        "--out",
-        help=(
-            "Write the markdown to this file and download embedded images "
-            "into the same folder, rewriting their URLs to local filenames. "
-            "Without it, markdown goes to stdout with monday image URLs."
-        ),
-    ),
-    no_images: bool = typer.Option(
-        False,
-        "--no-images",
-        help="With --out, skip downloading images; keep their monday URLs.",
-    ),
-    no_cache: bool = typer.Option(
-        False,
-        "--no-cache",
-        help="No-op — export is always live (accepted for flag symmetry).",
-        rich_help_panel="Cache",
-    ),
-    refresh_cache: bool = typer.Option(
-        False,
-        "--refresh-cache",
-        help="No-op — export is always live (accepted for flag symmetry).",
-        rich_help_panel="Cache",
-    ),
-) -> None:
-    """Export doc content as markdown.
-
-    Always fetched live (no per-doc cache is involved), so `--no-cache` /
-    `--refresh-cache` are accepted as no-ops purely for symmetry with the
-    other doc commands.
-    """
-    from mondo.cli._cache_flags import reject_mutually_exclusive
-
-    opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
-    reject_mutually_exclusive(no_cache, refresh_cache)
-    if raw and out is not None:
-        usage_error_or_exit("--raw and --out are mutually exclusive.")
-    data, _ = _execute_doc_command(
-        opts,
-        EXPORT_MARKDOWN_FROM_DOC,
-        {"blocks": block_id or None},
-        doc_id=doc_id,
-        object_id=object_id,
-    )
-    result = data.get("export_markdown_from_doc") or {}
-    if raw:
-        opts.emit(result)
-        return
-    if not result.get("success"):
-        _fail_with_object_id_hint(
-            opts, result.get("error") or "export_markdown_from_doc failed", doc_id
-        )
-    from mondo.docs import coalesce_markdown_emphasis
-
-    # Monday's exporter fragments contiguous bold runs into adjacent `**…**`
-    # spans; rejoin them so the markdown reads as one span (#62).
-    markdown = coalesce_markdown_emphasis(result.get("markdown") or "")
-    if out is not None:
-        from mondo.cli._doc_images import localize_markdown_images
-
-        images: list[str] = []
-        if not no_images:
-            markdown, images = localize_markdown_images(opts, markdown, out.parent)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(markdown)
-        opts.emit({"out": str(out), "images": images})
-        return
-    typer.echo(markdown)
 
 
 @app.command("version-history", epilog=epilog_for("doc version-history"))

@@ -236,16 +236,11 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   fields: `id`, `object_id`, `name`, `url`
   source: `DOC_HEAD_BY_OBJECT_ID.docs[0]{id,object_id,name,url}`
   notes: Emits a slim doc header for the newly created duplicate; fetched via DOC_HEAD_BY_OBJECT_ID.
-- `doc export-markdown`
-  type: `string | object`
-  fields: `out?`, `images?`
-  source: `EXPORT_MARKDOWN_FROM_DOC + localize_markdown_images`
-  notes: Prints monday's server-rendered markdown to stdout by default. With --out FILE, writes the markdown to FILE and emits {out, images} where images is the list of localized image filenames downloaded beside it (empty with --no-images). Always live (no per-doc cache): --no-cache / --refresh-cache are accepted as no-ops.
 - `doc get`
   type: `object | string`
   fields: `id`, `object_id`, `name`, `doc_kind`, `doc_folder_id`, `created_at`, `updated_at`, `url`, `relative_url`, `workspace_id`, `created_by{id,name}`, `blocks{id,type,content,parent_block_id}`
-  source: `DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]`
-  notes: Default format is JSON object above. --format markdown/mdx/html render to stdout instead (mdx is JSX-safe markdown; html is a single self-contained document). With --out FILE: markdown/mdx write the text to FILE and emit {out, images} where images is the list of localized image filenames downloaded beside it; html embeds images as base64 and emits {out, images} where images is the embedded count. --format pdf renders the self-contained html through WeasyPrint (client-side; monday has no PDF export) and emits {out, engine, images}; it always requires --out and exits non-zero with an install hint when WeasyPrint is absent. --no-images keeps the monday URLs (pdf renders images empty instead, so no network fetch). --out requires --format markdown/mdx/html/pdf (exit 2 otherwise).
+  source: `DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0] | EXPORT_MARKDOWN_FROM_DOC (--engine server)`
+  notes: Default format is JSON object above. --format markdown/mdx/html render to stdout instead (mdx is JSX-safe markdown; html is a single self-contained document). With --out FILE: markdown/mdx write the text to FILE and emit {out, images} where images is the list of localized image filenames downloaded beside it; html embeds images as base64 and emits {out, images} where images is the embedded count. --format pdf renders the self-contained html through WeasyPrint (client-side; monday has no PDF export) and emits {out, engine, images}; it always requires --out and exits non-zero with an install hint when WeasyPrint is absent. --no-images keeps the monday URLs (pdf renders images empty instead, so no network fetch). --out requires --format markdown/mdx/html/pdf (exit 2 otherwise). --format markdown --engine server renders via monday's server-side exporter instead of the local block renderer (markdown only, always live); it adds --block (repeatable subset export) and --raw (emit monday's {success, markdown, error} envelope; mutually exclusive with --out).
 - `doc import-html`
   type: `object`
   fields: `error`, `success`, `doc_id`

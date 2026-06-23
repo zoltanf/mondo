@@ -77,8 +77,8 @@ Two behaviors keep failures visible in pipelines:
   instead of empty input. The mirror never corrupts a partial-success
   stream (it only fires when stdout is still empty), `-o none` keeps
   stdout silent, and exit codes are unchanged. Note this applies even to
-  commands whose success output is not JSON (e.g. `doc export-markdown`
-  redirected to a file): if they fail before producing output, the JSON
+  commands whose success output is not JSON (e.g. `doc get --format
+  markdown` redirected to a file): if they fail before producing output, the JSON
   envelope lands on stdout.
 - **Benign notices are suppressed when no human is watching**: the
   `cache: hit (...)` provenance line and the skill-freshness warning only
