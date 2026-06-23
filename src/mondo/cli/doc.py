@@ -620,9 +620,6 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
-    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html}
-    if out is not None and fmt not in _RENDER_FORMATS:
-        usage_error_or_exit("--out is only valid with --format markdown, mdx, or html.")
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
         usage_error_or_exit("pass exactly one of --id or --object-id.")
@@ -642,10 +639,14 @@ def get_cmd(
             no_images=no_images,
         )
         return
+    # Client engine from here on: --block/--raw are server-only.
     if block_id:
         usage_error_or_exit("--block requires --engine server.")
     if raw:
         usage_error_or_exit("--raw requires --engine server.")
+    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html}
+    if out is not None and fmt not in _RENDER_FORMATS:
+        usage_error_or_exit("--out is only valid with --format markdown, mdx, or html.")
 
     if doc_id is not None:
         query = DOC_GET_BY_ID_BLOCKS_PAGE

@@ -119,8 +119,15 @@ def test_live_doc_replace(live_workspace_id: int, cleanup_plan: CleanupPlan) -> 
     def _replaced() -> None:
         md = invoke(
             [
-                "doc", "get", "--object-id", str(object_id),
-                "--format", "markdown", "--engine", "server", "--no-cache",
+                "doc",
+                "get",
+                "--object-id",
+                str(object_id),
+                "--format",
+                "markdown",
+                "--engine",
+                "server",
+                "--no-cache",
             ]
         ).stdout
         assert "Replaced" in md and "Original" not in md, md

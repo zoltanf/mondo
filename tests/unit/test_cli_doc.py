@@ -1480,6 +1480,16 @@ class TestDocNewOps:
         assert result.exit_code == 2
         assert "only supports --format markdown" in (result.stderr or result.stdout)
 
+    def test_server_engine_format_guard_precedes_out_guard(self) -> None:
+        """A server-engine call that forgot --format markdown reports the
+        engine/format mismatch first, not the generic --out-needs-markdown
+        message (the client-path guard)."""
+        result = runner.invoke(
+            app, ["doc", "get", "--doc", "10", "--engine", "server", "--raw", "--out", "x.md"]
+        )
+        assert result.exit_code == 2
+        assert "only supports --format markdown" in (result.stderr or result.stdout)
+
     def test_block_requires_server_engine(self) -> None:
         result = runner.invoke(
             app, ["doc", "get", "--doc", "10", "--format", "markdown", "--block", "b1"]
