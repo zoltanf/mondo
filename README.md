@@ -586,9 +586,11 @@ mondo doc export-markdown --doc 7 --out ./doc.md     # +download images, rewrite
 mondo doc export-markdown --doc 7 --out ./doc.md --no-images  # skip download, keep URLs
 mondo doc create         --workspace 42 --name "Spec" --kind public [--folder 3042556]
 
-mondo doc add-content    --doc 7 --from-file spec.md         # bulk markdown → blocks (append)
+mondo doc add-content    --doc 7 --from-file spec.md         # bulk markdown → blocks (append, per-block)
+mondo doc add-markdown   --doc 7 --from-file spec.md         # append via monday's server-side parser → blocks_added
 mondo doc set            --doc 7 --from-file spec.md         # replace full content in place
 mondo doc replace        --object-id 77 --markdown "# Fresh" # alias of `doc set`
+mondo doc clear          --doc 7                             # empty the body, keep the doc (id/url preserved)
 mondo doc add-block      --doc 7 --type normal_text \
                          --content '{"deltaFormat":[{"insert":"hi"}]}' \
                          [--after <block-id>] [--parent-block <block-id>]
@@ -599,10 +601,17 @@ mondo doc delete         --doc 7                             # delete the whole 
 
 `add-content` reuses the Phase-1f markdown converter (headings h1-h3,
 paragraphs, bullet / numbered lists, blockquotes, fenced code, horizontal
-rules). `doc set` (alias `doc replace`) overwrites the whole doc in place
-(preserving its id / object_id / URL) by writing the new content first, then
-deleting the prior blocks. `doc create --folder <id>` places the new doc
-directly inside a folder.
+rules), looping per block; `add-markdown` instead uses monday's server-side
+parser, reports `blocks_added`, rejects empty input, and auto-chunks large
+markdown on block boundaries so big docs no longer 500. Both append. `doc set`
+(alias `doc replace`) overwrites the whole doc in place (preserving its id /
+object_id / URL) by writing the new content first (also chunked; a failed
+multi-chunk write rolls back its partial blocks), then deleting the prior
+blocks. `doc clear` empties the body while keeping the doc itself (vs `doc
+delete`, which removes it). `doc create --folder <id>` places the new doc
+directly inside a folder; if creation is blocked by workspace policy it fails
+with `USER_UNAUTHORIZED` and an actionable license `suggestion`. `--out` needs
+a render format — `--format json` with `--out` exits 2.
 
 ### Updates (item comments)
 

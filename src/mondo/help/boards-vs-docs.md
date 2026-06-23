@@ -57,17 +57,22 @@ Pass `--with-url` on either to get URLs back.
 
 ## Once you've found a workdoc
 
-Render it to a markdown file (embedded images are downloaded alongside it,
-referenced by local filename — the raw monday image URLs only resolve in a
-logged-in browser):
+Render it to a file. `--format` takes `markdown`, `mdx` (JSX-safe markdown),
+or `html` (a single self-contained document). For markdown/mdx the embedded
+images are downloaded alongside the file and referenced by local filename;
+html base64-embeds them so the file is portable on its own (the raw monday
+image URLs only resolve in a logged-in browser):
 
     mondo doc get --object-id <id> --format markdown --out ./doc.md
+    mondo doc get --object-id <id> --format mdx --out ./doc.mdx
+    mondo doc get --object-id <id> --format html --out ./doc.html
     mondo doc export-markdown --object-id <id> --out ./doc.md   # server-side render
 
-Pass `--no-images` to skip the download and keep the original URLs. To write
-content back — replace a doc in place, or create one inside a folder — see
-`mondo help` and the bundled `references/docs.md` (`doc set` / `doc replace`,
-`doc create --folder`).
+Pass `--no-images` to skip the download/embed and keep the original URLs.
+`--out` needs a render format — pairing it with `--format json` exits 2. To
+write content back — replace a doc in place, empty it, or create one inside a
+folder — see `mondo help` and the bundled `references/docs.md` (`doc set` /
+`doc replace`, `doc clear`, `doc create --folder`).
 
 ## Agent workflow
 

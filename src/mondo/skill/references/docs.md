@@ -27,7 +27,7 @@ mondo doc list --workspace 592446 --workspace 699169 -o json   # multiple worksp
 ]
 ```
 
-*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the (also numeric) URL-visible doc id (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
+*Gotcha:* `id` is monday's internal numeric doc id; `object_id` is the (also numeric) URL-visible doc id (`/docs/<object_id>`). `--no-cache` is a good idea immediately after a write — the docs directory cache TTL is 8h, and `doc get` has its own short-TTL per-doc cache (`docs_blocks/<id>.json`, 5m) which is invalidated by every doc-write path (`add-block`, `add-content`, `add-markdown`, `set`/`replace`, `clear`, `import-html`, `rename`, `delete`, `update-block`, `delete-block`, plus `column doc set/append/clear`). Name filters (`--name-contains`, `--name-matches`, `--name-fuzzy`) are client-side and work with or without `--workspace`.
 
 ## Get a doc — JSON, Markdown, MDX, or HTML
 
@@ -95,7 +95,7 @@ mondo doc get --object-id 5098297247 --format html --out ./spec.html
 }
 ```
 
-*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. The doc-*targeting* subcommands (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `set`/`replace`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accept `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. The two *block*-scoped commands are the exception: `update-block` and `delete-block` operate on a globally-unique block id, so they take `--id`/`--block` (or the positional `BLOCK_ID`) and do **not** accept `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
+*Gotcha:* `--id`/`--doc` is monday's internal id; `--object-id` is the id you see in `/docs/<id>` URLs. The doc-*targeting* subcommands (`get`, `export-markdown`, `add-block`, `add-content`, `add-markdown`, `set`/`replace`, `clear`, `rename`, `duplicate`, `delete`, `version-history`, `version-diff`) accept `--object-id` — when a URL or a human gave you the id, that's the flag to use. Sending an object id through `--doc` fails (historically as an opaque 500); mondo now detects it and tells you to retry with `--object-id`. The two *block*-scoped commands are the exception: `update-block` and `delete-block` operate on a globally-unique block id, so they take `--id`/`--block` (or the positional `BLOCK_ID`) and do **not** accept `--object-id`. Block types use `snake_case` on input (`normal_text`, `medium_title`, `bulleted_list`); read paths sometimes return them with spaces — match either form.
 
 ## Create a doc
 
@@ -108,7 +108,7 @@ mondo doc create --workspace 592446 --name "Spec — Q3 launch" --folder 123456 
 {"id": 5095668850, "object_id": "5098297249", "name": "Spec — Q3 launch", "url": "https://acct.monday.com/docs/5098297249"}
 ```
 
-*Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`. The create payload always carries `url` (`--with-url` is accepted for symmetry with `board create` / `item create` but is a no-op).
+*Gotcha:* the new doc starts empty. Add content with `add-markdown`, `add-content`, or per-block `add-block`. The create payload always carries `url` (`--with-url` is accepted for symmetry with `board create` / `item create` but is a no-op). If create fails with `USER_UNAUTHORIZED` / "not permitted to create", that's a workspace doc-creation license/policy limit, not a bad token — the error envelope carries a `suggestion` saying so, so don't waste a turn re-checking auth.
 
 ## Add markdown to a doc
 
@@ -123,10 +123,12 @@ cat spec.md | mondo doc add-markdown --doc 5095668850 --from-stdin
 ```
 
 ```json
-{"id": 5095668850, "blocks_added": 4}
+{"success": true, "block_ids": ["abc123", "def456", "ghi789"], "error": null, "blocks_added": 3}
 ```
 
-*Gotcha:* `add-markdown` (and the alias `add-content`) appends to the end. To overwrite the whole doc **in place** (preserving its id / object_id / URL), use `doc set` (alias `doc replace`) — it writes the new markdown first, then deletes the prior blocks, so a failed write leaves the original content intact (no half-blanked doc). Empty markdown is refused (use `doc delete` to remove the doc itself):
+`blocks_added` is the reliable count (length of `block_ids`); the rest is monday's raw `{success, block_ids, error}` envelope.
+
+*Gotcha:* `add-markdown` (monday's server-side parser) and `add-content` (which loops `create_doc_block` per block) are **separate commands, not aliases** — both append to the end. `add-markdown` auto-chunks large markdown on top-level block boundaries, so big docs no longer fail with a 500; empty/whitespace-only input is refused before any API call. To overwrite the whole doc **in place** (preserving its id / object_id / URL), use `doc set` (alias `doc replace`) — it writes the new markdown first (also auto-chunked), then deletes the prior blocks, so a failed write leaves the original content intact (no half-blanked doc); if a multi-chunk write fails partway, the blocks it already added are rolled back. Empty markdown is refused (use `doc delete` to remove the doc itself):
 
 ```bash
 mondo doc set --doc 5095668850 --from-file spec.md
@@ -169,6 +171,18 @@ mondo doc delete --doc 5095668850
 ```
 
 *Gotcha:* deleting a doc that's **referenced by a doc-column** breaks that column's pointer — the column will appear empty in the UI. Either clear the doc-column first (`column doc clear`) or accept the break.
+
+## Clear a doc — empty the body, keep the doc
+
+```bash
+mondo doc clear --doc 5095668850
+```
+
+```json
+{"id": 5095668850, "cleared_blocks": 7}
+```
+
+*Gotcha:* `doc clear` removes every block but **keeps the document** — its id / object_id / URL are preserved (unlike `doc delete`, which removes the doc). An already-empty doc is a no-op (`cleared_blocks: 0`). Supports `--dry-run`. This is the standalone-doc analogue of `column doc clear` (which instead unlinks a doc from a *column*).
 
 ---
 
