@@ -966,7 +966,9 @@ class TestBlocksToHtml:
         out = blocks_to_html([_b("1", "numbered_list", "a"), _b("2", "numbered_list", "b")])
         assert "<ol>" in out and "</ol>" in out
 
-    def test_checklist_renders_disabled_checkbox(self) -> None:
+    def test_checklist_renders_box_glyph(self) -> None:
+        # Box glyphs, not `<input type=checkbox>` — the form control renders as
+        # its own block in WeasyPrint (PDF), breaking the label onto a new line.
         checked = {
             "id": "1",
             "type": "check_list",
@@ -975,8 +977,9 @@ class TestBlocksToHtml:
         unchecked = _b("2", "check_list", "todo")
         out = blocks_to_html([checked, unchecked])
         assert 'class="checklist"' in out
-        assert '<input type="checkbox" disabled checked>' in out
-        assert '<input type="checkbox" disabled>' in out
+        assert "<input" not in out
+        assert "<li>☑ done</li>" in out
+        assert "<li>☐ todo</li>" in out
 
     def test_code_block(self) -> None:
         block = {

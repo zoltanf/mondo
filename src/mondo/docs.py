@@ -1074,8 +1074,13 @@ def _render_html_list_item(
 ) -> str:
     text = _html_text(block.get("content"))
     if btype == "check_list":
-        checked = " checked" if _extract_checked(block.get("content")) else ""
-        text = f'<input type="checkbox" disabled{checked}> {text}'
+        # Inline box glyph (U+2611 ☑ / U+2610 ☐) rather than `<input
+        # type=checkbox>`: WeasyPrint renders a replaced form control as its own
+        # block, pushing the label onto the next line in PDF export. A glyph is
+        # plain inline text that lays out identically in browsers and WeasyPrint
+        # (the control was `disabled`/non-interactive anyway).
+        box = "☑" if _extract_checked(block.get("content")) else "☐"
+        text = f"{box} {text}"
     kids = children_of.get(str(block.get("id") or ""), [])
     inner = "".join(_render_html_blocks(kids, children_of, images)) if kids else ""
     return f"<li>{text}{inner}</li>"
