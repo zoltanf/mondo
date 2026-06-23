@@ -981,15 +981,17 @@ class TestBlocksToHtml:
         assert "<li>☑ done</li>" in out
         assert "<li>☐ todo</li>" in out
 
-    def test_table_cell_background_color(self) -> None:
-        """monday cell `backgroundColor` (hex) is surfaced as an inline style;
-        the default CSS-var and any non-hex value are ignored, and a malicious
+    def test_table_cell_background_and_alignment(self) -> None:
+        """monday cell `backgroundColor` (hex) and `alignment` are surfaced as
+        an inline style; defaults/non-hex/`left` are ignored, and a malicious
         value can't break out of the attribute."""
 
-        def cell(cid: str, bg: str | None) -> dict:
+        def cell(cid: str, bg: str | None = None, align: str | None = None) -> dict:
             content: dict = {}
             if bg is not None:
                 content["backgroundColor"] = bg
+            if align is not None:
+                content["alignment"] = align
             return {"id": cid, "type": "cell", "content": content, "parent_block_id": "t"}
 
         def text(cid: str, s: str) -> dict:
@@ -1012,22 +1014,23 @@ class TestBlocksToHtml:
                 },
                 "parent_block_id": None,
             },
-            cell("h0", "var(--primary-background-color)"),
+            cell("h0", bg="var(--primary-background-color)", align="left"),
             text("h0", "Day"),
-            cell("h1", '#fff" onmouseover="alert(1)'),  # injection attempt
+            cell("h1", bg='#fff" onmouseover="alert(1)', align="weird"),  # injection / bad value
             text("h1", "Val"),
-            cell("c0", "#F0A1AD2B"),
+            cell("c0", bg="#F0A1AD2B", align="center"),  # both, combined
             text("c0", "2026-06-21"),
-            cell("c1", None),
+            cell("c1", align="right"),  # alignment only
             text("c1", "ok"),
         ]
         out = blocks_to_html(blocks)
-        assert '<td style="background-color:#F0A1AD2B">2026-06-21</td>' in out
-        # default var, missing value, and the injection attempt → no style.
+        assert '<td style="background-color:#F0A1AD2B;text-align:center">2026-06-21</td>' in out
+        assert '<td style="text-align:right">ok</td>' in out
+        # default var + `left` (CSS default), and the injection / bad values → no style.
         assert "<th>Day</th>" in out
-        assert "<td>ok</td>" in out
         assert "onmouseover" not in out
         assert "var(--primary-background-color)" not in out
+        assert "text-align:weird" not in out
 
     def test_code_block(self) -> None:
         block = {

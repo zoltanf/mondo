@@ -985,16 +985,24 @@ def _render_html_image(block: dict[str, Any], images: dict[str, tuple[str, str]]
 # (the default — left to the stylesheet). The strict match also blocks
 # attribute injection from untrusted cell content.
 _CELL_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{3,8}\Z")
+# Non-default cell alignments worth emitting (`left` is the CSS default).
+_CELL_ALIGN = {"center", "right", "justify"}
 
 
-def _cell_bg_style(cell_block: dict[str, Any] | None) -> str:
-    """`style="background-color:..."` for a monday cell's explicit hex colour,
-    or `""` for the default (or any non-hex/unresolvable value)."""
+def _cell_style(cell_block: dict[str, Any] | None) -> str:
+    """Inline `style="..."` for a monday cell's explicit `backgroundColor`
+    (hex only) and `alignment`, or `""` when both are defaults. Values are
+    validated against fixed patterns/sets, which also blocks attribute
+    injection from untrusted cell content."""
     content = _as_content_dict((cell_block or {}).get("content")) or {}
+    decls: list[str] = []
     bg = content.get("backgroundColor")
     if isinstance(bg, str) and _CELL_HEX_COLOR.match(bg):
-        return f' style="background-color:{bg}"'
-    return ""
+        decls.append(f"background-color:{bg}")
+    align = content.get("alignment")
+    if isinstance(align, str) and align in _CELL_ALIGN:
+        decls.append(f"text-align:{align}")
+    return f' style="{";".join(decls)}"' if decls else ""
 
 
 def _render_html_table(
@@ -1006,10 +1014,10 @@ def _render_html_table(
 
     Mirrors `_render_table`'s reading of `content.cells` (a row-major matrix of
     `{"blockId": ...}` references). Each referenced `cell` block is itself a
-    child of the table, carrying the cell's text (in its own children) and a
-    `backgroundColor` we surface as an inline style. Returns None when the
-    schema is missing/malformed so the caller can fall back to a generic
-    container.
+    child of the table, carrying the cell's text (in its own children) plus a
+    `backgroundColor`/`alignment` we surface as an inline style. Returns None
+    when the schema is missing/malformed so the caller can fall back to a
+    generic container.
     """
     content = _as_content_dict(block.get("content"))
     if content is None:
@@ -1039,7 +1047,7 @@ def _render_html_table(
                     t = _html_text(child.get("content"))
                     if t:
                         pieces.append(t)
-            row_html.append((" ".join(pieces), _cell_bg_style(cells_by_id.get(cell_id))))
+            row_html.append((" ".join(pieces), _cell_style(cells_by_id.get(cell_id))))
         grid.append(row_html)
 
     if not grid or not grid[0]:
