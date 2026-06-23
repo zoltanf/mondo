@@ -952,7 +952,8 @@ aside.notice {
    blocks and table rows from splitting across pages. */
 @page { size: A4; margin: 1.6cm; }
 @media print {
-  body { max-width: none; margin: 0; padding: 0; color: #000; background: #fff; }
+  body { max-width: none; margin: 0; padding: 0; color: #000; background: #fff; font-size: 10.5pt; }
+  pre, code { font-size: 8.5pt; }
   pre { white-space: pre-wrap; word-wrap: break-word; }
   pre, blockquote, aside.notice, tr, img { break-inside: avoid; }
   h1, h2, h3 { break-after: avoid; }
