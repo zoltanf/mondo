@@ -1979,6 +1979,92 @@ class TestDocGetPdf:
         assert 'src=""' in captured["html"]
         assert "https://x/img.png" not in captured["html"]
 
+    def test_pdf_unresolved_image_url_is_blanked(
+        self, httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Even on the default (embed) path, an image whose asset doesn't resolve
+        must not leave its (doc-content, untrusted) URL in the HTML — WeasyPrint
+        would dereference it (SSRF / file:// read). The renderer's `content.url`
+        fallback is neutralized before conversion."""
+        from mondo.cli import _pdf
+
+        captured: dict[str, str] = {}
+
+        def fake_render(html_text: str, out: Path) -> None:
+            captured["html"] = html_text
+            out.write_bytes(b"%PDF-1.7\n")
+
+        monkeypatch.setattr(_pdf, "render_pdf", fake_render)
+        # 1) doc fetch returns an image block; 2) assets(ids) resolves nothing,
+        # so embed_doc_images returns {} and the renderer falls back to the URL.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._doc_with_image())
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"assets": []}))
+        out = tmp_path / "doc.pdf"
+        result = runner.invoke(
+            app, ["doc", "get", "--id", "7", "--format", "pdf", "--out", str(out)]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "https://x/img.png" not in captured["html"]
+        assert 'src=""' in captured["html"]
+
+    def test_pdf_svg_data_uri_is_blanked(
+        self, httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A `data:image/svg+xml` src must NOT survive: an SVG can reference
+        external resources that WeasyPrint would fetch, so only raster data
+        URIs are allowed through. The svg here is doc content (untrusted)."""
+        from mondo.cli import _pdf
+
+        captured: dict[str, str] = {}
+
+        def fake_render(html_text: str, out: Path) -> None:
+            captured["html"] = html_text
+            out.write_bytes(b"%PDF-1.7\n")
+
+        monkeypatch.setattr(_pdf, "render_pdf", fake_render)
+        svg = "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {
+                            "id": "7",
+                            "name": "D",
+                            "blocks": [
+                                {"id": "b1", "type": "image", "content": json.dumps({"url": svg})}
+                            ],
+                        }
+                    ]
+                }
+            ),
+        )
+        out = tmp_path / "doc.pdf"
+        result = runner.invoke(
+            app, ["doc", "get", "--id", "7", "--format", "pdf", "--out", str(out)]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "svg+xml" not in captured["html"]
+        assert 'src=""' in captured["html"]
+
+    def test_pdf_missing_weasyprint_skips_image_embed(
+        self, httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Preflight: with WeasyPrint absent, the command errors before the
+        image-embed network work — only the doc fetch happens, no assets(ids)."""
+        from mondo.cli import _pdf
+
+        monkeypatch.setattr(_pdf, "find_weasyprint", lambda: None)
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._doc_with_image())
+        out = tmp_path / "doc.pdf"
+        result = runner.invoke(
+            app, ["doc", "get", "--id", "7", "--format", "pdf", "--out", str(out)]
+        )
+        assert result.exit_code != 0
+        assert len(httpx_mock.get_requests()) == 1  # doc fetch only; no assets(ids)
+        assert not out.exists()
+
 
 class TestAddMarkdownChunking:
     """Issues #59 / #63: auto-chunk large markdown and report blocks_added."""

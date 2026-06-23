@@ -61,7 +61,27 @@ def test_render_pdf_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     argv = captured["argv"]
     assert argv[0] == "/usr/bin/weasyprint"
     assert argv[1].endswith("input.html")
-    assert argv[2].endswith("output.pdf")
+    assert argv[2].endswith(".pdf")  # temp output on out's filesystem
+
+
+def test_render_pdf_failure_preserves_existing_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed render must not clobber a PDF already at `out` (atomic install)."""
+
+    def fake_run(argv, **kwargs):  # type: ignore[no-untyped-def]
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr="nope\n")
+
+    monkeypatch.setattr(_pdf, "find_weasyprint", lambda: "/usr/bin/weasyprint")
+    monkeypatch.setattr(_pdf.subprocess, "run", fake_run)
+
+    out = tmp_path / "doc.pdf"
+    out.write_bytes(b"OLD-PDF")
+    with pytest.raises(MondoError):
+        _pdf.render_pdf("<html></html>", out)
+    assert out.read_bytes() == b"OLD-PDF"  # untouched
+    # No temp .pdf left behind in the output dir.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["doc.pdf"]
 
 
 def test_render_pdf_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -103,6 +103,24 @@ class DuplicateDocType(StrEnum):
 
 _DOC_BLOCKS_PAGE_SIZE = 100
 
+# Image `src` neutralization for PDF export. WeasyPrint dereferences URLs while
+# converting, so before HTML reaches it we keep ONLY raster base64 data URIs
+# produced by the embed path and blank everything else: remote/`file://` URLs
+# from (untrusted) doc content AND `data:image/svg+xml` — an SVG can pull in
+# external resources when WeasyPrint renders it, so a `data:` allowlist alone is
+# not an SSRF boundary. Safe on our own output: image src/alt are HTML-escaped,
+# so no literal `"` appears inside an attribute value.
+_IMG_SRC = re.compile(r'src="([^"]*)"')
+_SAFE_PDF_IMG_SRC = re.compile(r"data:image/(?:png|jpe?g|gif|webp|bmp);base64,", re.IGNORECASE)
+
+
+def _sanitize_pdf_image_srcs(html_text: str) -> str:
+    """Blank every `<img>` src that isn't a raster base64 data URI."""
+    return _IMG_SRC.sub(
+        lambda m: m.group(0) if _SAFE_PDF_IMG_SRC.match(m.group(1)) else 'src=""',
+        html_text,
+    )
+
 # The `--doc` XOR `--object-id` pair shared by every doc-targeting subcommand
 # (same shared-option pattern as the Poll*Opt trio in `mondo.cli._exec`).
 DocIdOpt = Annotated[
@@ -685,21 +703,19 @@ def get_cmd(
         # PDF = the same self-contained HTML handed to WeasyPrint (issue #68).
         # `--out` is guaranteed present by the up-front guard.
         assert out is not None
-        from mondo.cli._pdf import render_pdf
+        from mondo.cli._doc_images import embed_doc_images
+        from mondo.cli._pdf import find_weasyprint, install_hint, render_pdf
         from mondo.docs import blocks_to_html
 
+        # Preflight before the (network) image embed so a first-time user without
+        # WeasyPrint gets the install hint without paying for asset downloads.
+        if find_weasyprint() is None:
+            handle_mondo_error_or_exit(MondoError(install_hint()))
+
         blocks = doc.get("blocks") or []
-        if no_images:
-            # Render image blocks with an empty src so WeasyPrint never reaches
-            # out to monday's (browser-only) image URLs during conversion.
-            from mondo.docs import collect_image_asset_ids
-
-            images = {str(aid): ("", "") for aid in collect_image_asset_ids(blocks)}
-        else:
-            from mondo.cli._doc_images import embed_doc_images
-
-            images = embed_doc_images(opts, blocks)
+        images = {} if no_images else embed_doc_images(opts, blocks)
         html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
+        html_text = _sanitize_pdf_image_srcs(html_text)
         try:
             render_pdf(html_text, out)
         except MondoError as e:

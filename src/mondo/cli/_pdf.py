@@ -12,6 +12,8 @@ fallback converter.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import platform
 import shutil
 import subprocess
@@ -48,39 +50,53 @@ def install_hint() -> str:
 def render_pdf(html_text: str, out: Path) -> None:
     """Render `html_text` to a PDF at `out` via WeasyPrint.
 
-    Writes the HTML and the PDF inside a private temp dir, verifies the output
-    is non-empty, then moves it into place — so a failed run never leaves a
-    truncated PDF at `out`. Raises `MondoError` if WeasyPrint is missing, times
-    out, or fails to produce a usable PDF.
+    The PDF is written to a temp file on the same filesystem as `out` and moved
+    into place with `os.replace`, so the install is atomic and a failure never
+    truncates or clobbers an existing PDF at `out`. Raises `MondoError` if
+    WeasyPrint is missing, times out, fails to produce a usable PDF, or the
+    output can't be written.
     """
     exe = find_weasyprint()
     if exe is None:
         raise MondoError(install_hint())
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="mondo-pdf-") as tmp:
-        src = Path(tmp) / "input.html"
-        dst = Path(tmp) / "output.pdf"
-        src.write_text(html_text, encoding="utf-8")
-        try:
-            proc = subprocess.run(
-                [exe, str(src), str(dst)],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=_TIMEOUT_S,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as e:
-            raise MondoError(f"WeasyPrint timed out after {_TIMEOUT_S}s") from e
-        except OSError as e:
-            raise MondoError(f"failed to run WeasyPrint: {e}") from e
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(suffix=".pdf", dir=out.parent)
+        os.close(fd)
+    except OSError as e:
+        raise MondoError(f"failed to prepare PDF output at {out}: {e}") from e
 
-        if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
-            tail = "\n".join((proc.stderr or "").strip().splitlines()[-5:])
-            detail = tail or f"exit code {proc.returncode}"
-            raise MondoError(f"WeasyPrint failed to render the PDF:\n{detail}")
+    dst = Path(tmp_name)
+    try:
+        with tempfile.TemporaryDirectory(prefix="mondo-pdf-") as tmp:
+            src = Path(tmp) / "input.html"
+            src.write_text(html_text, encoding="utf-8")
+            try:
+                proc = subprocess.run(
+                    [exe, str(src), str(dst)],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=_TIMEOUT_S,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise MondoError(f"WeasyPrint timed out after {_TIMEOUT_S}s") from e
+            except OSError as e:
+                raise MondoError(f"failed to run WeasyPrint: {e}") from e
 
-        if out.exists():
-            out.unlink()
-        shutil.move(str(dst), str(out))
+            if proc.returncode != 0 or not dst.exists() or dst.stat().st_size == 0:
+                tail = "\n".join((proc.stderr or "").strip().splitlines()[-5:])
+                detail = tail or f"exit code {proc.returncode}"
+                raise MondoError(f"WeasyPrint failed to render the PDF:\n{detail}")
+
+        os.replace(dst, out)
+    except OSError as e:
+        raise MondoError(f"failed to write PDF to {out}: {e}") from e
+    finally:
+        # Clean up the temp output if it wasn't moved into place (os.replace
+        # consumes it on success, so this is a no-op then).
+        with contextlib.suppress(OSError):
+            if dst.exists():
+                dst.unlink()
