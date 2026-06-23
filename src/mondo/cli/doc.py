@@ -91,6 +91,7 @@ class DocFormat(StrEnum):
     markdown = "markdown"
     mdx = "mdx"
     html = "html"
+    pdf = "pdf"
 
 
 class DuplicateDocType(StrEnum):
@@ -533,7 +534,7 @@ def get_cmd(
     fmt: DocFormat = typer.Option(
         DocFormat.json,
         "--format",
-        help="Emit raw JSON (blocks as-is) or render blocks to markdown, mdx, or html.",
+        help="Emit raw JSON (blocks as-is) or render blocks to markdown, mdx, html, or pdf.",
         case_sensitive=False,
     ),
     out: Path | None = typer.Option(
@@ -541,11 +542,13 @@ def get_cmd(
         "--out",
         help=(
             "Write the rendered doc to this file (requires --format "
-            "markdown/mdx/html). For markdown/mdx, embedded images are "
-            "downloaded into the same folder and referenced by local filename; "
-            "for html they are base64-embedded so the file is self-contained. "
-            "Without --out, output goes to stdout (markdown/mdx keep monday "
-            "image URLs; html still embeds images)."
+            "markdown/mdx/html/pdf; required for pdf). For markdown/mdx, embedded "
+            "images are downloaded into the same folder and referenced by local "
+            "filename; for html they are base64-embedded so the file is "
+            "self-contained. pdf renders the self-contained html via WeasyPrint "
+            "(install on first use: `brew install weasyprint`). Without --out, "
+            "output goes to stdout (markdown/mdx keep monday image URLs; html "
+            "still embeds images)."
         ),
     ),
     no_images: bool = typer.Option(
@@ -590,9 +593,11 @@ def get_cmd(
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry
-    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html}
+    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html, DocFormat.pdf}
     if out is not None and fmt not in _RENDER_FORMATS:
-        usage_error_or_exit("--out is only valid with --format markdown, mdx, or html.")
+        usage_error_or_exit("--out is only valid with --format markdown, mdx, html, or pdf.")
+    if fmt is DocFormat.pdf and out is None:
+        usage_error_or_exit("--format pdf requires --out <file.pdf>.")
     sources = sum(x is not None for x in (doc_id, object_id))
     if sources != 1:
         usage_error_or_exit("pass exactly one of --id or --object-id.")
@@ -674,6 +679,32 @@ def get_cmd(
             opts.emit({"out": str(out), "images": len(images)})
             return
         typer.echo(html_text)
+        return
+
+    if fmt is DocFormat.pdf:
+        # PDF = the same self-contained HTML handed to WeasyPrint (issue #68).
+        # `--out` is guaranteed present by the up-front guard.
+        assert out is not None
+        from mondo.cli._pdf import render_pdf
+        from mondo.docs import blocks_to_html
+
+        blocks = doc.get("blocks") or []
+        if no_images:
+            # Render image blocks with an empty src so WeasyPrint never reaches
+            # out to monday's (browser-only) image URLs during conversion.
+            from mondo.docs import collect_image_asset_ids
+
+            images = {str(aid): ("", "") for aid in collect_image_asset_ids(blocks)}
+        else:
+            from mondo.cli._doc_images import embed_doc_images
+
+            images = embed_doc_images(opts, blocks)
+        html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
+        try:
+            render_pdf(html_text, out)
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+        opts.emit({"out": str(out), "engine": "weasyprint", "images": len(images)})
         return
 
     if fmt in (DocFormat.markdown, DocFormat.mdx):

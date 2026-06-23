@@ -947,6 +947,16 @@ aside.notice {
   blockquote, hr, th, td { border-color: #444; }
   aside.notice { background: #16283a; }
 }
+/* Print / PDF export (issue #68): WeasyPrint renders print media, so force
+   light colors, drop the on-screen centering, wrap long code, and keep small
+   blocks and table rows from splitting across pages. */
+@page { size: A4; margin: 1.6cm; }
+@media print {
+  body { max-width: none; margin: 0; padding: 0; color: #000; background: #fff; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+  pre, blockquote, aside.notice, tr, img { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+}
 """
 
 

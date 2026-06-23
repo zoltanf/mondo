@@ -932,6 +932,15 @@ class TestBlocksToHtml:
         assert '<h1 class="doc-title">My Doc</h1>' in out
         assert "<p>hi</p>" in out
 
+    def test_carries_print_css_for_pdf(self) -> None:
+        # PDF export (issue #68) hands this HTML to WeasyPrint, which renders
+        # print media — so the stylesheet must define page geometry and force
+        # light colors / page-break hints under @media print.
+        out = blocks_to_html([_b("p", "normal_text", "hi")])
+        assert "@page" in out
+        assert "@media print" in out
+        assert "break-inside" in out
+
     def test_headings(self) -> None:
         out = blocks_to_html(
             [

@@ -245,7 +245,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `object | string`
   fields: `id`, `object_id`, `name`, `doc_kind`, `doc_folder_id`, `created_at`, `updated_at`, `url`, `relative_url`, `workspace_id`, `created_by{id,name}`, `blocks{id,type,content,parent_block_id}`
   source: `DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]`
-  notes: Default format is JSON object above. --format markdown/mdx/html render to stdout instead (mdx is JSX-safe markdown; html is a single self-contained document). With --out FILE: markdown/mdx write the text to FILE and emit {out, images} where images is the list of localized image filenames downloaded beside it; html embeds images as base64 and emits {out, images} where images is the embedded count. --no-images keeps the monday URLs. --out requires --format markdown/mdx/html (exit 2 otherwise).
+  notes: Default format is JSON object above. --format markdown/mdx/html render to stdout instead (mdx is JSX-safe markdown; html is a single self-contained document). With --out FILE: markdown/mdx write the text to FILE and emit {out, images} where images is the list of localized image filenames downloaded beside it; html embeds images as base64 and emits {out, images} where images is the embedded count. --format pdf renders the self-contained html through WeasyPrint (client-side; monday has no PDF export) and emits {out, engine, images}; it always requires --out and exits non-zero with an install hint when WeasyPrint is absent. --no-images keeps the monday URLs (pdf renders images empty instead, so no network fetch). --out requires --format markdown/mdx/html/pdf (exit 2 otherwise).
 - `doc import-html`
   type: `object`
   fields: `error`, `success`, `doc_id`

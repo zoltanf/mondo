@@ -58,17 +58,23 @@ Pass `--with-url` on either to get URLs back.
 ## Once you've found a workdoc
 
 Render it to a file. `--format` takes `markdown`, `mdx` (JSX-safe markdown),
-or `html` (a single self-contained document). For markdown/mdx the embedded
-images are downloaded alongside the file and referenced by local filename;
-html base64-embeds them so the file is portable on its own (the raw monday
-image URLs only resolve in a logged-in browser):
+`html` (a single self-contained document), or `pdf`. For markdown/mdx the
+embedded images are downloaded alongside the file and referenced by local
+filename; html base64-embeds them so the file is portable on its own (the raw
+monday image URLs only resolve in a logged-in browser):
 
     mondo doc get --object-id <id> --format markdown --out ./doc.md
     mondo doc get --object-id <id> --format mdx --out ./doc.mdx
     mondo doc get --object-id <id> --format html --out ./doc.html
+    mondo doc get --object-id <id> --format pdf --out ./doc.pdf
     mondo doc export-markdown --object-id <id> --out ./doc.md   # server-side render
 
-Pass `--no-images` to skip the download/embed and keep the original URLs.
+`--format pdf` always requires `--out` and renders the html through WeasyPrint
+(monday has no PDF export, so it's client-side). WeasyPrint isn't bundled —
+install it on first use (`brew install weasyprint`; Windows: `pipx install
+weasyprint` + GTK), or use `--format html` and print to PDF from a browser.
+Pass `--no-images` to skip the download/embed and keep the original URLs (for
+pdf, images render empty so no network fetch happens).
 `--out` needs a render format — pairing it with `--format json` exits 2. To
 write content back — replace a doc in place, empty it, or create one inside a
 folder — see `mondo help` and the bundled `references/docs.md` (`doc set` /
