@@ -432,21 +432,16 @@ MANUAL_ROWS: dict[str, Row] = {
             "--out FILE: markdown/mdx write the text to FILE and emit {out, images} where images is "
             "the list of localized image filenames downloaded beside it; html embeds images as "
             "base64 and emits {out, images} where images is the embedded count. --no-images keeps "
-            "the monday URLs. --out requires --format markdown/mdx/html (exit 2 otherwise)."
+            "the monday URLs. --out requires --format markdown/mdx/html (exit 2 otherwise). "
+            "--format markdown --engine server renders via monday's server-side exporter instead "
+            "of the local block renderer (markdown only, always live); it adds --block (repeatable "
+            "subset export) and --raw (emit monday's {success, markdown, error} envelope; mutually "
+            "exclusive with --out)."
         ),
-        source="DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0]",
-    ),
-    "doc export-markdown": Row(
-        command="doc export-markdown",
-        output_type="string | object",
-        fields=["out?", "images?"],
-        notes=(
-            "Prints monday's server-rendered markdown to stdout by default. With --out FILE, "
-            "writes the markdown to FILE and emits {out, images} where images is the list of "
-            "localized image filenames downloaded beside it (empty with --no-images). Always "
-            "live (no per-doc cache): --no-cache / --refresh-cache are accepted as no-ops."
+        source=(
+            "DOC_GET_BY_ID.docs[0] | DOCS_BY_OBJECT_ID.docs[0] "
+            "| EXPORT_MARKDOWN_FROM_DOC (--engine server)"
         ),
-        source="EXPORT_MARKDOWN_FROM_DOC + localize_markdown_images",
     ),
     "doc list": Row(
         command="doc list",

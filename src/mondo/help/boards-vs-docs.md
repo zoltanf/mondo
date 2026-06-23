@@ -66,7 +66,7 @@ image URLs only resolve in a logged-in browser):
     mondo doc get --object-id <id> --format markdown --out ./doc.md
     mondo doc get --object-id <id> --format mdx --out ./doc.mdx
     mondo doc get --object-id <id> --format html --out ./doc.html
-    mondo doc export-markdown --object-id <id> --out ./doc.md   # server-side render
+    mondo doc get --object-id <id> --format markdown --engine server --out ./doc.md  # server-side render
 
 Pass `--no-images` to skip the download/embed and keep the original URLs.
 `--out` needs a render format — pairing it with `--format json` exits 2. To

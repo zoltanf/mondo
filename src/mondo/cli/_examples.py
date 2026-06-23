@@ -626,6 +626,15 @@ EXAMPLES: dict[str, list[Example]] = {
             "Render as a single self-contained HTML file (images base64-embedded)",
             "mondo doc get --id 7 --format html --out ./doc.html",
         ),
+        Example(
+            "Render markdown via monday's server-side exporter (always live)",
+            "mondo doc get --id 7 --format markdown --engine server",
+        ),
+        Example(
+            "Server-render specific blocks only, as the raw API envelope",
+            "mondo doc get --id 7 --format markdown --engine server "
+            "--block <block-1> --block <block-2> --raw",
+        ),
         Example("Just the doc name", "mondo doc get --id 7 -q name -o none"),
     ],
     "doc create": [
@@ -709,21 +718,6 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "doc clear": [
         Example("Remove all blocks but keep the doc", "mondo doc clear --doc 7"),
-    ],
-    "doc export-markdown": [
-        Example("Export the whole doc as markdown", "mondo doc export-markdown --doc 7"),
-        Example(
-            "Export specific blocks only",
-            "mondo doc export-markdown --doc 7 --block <block-1> --block <block-2> --raw",
-        ),
-        Example(
-            "Save to a file + download images beside it (rewrites URLs to local files)",
-            "mondo doc export-markdown --doc 7 --out ./doc.md",
-        ),
-        Example(
-            "Save to a file but keep image URLs (skip download)",
-            "mondo doc export-markdown --doc 7 --out ./doc.md --no-images",
-        ),
     ],
     "doc version-history": [
         Example(
