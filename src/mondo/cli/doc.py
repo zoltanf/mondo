@@ -587,19 +587,21 @@ def get_cmd(
     no_cache: bool = typer.Option(
         False,
         "--no-cache",
-        help="Bypass the per-doc blocks cache; fetch live.",
+        help="Bypass the per-doc blocks cache; fetch live. (No effect with --engine server.)",
         rich_help_panel="Cache",
     ),
     refresh_cache: bool = typer.Option(
         False,
         "--refresh-cache",
-        help="Force-refresh the per-doc blocks cache before serving.",
+        help="Force-refresh the per-doc blocks cache before serving. "
+        "(No effect with --engine server.)",
         rich_help_panel="Cache",
     ),
     explain_cache: bool = typer.Option(
         False,
         "--explain-cache",
-        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr.",
+        help="Emit a verbose cache-hit line (path/ttl/fetched_at) on stderr. "
+        "(No effect with --engine server.)",
         rich_help_panel="Cache",
     ),
 ) -> None:
