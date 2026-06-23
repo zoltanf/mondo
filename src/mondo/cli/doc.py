@@ -16,6 +16,7 @@ workspace with a block-structured body. The CLI covers:
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 import re
@@ -104,20 +105,50 @@ class DuplicateDocType(StrEnum):
 _DOC_BLOCKS_PAGE_SIZE = 100
 
 # Image `src` neutralization for PDF export. WeasyPrint dereferences URLs while
-# converting, so before HTML reaches it we keep ONLY raster base64 data URIs
-# produced by the embed path and blank everything else: remote/`file://` URLs
-# from (untrusted) doc content AND `data:image/svg+xml` — an SVG can pull in
-# external resources when WeasyPrint renders it, so a `data:` allowlist alone is
-# not an SSRF boundary. Safe on our own output: image src/alt are HTML-escaped,
-# so no literal `"` appears inside an attribute value.
+# converting, so before HTML reaches it we keep ONLY base64 data URIs whose
+# decoded bytes are a known *raster* image, and blank everything else (remote /
+# `file://` URLs from untrusted doc content, non-data srcs, and SVG).
+#
+# The declared MIME is NOT trusted: WeasyPrint content-sniffs and will parse SVG
+# out of a `data:image/png` URI, then fetch the external resources an SVG can
+# reference (verified — that's an SSRF). So we validate the actual leading
+# bytes against raster magic numbers; SVG/XML and anything non-raster never
+# survive regardless of the declared type. Rasters are inert pixel data and
+# can't fetch. Safe on our own output: image src/alt are HTML-escaped, so no
+# literal `"` appears inside an attribute value.
 _IMG_SRC = re.compile(r'src="([^"]*)"')
-_SAFE_PDF_IMG_SRC = re.compile(r"data:image/(?:png|jpe?g|gif|webp|bmp);base64,", re.IGNORECASE)
+_DATA_URI_B64 = re.compile(r"data:[\w.+/-]*;base64,(.*)", re.IGNORECASE | re.DOTALL)
+_RASTER_MAGIC = (
+    b"\x89PNG\r\n\x1a\n",  # png
+    b"\xff\xd8\xff",  # jpeg
+    b"GIF87a",
+    b"GIF89a",
+    b"BM",  # bmp
+    b"II*\x00",  # tiff, little-endian
+    b"MM\x00*",  # tiff, big-endian
+)
+
+
+def _is_raster_data_uri(src: str) -> bool:
+    """True only for a `data:...;base64,` URI whose decoded bytes start with a
+    known raster image signature (so SVG/XML and non-images are rejected even
+    when they declare an `image/png` MIME)."""
+    m = _DATA_URI_B64.match(src)
+    if m is None:
+        return False
+    prefix = m.group(1)[:64]
+    prefix = prefix[: len(prefix) // 4 * 4]  # whole base64 groups → clean decode
+    try:
+        head = base64.b64decode(prefix)
+    except ValueError:
+        return False
+    return head.startswith(_RASTER_MAGIC) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
 
 
 def _sanitize_pdf_image_srcs(html_text: str) -> str:
-    """Blank every `<img>` src that isn't a raster base64 data URI."""
+    """Blank every `<img>` src that isn't a base64 raster image data URI."""
     return _IMG_SRC.sub(
-        lambda m: m.group(0) if _SAFE_PDF_IMG_SRC.match(m.group(1)) else 'src=""',
+        lambda m: m.group(0) if _is_raster_data_uri(m.group(1)) else 'src=""',
         html_text,
     )
 

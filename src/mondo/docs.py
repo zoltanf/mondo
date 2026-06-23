@@ -977,14 +977,17 @@ def _render_html_image(block: dict[str, Any], images: dict[str, tuple[str, str]]
         entry = images.get(str(asset_id))
         if entry is not None:
             alt, src = entry
+    # `quote=True` keeps `"` out of the attribute value — this is also what lets
+    # the PDF src-sanitizer (`_sanitize_pdf_image_srcs` in cli/doc.py) match
+    # `src="..."` with a simple regex; don't drop it.
     return f'<img src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}">'
 
 
-# A concrete hex colour (`#rgb`..`#rrggbbaa`). monday stores a cell's
-# `backgroundColor` either as such a hex or as `var(--primary-background-color)`
-# (the default — left to the stylesheet). The strict match also blocks
-# attribute injection from untrusted cell content.
-_CELL_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{3,8}\Z")
+# A concrete CSS hex colour (3/4/6/8 digits — `#rgb`, `#rgba`, `#rrggbb`,
+# `#rrggbbaa`). monday stores a cell's `backgroundColor` either as such a hex or
+# as `var(--primary-background-color)` (the default — left to the stylesheet).
+# The strict match also blocks attribute injection from untrusted cell content.
+_CELL_HEX_COLOR = re.compile(r"#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})\Z")
 # Non-default cell alignments worth emitting (`left` is the CSS default).
 _CELL_ALIGN = {"center", "right", "justify"}
 

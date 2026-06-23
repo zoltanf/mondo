@@ -2048,6 +2048,32 @@ class TestDocGetPdf:
         assert "svg+xml" not in captured["html"]
         assert 'src=""' in captured["html"]
 
+    def test_sanitize_pdf_image_srcs_validates_magic_bytes(self) -> None:
+        import base64
+
+        from mondo.cli.doc import _sanitize_pdf_image_srcs
+
+        def uri(mime: str, data: bytes) -> str:
+            return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+        png = uri("image/png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)
+        tiff = uri("image/tiff", b"II*\x00" + b"\x00" * 40)  # inert raster — must survive
+        # SVG bytes DECLARED as png: WeasyPrint would sniff + fetch — must blank.
+        svg_as_png = uri("image/png", b'<svg xmlns="http://x"><image href="http://evil/"/></svg>')
+        declared_svg = uri("image/svg+xml", b"<svg/>")
+        html = "".join(
+            f'<img src="{s}" alt="">'
+            for s in [png, tiff, svg_as_png, declared_svg, "https://x/a.png", "file:///etc/passwd"]
+        )
+        out = _sanitize_pdf_image_srcs(html)
+        assert png in out  # real raster magic → kept
+        assert tiff in out
+        assert svg_as_png not in out  # the content-sniff SSRF bypass → blanked
+        assert declared_svg not in out
+        assert "https://x" not in out
+        assert "file://" not in out
+        assert out.count('src=""') == 4
+
     def test_pdf_missing_weasyprint_skips_image_embed(
         self, httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

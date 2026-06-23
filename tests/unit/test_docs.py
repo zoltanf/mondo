@@ -1020,12 +1020,14 @@ class TestBlocksToHtml:
             text("h1", "Val"),
             cell("c0", bg="#F0A1AD2B", align="center"),  # both, combined
             text("c0", "2026-06-21"),
-            cell("c1", align="right"),  # alignment only
+            cell("c1", bg="#abcde", align="right"),  # invalid 5-digit hex → align only
             text("c1", "ok"),
         ]
         out = blocks_to_html(blocks)
         assert '<td style="background-color:#F0A1AD2B;text-align:center">2026-06-21</td>' in out
+        # 5-digit hex is invalid CSS → dropped; alignment still applied.
         assert '<td style="text-align:right">ok</td>' in out
+        assert "#abcde" not in out
         # default var + `left` (CSS default), and the injection / bad values → no style.
         assert "<th>Day</th>" in out
         assert "onmouseover" not in out
