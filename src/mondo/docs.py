@@ -980,6 +980,23 @@ def _render_html_image(block: dict[str, Any], images: dict[str, tuple[str, str]]
     return f'<img src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}">'
 
 
+# A concrete hex colour (`#rgb`..`#rrggbbaa`). monday stores a cell's
+# `backgroundColor` either as such a hex or as `var(--primary-background-color)`
+# (the default — left to the stylesheet). The strict match also blocks
+# attribute injection from untrusted cell content.
+_CELL_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{3,8}\Z")
+
+
+def _cell_bg_style(cell_block: dict[str, Any] | None) -> str:
+    """`style="background-color:..."` for a monday cell's explicit hex colour,
+    or `""` for the default (or any non-hex/unresolvable value)."""
+    content = _as_content_dict((cell_block or {}).get("content")) or {}
+    bg = content.get("backgroundColor")
+    if isinstance(bg, str) and _CELL_HEX_COLOR.match(bg):
+        return f' style="background-color:{bg}"'
+    return ""
+
+
 def _render_html_table(
     block: dict[str, Any],
     children_of: dict[str, list[dict[str, Any]]],
@@ -988,8 +1005,11 @@ def _render_html_table(
     """Render a `table` block as an HTML `<table>`.
 
     Mirrors `_render_table`'s reading of `content.cells` (a row-major matrix of
-    `{"blockId": ...}` references). Returns None when the schema is
-    missing/malformed so the caller can fall back to a generic container.
+    `{"blockId": ...}` references). Each referenced `cell` block is itself a
+    child of the table, carrying the cell's text (in its own children) and a
+    `backgroundColor` we surface as an inline style. Returns None when the
+    schema is missing/malformed so the caller can fall back to a generic
+    container.
     """
     content = _as_content_dict(block.get("content"))
     if content is None:
@@ -998,11 +1018,15 @@ def _render_html_table(
     if not isinstance(cells_matrix, list) or not cells_matrix:
         return None
 
-    grid: list[list[str]] = []
+    cells_by_id = {
+        str(b.get("id")): b for b in children_of.get(str(block.get("id") or ""), [])
+    }
+    # (inner_html, style_attr) per cell.
+    grid: list[list[tuple[str, str]]] = []
     for row in cells_matrix:
         if not isinstance(row, list):
             return None
-        row_html: list[str] = []
+        row_html: list[tuple[str, str]] = []
         for cell_ref in row:
             cell_id = ""
             if isinstance(cell_ref, dict) and cell_ref.get("blockId") is not None:
@@ -1015,20 +1039,20 @@ def _render_html_table(
                     t = _html_text(child.get("content"))
                     if t:
                         pieces.append(t)
-            row_html.append(" ".join(pieces))
+            row_html.append((" ".join(pieces), _cell_bg_style(cells_by_id.get(cell_id))))
         grid.append(row_html)
 
     if not grid or not grid[0]:
         return None
     col_count = max(len(row) for row in grid)
-    grid = [row + [""] * (col_count - len(row)) for row in grid]
+    grid = [row + [("", "")] * (col_count - len(row)) for row in grid]
 
     out = ["<table>", "<thead><tr>"]
-    out += [f"<th>{c}</th>" for c in grid[0]]
+    out += [f"<th{style}>{c}</th>" for c, style in grid[0]]
     out.append("</tr></thead>")
     out.append("<tbody>")
     for row in grid[1:]:
-        out.append("<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>")
+        out.append("<tr>" + "".join(f"<td{style}>{c}</td>" for c, style in row) + "</tr>")
     out += ["</tbody>", "</table>"]
     return out
 

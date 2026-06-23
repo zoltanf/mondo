@@ -981,6 +981,54 @@ class TestBlocksToHtml:
         assert "<li>☑ done</li>" in out
         assert "<li>☐ todo</li>" in out
 
+    def test_table_cell_background_color(self) -> None:
+        """monday cell `backgroundColor` (hex) is surfaced as an inline style;
+        the default CSS-var and any non-hex value are ignored, and a malicious
+        value can't break out of the attribute."""
+
+        def cell(cid: str, bg: str | None) -> dict:
+            content: dict = {}
+            if bg is not None:
+                content["backgroundColor"] = bg
+            return {"id": cid, "type": "cell", "content": content, "parent_block_id": "t"}
+
+        def text(cid: str, s: str) -> dict:
+            return {
+                "id": f"{cid}-t",
+                "type": "normal_text",
+                "content": {"deltaFormat": [{"insert": s}]},
+                "parent_block_id": cid,
+            }
+
+        blocks = [
+            {
+                "id": "t",
+                "type": "table",
+                "content": {
+                    "cells": [
+                        [{"blockId": "h0"}, {"blockId": "h1"}],
+                        [{"blockId": "c0"}, {"blockId": "c1"}],
+                    ]
+                },
+                "parent_block_id": None,
+            },
+            cell("h0", "var(--primary-background-color)"),
+            text("h0", "Day"),
+            cell("h1", '#fff" onmouseover="alert(1)'),  # injection attempt
+            text("h1", "Val"),
+            cell("c0", "#F0A1AD2B"),
+            text("c0", "2026-06-21"),
+            cell("c1", None),
+            text("c1", "ok"),
+        ]
+        out = blocks_to_html(blocks)
+        assert '<td style="background-color:#F0A1AD2B">2026-06-21</td>' in out
+        # default var, missing value, and the injection attempt → no style.
+        assert "<th>Day</th>" in out
+        assert "<td>ok</td>" in out
+        assert "onmouseover" not in out
+        assert "var(--primary-background-color)" not in out
+
     def test_code_block(self) -> None:
         block = {
             "id": "c",
