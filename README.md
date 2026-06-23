@@ -581,6 +581,7 @@ mondo doc get            --id 7 --format markdown --out ./doc.md  # +download im
 mondo doc get            --id 7 --format markdown --out ./doc.md --no-images  # skip download, keep URLs
 mondo doc get            --id 7 --format mdx --out ./doc.mdx      # MDX (JSX-safe markdown)
 mondo doc get            --id 7 --format html --out ./doc.html    # single self-contained HTML, images base64-embedded
+mondo doc get            --id 7 --format pdf  --out ./doc.pdf     # PDF via WeasyPrint (brew install weasyprint on first use)
 mondo doc get            --id 7 --format markdown --engine server # monday's server-side exporter (always live)
 mondo doc get            --id 7 --format markdown --engine server --block <b1> --block <b2> --raw  # subset + raw envelope
 mondo doc create         --workspace 42 --name "Spec" --kind public [--folder 3042556]
@@ -610,7 +611,13 @@ blocks. `doc clear` empties the body while keeping the doc itself (vs `doc
 delete`, which removes it). `doc create --folder <id>` places the new doc
 directly inside a folder; if creation is blocked by workspace policy it fails
 with `USER_UNAUTHORIZED` and an actionable license `suggestion`. `--out` needs
-a render format — `--format json` with `--out` exits 2.
+a render format — `--format json` with `--out` exits 2. `--format pdf` always
+requires `--out` and renders the self-contained HTML through
+[WeasyPrint](https://weasyprint.org/); monday has no PDF export, so it's done
+client-side. WeasyPrint isn't bundled (it needs native pango/cairo libraries) —
+install it on first use (`brew install weasyprint`; on Windows `pipx install
+weasyprint` + the GTK runtime), or fall back to `--format html` and print to PDF
+from a browser.
 
 ### Updates (item comments)
 

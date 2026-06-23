@@ -947,6 +947,17 @@ aside.notice {
   blockquote, hr, th, td { border-color: #444; }
   aside.notice { background: #16283a; }
 }
+/* Print / PDF export (issue #68): WeasyPrint renders print media, so force
+   light colors, drop the on-screen centering, wrap long code, and keep small
+   blocks and table rows from splitting across pages. */
+@page { size: A4; margin: 1.6cm; }
+@media print {
+  body { max-width: none; margin: 0; padding: 0; color: #000; background: #fff; font-size: 10.5pt; }
+  pre, code { font-size: 8.5pt; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+  pre, blockquote, aside.notice, tr, img { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+}
 """
 
 
@@ -966,7 +977,35 @@ def _render_html_image(block: dict[str, Any], images: dict[str, tuple[str, str]]
         entry = images.get(str(asset_id))
         if entry is not None:
             alt, src = entry
+    # `quote=True` keeps `"` out of the attribute value — this is also what lets
+    # the PDF src-sanitizer (`_sanitize_pdf_image_srcs` in cli/doc.py) match
+    # `src="..."` with a simple regex; don't drop it.
     return f'<img src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}">'
+
+
+# A concrete CSS hex colour (3/4/6/8 digits — `#rgb`, `#rgba`, `#rrggbb`,
+# `#rrggbbaa`). monday stores a cell's `backgroundColor` either as such a hex or
+# as `var(--primary-background-color)` (the default — left to the stylesheet).
+# The strict match also blocks attribute injection from untrusted cell content.
+_CELL_HEX_COLOR = re.compile(r"#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})\Z")
+# Non-default cell alignments worth emitting (`left` is the CSS default).
+_CELL_ALIGN = {"center", "right", "justify"}
+
+
+def _cell_style(cell_block: dict[str, Any] | None) -> str:
+    """Inline `style="..."` for a monday cell's explicit `backgroundColor`
+    (hex only) and `alignment`, or `""` when both are defaults. Values are
+    validated against fixed patterns/sets, which also blocks attribute
+    injection from untrusted cell content."""
+    content = _as_content_dict((cell_block or {}).get("content")) or {}
+    decls: list[str] = []
+    bg = content.get("backgroundColor")
+    if isinstance(bg, str) and _CELL_HEX_COLOR.match(bg):
+        decls.append(f"background-color:{bg}")
+    align = content.get("alignment")
+    if isinstance(align, str) and align in _CELL_ALIGN:
+        decls.append(f"text-align:{align}")
+    return f' style="{";".join(decls)}"' if decls else ""
 
 
 def _render_html_table(
@@ -977,8 +1016,11 @@ def _render_html_table(
     """Render a `table` block as an HTML `<table>`.
 
     Mirrors `_render_table`'s reading of `content.cells` (a row-major matrix of
-    `{"blockId": ...}` references). Returns None when the schema is
-    missing/malformed so the caller can fall back to a generic container.
+    `{"blockId": ...}` references). Each referenced `cell` block is itself a
+    child of the table, carrying the cell's text (in its own children) plus a
+    `backgroundColor`/`alignment` we surface as an inline style. Returns None
+    when the schema is missing/malformed so the caller can fall back to a
+    generic container.
     """
     content = _as_content_dict(block.get("content"))
     if content is None:
@@ -987,11 +1029,15 @@ def _render_html_table(
     if not isinstance(cells_matrix, list) or not cells_matrix:
         return None
 
-    grid: list[list[str]] = []
+    cells_by_id = {
+        str(b.get("id")): b for b in children_of.get(str(block.get("id") or ""), [])
+    }
+    # (inner_html, style_attr) per cell.
+    grid: list[list[tuple[str, str]]] = []
     for row in cells_matrix:
         if not isinstance(row, list):
             return None
-        row_html: list[str] = []
+        row_html: list[tuple[str, str]] = []
         for cell_ref in row:
             cell_id = ""
             if isinstance(cell_ref, dict) and cell_ref.get("blockId") is not None:
@@ -1004,20 +1050,20 @@ def _render_html_table(
                     t = _html_text(child.get("content"))
                     if t:
                         pieces.append(t)
-            row_html.append(" ".join(pieces))
+            row_html.append((" ".join(pieces), _cell_style(cells_by_id.get(cell_id))))
         grid.append(row_html)
 
     if not grid or not grid[0]:
         return None
     col_count = max(len(row) for row in grid)
-    grid = [row + [""] * (col_count - len(row)) for row in grid]
+    grid = [row + [("", "")] * (col_count - len(row)) for row in grid]
 
     out = ["<table>", "<thead><tr>"]
-    out += [f"<th>{c}</th>" for c in grid[0]]
+    out += [f"<th{style}>{c}</th>" for c, style in grid[0]]
     out.append("</tr></thead>")
     out.append("<tbody>")
     for row in grid[1:]:
-        out.append("<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>")
+        out.append("<tr>" + "".join(f"<td{style}>{c}</td>" for c, style in row) + "</tr>")
     out += ["</tbody>", "</table>"]
     return out
 
@@ -1064,8 +1110,13 @@ def _render_html_list_item(
 ) -> str:
     text = _html_text(block.get("content"))
     if btype == "check_list":
-        checked = " checked" if _extract_checked(block.get("content")) else ""
-        text = f'<input type="checkbox" disabled{checked}> {text}'
+        # Inline box glyph (U+2611 ☑ / U+2610 ☐) rather than `<input
+        # type=checkbox>`: WeasyPrint renders a replaced form control as its own
+        # block, pushing the label onto the next line in PDF export. A glyph is
+        # plain inline text that lays out identically in browsers and WeasyPrint
+        # (the control was `disabled`/non-interactive anyway).
+        box = "☑" if _extract_checked(block.get("content")) else "☐"
+        text = f"{box} {text}"
     kids = children_of.get(str(block.get("id") or ""), [])
     inner = "".join(_render_html_blocks(kids, children_of, images)) if kids else ""
     return f"<li>{text}{inner}</li>"

@@ -17,6 +17,7 @@ workspace with a block-structured body. The CLI covers:
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 import re
@@ -92,6 +93,7 @@ class DocFormat(StrEnum):
     markdown = "markdown"
     mdx = "mdx"
     html = "html"
+    pdf = "pdf"
 
 
 class DocEngine(StrEnum):
@@ -107,6 +109,54 @@ class DuplicateDocType(StrEnum):
 # ----- helpers -----
 
 _DOC_BLOCKS_PAGE_SIZE = 100
+
+# Image `src` neutralization for PDF export. WeasyPrint dereferences URLs while
+# converting, so before HTML reaches it we keep ONLY base64 data URIs whose
+# decoded bytes are a known *raster* image, and blank everything else (remote /
+# `file://` URLs from untrusted doc content, non-data srcs, and SVG).
+#
+# The declared MIME is NOT trusted: WeasyPrint content-sniffs and will parse SVG
+# out of a `data:image/png` URI, then fetch the external resources an SVG can
+# reference (verified — that's an SSRF). So we validate the actual leading
+# bytes against raster magic numbers; SVG/XML and anything non-raster never
+# survive regardless of the declared type. Rasters are inert pixel data and
+# can't fetch. Safe on our own output: image src/alt are HTML-escaped, so no
+# literal `"` appears inside an attribute value.
+_IMG_SRC = re.compile(r'src="([^"]*)"')
+_DATA_URI_B64 = re.compile(r"data:[\w.+/-]*;base64,(.*)", re.IGNORECASE | re.DOTALL)
+_RASTER_MAGIC = (
+    b"\x89PNG\r\n\x1a\n",  # png
+    b"\xff\xd8\xff",  # jpeg
+    b"GIF87a",
+    b"GIF89a",
+    b"BM",  # bmp
+    b"II*\x00",  # tiff, little-endian
+    b"MM\x00*",  # tiff, big-endian
+)
+
+
+def _is_raster_data_uri(src: str) -> bool:
+    """True only for a `data:...;base64,` URI whose decoded bytes start with a
+    known raster image signature (so SVG/XML and non-images are rejected even
+    when they declare an `image/png` MIME)."""
+    m = _DATA_URI_B64.match(src)
+    if m is None:
+        return False
+    prefix = m.group(1)[:64]
+    prefix = prefix[: len(prefix) // 4 * 4]  # whole base64 groups → clean decode
+    try:
+        head = base64.b64decode(prefix)
+    except ValueError:
+        return False
+    return head.startswith(_RASTER_MAGIC) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+
+
+def _sanitize_pdf_image_srcs(html_text: str) -> str:
+    """Blank every `<img>` src that isn't a base64 raster image data URI."""
+    return _IMG_SRC.sub(
+        lambda m: m.group(0) if _is_raster_data_uri(m.group(1)) else 'src=""',
+        html_text,
+    )
 
 # The `--doc` XOR `--object-id` pair shared by every doc-targeting subcommand
 # (same shared-option pattern as the Poll*Opt trio in `mondo.cli._exec`).
@@ -539,7 +589,7 @@ def get_cmd(
     fmt: DocFormat = typer.Option(
         DocFormat.json,
         "--format",
-        help="Emit raw JSON (blocks as-is) or render blocks to markdown, mdx, or html.",
+        help="Emit raw JSON (blocks as-is) or render blocks to markdown, mdx, html, or pdf.",
         case_sensitive=False,
     ),
     engine: DocEngine = typer.Option(
@@ -567,11 +617,13 @@ def get_cmd(
         "--out",
         help=(
             "Write the rendered doc to this file (requires --format "
-            "markdown/mdx/html). For markdown/mdx, embedded images are "
-            "downloaded into the same folder and referenced by local filename; "
-            "for html they are base64-embedded so the file is self-contained. "
-            "Without --out, output goes to stdout (markdown/mdx keep monday "
-            "image URLs; html still embeds images)."
+            "markdown/mdx/html/pdf; required for pdf). For markdown/mdx, embedded "
+            "images are downloaded into the same folder and referenced by local "
+            "filename; for html they are base64-embedded so the file is "
+            "self-contained. pdf renders the self-contained html via WeasyPrint "
+            "(install on first use: `brew install weasyprint`). Without --out, "
+            "output goes to stdout (markdown/mdx keep monday image URLs; html "
+            "still embeds images)."
         ),
     ),
     no_images: bool = typer.Option(
@@ -644,9 +696,11 @@ def get_cmd(
         usage_error_or_exit("--block requires --engine server.")
     if raw:
         usage_error_or_exit("--raw requires --engine server.")
-    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html}
+    _RENDER_FORMATS = {DocFormat.markdown, DocFormat.mdx, DocFormat.html, DocFormat.pdf}
     if out is not None and fmt not in _RENDER_FORMATS:
-        usage_error_or_exit("--out is only valid with --format markdown, mdx, or html.")
+        usage_error_or_exit("--out is only valid with --format markdown, mdx, html, or pdf.")
+    if fmt is DocFormat.pdf and out is None:
+        usage_error_or_exit("--format pdf requires --out <file.pdf>.")
 
     if doc_id is not None:
         query = DOC_GET_BY_ID_BLOCKS_PAGE
@@ -725,6 +779,30 @@ def get_cmd(
             opts.emit({"out": str(out), "images": len(images)})
             return
         typer.echo(html_text)
+        return
+
+    if fmt is DocFormat.pdf:
+        # PDF = the same self-contained HTML handed to WeasyPrint (issue #68).
+        # `--out` is guaranteed present by the up-front guard.
+        assert out is not None
+        from mondo.cli._doc_images import embed_doc_images
+        from mondo.cli._pdf import find_weasyprint, install_hint, render_pdf
+        from mondo.docs import blocks_to_html
+
+        # Preflight before the (network) image embed so a first-time user without
+        # WeasyPrint gets the install hint without paying for asset downloads.
+        if find_weasyprint() is None:
+            handle_mondo_error_or_exit(MondoError(install_hint()))
+
+        blocks = doc.get("blocks") or []
+        images = {} if no_images else embed_doc_images(opts, blocks)
+        html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
+        html_text = _sanitize_pdf_image_srcs(html_text)
+        try:
+            render_pdf(html_text, out)
+        except MondoError as e:
+            handle_mondo_error_or_exit(e)
+        opts.emit({"out": str(out), "engine": "weasyprint", "images": len(images)})
         return
 
     if fmt in (DocFormat.markdown, DocFormat.mdx):

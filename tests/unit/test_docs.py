@@ -932,6 +932,15 @@ class TestBlocksToHtml:
         assert '<h1 class="doc-title">My Doc</h1>' in out
         assert "<p>hi</p>" in out
 
+    def test_carries_print_css_for_pdf(self) -> None:
+        # PDF export (issue #68) hands this HTML to WeasyPrint, which renders
+        # print media — so the stylesheet must define page geometry and force
+        # light colors / page-break hints under @media print.
+        out = blocks_to_html([_b("p", "normal_text", "hi")])
+        assert "@page" in out
+        assert "@media print" in out
+        assert "break-inside" in out
+
     def test_headings(self) -> None:
         out = blocks_to_html(
             [
@@ -957,7 +966,9 @@ class TestBlocksToHtml:
         out = blocks_to_html([_b("1", "numbered_list", "a"), _b("2", "numbered_list", "b")])
         assert "<ol>" in out and "</ol>" in out
 
-    def test_checklist_renders_disabled_checkbox(self) -> None:
+    def test_checklist_renders_box_glyph(self) -> None:
+        # Box glyphs, not `<input type=checkbox>` — the form control renders as
+        # its own block in WeasyPrint (PDF), breaking the label onto a new line.
         checked = {
             "id": "1",
             "type": "check_list",
@@ -966,8 +977,62 @@ class TestBlocksToHtml:
         unchecked = _b("2", "check_list", "todo")
         out = blocks_to_html([checked, unchecked])
         assert 'class="checklist"' in out
-        assert '<input type="checkbox" disabled checked>' in out
-        assert '<input type="checkbox" disabled>' in out
+        assert "<input" not in out
+        assert "<li>☑ done</li>" in out
+        assert "<li>☐ todo</li>" in out
+
+    def test_table_cell_background_and_alignment(self) -> None:
+        """monday cell `backgroundColor` (hex) and `alignment` are surfaced as
+        an inline style; defaults/non-hex/`left` are ignored, and a malicious
+        value can't break out of the attribute."""
+
+        def cell(cid: str, bg: str | None = None, align: str | None = None) -> dict:
+            content: dict = {}
+            if bg is not None:
+                content["backgroundColor"] = bg
+            if align is not None:
+                content["alignment"] = align
+            return {"id": cid, "type": "cell", "content": content, "parent_block_id": "t"}
+
+        def text(cid: str, s: str) -> dict:
+            return {
+                "id": f"{cid}-t",
+                "type": "normal_text",
+                "content": {"deltaFormat": [{"insert": s}]},
+                "parent_block_id": cid,
+            }
+
+        blocks = [
+            {
+                "id": "t",
+                "type": "table",
+                "content": {
+                    "cells": [
+                        [{"blockId": "h0"}, {"blockId": "h1"}],
+                        [{"blockId": "c0"}, {"blockId": "c1"}],
+                    ]
+                },
+                "parent_block_id": None,
+            },
+            cell("h0", bg="var(--primary-background-color)", align="left"),
+            text("h0", "Day"),
+            cell("h1", bg='#fff" onmouseover="alert(1)', align="weird"),  # injection / bad value
+            text("h1", "Val"),
+            cell("c0", bg="#F0A1AD2B", align="center"),  # both, combined
+            text("c0", "2026-06-21"),
+            cell("c1", bg="#abcde", align="right"),  # invalid 5-digit hex → align only
+            text("c1", "ok"),
+        ]
+        out = blocks_to_html(blocks)
+        assert '<td style="background-color:#F0A1AD2B;text-align:center">2026-06-21</td>' in out
+        # 5-digit hex is invalid CSS → dropped; alignment still applied.
+        assert '<td style="text-align:right">ok</td>' in out
+        assert "#abcde" not in out
+        # default var + `left` (CSS default), and the injection / bad values → no style.
+        assert "<th>Day</th>" in out
+        assert "onmouseover" not in out
+        assert "var(--primary-background-color)" not in out
+        assert "text-align:weird" not in out
 
     def test_code_block(self) -> None:
         block = {

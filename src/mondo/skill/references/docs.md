@@ -43,26 +43,30 @@ mondo doc get --object-id 5098297247 --format markdown
 mondo doc get --object-id 5098297247 --format mdx
 mondo doc get --object-id 5098297247 --format html
 
+# PDF needs an external renderer + a file target (see below):
+mondo doc get --object-id 5098297247 --format pdf --out ./spec.pdf
+
 # Markdown via monday's server-side exporter instead of the local renderer:
 mondo doc get --object-id 5098297247 --format markdown --engine server
 mondo doc get --doc 5095668848 --format markdown --engine server
 ```
 
-`doc get --format` renders all four shapes. Markdown has **two engines**, selected with `--engine`:
+`doc get --format` renders all four shapes (`markdown`, `mdx`, `html`, `pdf`). Markdown has **two engines**, selected with `--engine`:
 
-- `--engine client` (default) — mondo's local block renderer. It also powers `mdx`/`html`, honours the per-doc cache, and downloads images from the block tree.
-- `--engine server` — monday's server-side `export_markdown_from_doc` exporter (markdown only — the API offers no server-side HTML/MDX export). Always live, and it unlocks two extras the client renderer doesn't have: `--block <id>` (repeatable) to export a subset of blocks, and `--raw` to emit monday's `{success, markdown, error}` envelope. `--engine server` is rejected (exit 2) with any `--format` other than `markdown`, and `--block`/`--raw` are rejected with `--engine client`.
+- `--engine client` (default) — mondo's local block renderer. It also powers `mdx`/`html`/`pdf`, honours the per-doc cache, and downloads images from the block tree.
+- `--engine server` — monday's server-side `export_markdown_from_doc` exporter (markdown only — the API offers no server-side HTML/MDX/PDF export). Always live, and it unlocks two extras the client renderer doesn't have: `--block <id>` (repeatable) to export a subset of blocks, and `--raw` to emit monday's `{success, markdown, error}` envelope. `--engine server` is rejected (exit 2) with any `--format` other than `markdown`, and `--block`/`--raw` are rejected with `--engine client`.
 
-All print to stdout by default.
+markdown/mdx/html print to stdout by default; **pdf always requires `--out`**.
 
 - **mdx** is the markdown rendering with JSX-significant characters (`<`, `{`) escaped in prose (never inside code fences); monday notice/callout boxes stay as GFM `> [!NOTE]` blockquotes.
 - **html** is a single self-contained document (inline `<style>`, base64-embedded images) — see below.
+- **pdf** renders that same self-contained html through [WeasyPrint](https://weasyprint.org/) (monday has no PDF export, so it's client-side). WeasyPrint is **not bundled** — it needs native pango/cairo libraries. If it isn't on `PATH`, `doc get --format pdf` exits non-zero with an install hint: `brew install weasyprint` (macOS/Linux) or `pipx install weasyprint` + the GTK runtime (Windows). The fallback for an agent that can't install it is `--format html` (then print to PDF from a browser).
 
 *Note:* `--engine server` is always live (it never consults the per-doc cache), so `--no-cache` / `--refresh-cache` have no effect there.
 
 ### Write to a file (and handle embedded images)
 
-Add `--out FILE` to write the rendered doc to a file (valid for `markdown`, `mdx`, and `html`; rejected with exit 2 for `json`).
+Add `--out FILE` to write the rendered doc to a file (valid for `markdown`, `mdx`, `html`, and `pdf`; required for `pdf`; rejected with exit 2 for `json`).
 
 For **markdown** and **mdx**, embedded monday images are downloaded into the **same folder** and referenced by a local `<assetId>-<name>` filename — because the raw `protected_static` image URLs only resolve in a logged-in browser, so the bare file is useless off-platform.
 
@@ -86,7 +90,17 @@ mondo doc get --object-id 5098297247 --format html --out ./spec.html
 {"out": "spec.html", "images": 3}
 ```
 
-*Gotchas:* Pass `--no-images` to skip downloading/embedding and leave the original (browser-only) monday URLs in place — for markdown/mdx the `images` field then lists the local filenames actually written (images inside table cells are downloaded too, so references aren't orphaned).
+For **pdf**, the same embedded-image html is handed to WeasyPrint. The summary reports the engine plus the embedded image count:
+
+```bash
+mondo doc get --object-id 5098297247 --format pdf --out ./spec.pdf
+```
+
+```json
+{"out": "spec.pdf", "engine": "weasyprint", "images": 3}
+```
+
+*Gotchas:* Pass `--no-images` to skip downloading/embedding and leave the original (browser-only) monday URLs in place — for markdown/mdx the `images` field then lists the local filenames actually written (images inside table cells are downloaded too, so references aren't orphaned). For **pdf**, `--no-images` renders image blocks empty so WeasyPrint makes no network fetch.
 
 ```json
 {
