@@ -2016,6 +2016,7 @@ class TestDocGetPdf:
             out.write_bytes(b"%PDF-1.7\n")
 
         monkeypatch.setattr(_pdf, "render_pdf", fake_render)
+        monkeypatch.setattr(_pdf, "find_weasyprint", lambda: "weasyprint")
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -2064,6 +2065,7 @@ class TestDocGetPdf:
             out.write_bytes(b"%PDF-1.7\n")
 
         monkeypatch.setattr(_pdf, "render_pdf", fake_render)
+        monkeypatch.setattr(_pdf, "find_weasyprint", lambda: "weasyprint")
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._doc_with_image())
         out = tmp_path / "doc.pdf"
         result = runner.invoke(
@@ -2091,6 +2093,7 @@ class TestDocGetPdf:
             out.write_bytes(b"%PDF-1.7\n")
 
         monkeypatch.setattr(_pdf, "render_pdf", fake_render)
+        monkeypatch.setattr(_pdf, "find_weasyprint", lambda: "weasyprint")
         # 1) doc fetch returns an image block; 2) assets(ids) resolves nothing,
         # so embed_doc_images returns {} and the renderer falls back to the URL.
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._doc_with_image())
@@ -2118,6 +2121,7 @@ class TestDocGetPdf:
             out.write_bytes(b"%PDF-1.7\n")
 
         monkeypatch.setattr(_pdf, "render_pdf", fake_render)
+        monkeypatch.setattr(_pdf, "find_weasyprint", lambda: "weasyprint")
         svg = "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
         httpx_mock.add_response(
             url=ENDPOINT,
