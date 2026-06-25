@@ -387,12 +387,16 @@ class TestHelpPanels:
         out = result.output
         if "Global Options" not in out:
             pytest.skip("no Global Options panel rendered (test environment)")
-        # Scope to just the Global Options panel body — slice between its
-        # header and the next panel header (any "╭─ <title> ─").
-        global_start = out.find("Global Options")
-        rest = out[global_start:]
-        next_panel = rest.find("\n╭─", 1)
-        global_body = rest if next_panel == -1 else rest[:next_panel]
+        # Scope to just the Global Options panel body — slice from its header to
+        # the next panel heading. Match by panel *title* rather than the box
+        # border char, which Rich renders as ASCII on legacy Windows consoles.
+        global_body = out.split("Global Options", 1)[1]
+        end_markers = ["Output / Query", "Cache", "Polling", "Pagination", "Filters"]
+        end_idx = min(
+            (global_body.find(m) for m in end_markers if global_body.find(m) != -1),
+            default=len(global_body),
+        )
+        global_body = global_body[:end_idx]
         # --output, --query, --fields must NOT appear inside the Global
         # Options panel (they now live in the Output / Query panel).
         assert "--query" not in global_body, global_body

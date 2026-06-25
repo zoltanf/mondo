@@ -69,6 +69,7 @@ jobs:
             --collect-data mondo.help --hidden-import mondo.help `
             --collect-data mondo.skill --hidden-import mondo.skill `
             --collect-submodules mondo.cli --collect-submodules mondo.output `
+            --collect-data tzdata `
             src/mondo/cli/main.py
 
       - name: Smoke test (unix)
