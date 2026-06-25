@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from ._helpers import (
     wait_for,
 )
 from .conftest import PmBoard
+
+_HAS_WEASYPRINT = shutil.which("weasyprint") is not None
 
 
 @pytest.mark.integration
@@ -282,6 +285,128 @@ def test_live_pm_board_export_markdown_smoke(pm_board_session: PmBoard) -> None:
     # Group titles also surface (the GFM table includes a `group` column).
     for group_title in ("Backlog", "In Progress", "Done"):
         assert group_title in md, f"group {group_title!r} not in markdown export"
+
+
+@pytest.mark.integration
+def test_live_pm_board_export_html(pm_board_session: PmBoard, tmp_path: Path) -> None:
+    """`export board --format html --out` writes an HTML doc with a title + group sections."""
+    pm = pm_board_session
+    out = tmp_path / "pm_export.html"
+    invoke(
+        ["export", "board", str(pm.board_id), "--format", "html", "--out", str(out)],
+        expect_exit=0,
+    )
+    assert out.exists() and out.stat().st_size > 0, "html export empty"
+
+    text = out.read_text(encoding="utf-8")
+    # Board-name title (h1) and at least one group section (h2) in grouped mode.
+    assert "<h1" in text and "E2E PM Board" in text, (
+        f"board-name <h1> title missing from html export: {text[:500]!r}"
+    )
+    assert "<h2>Backlog</h2>" in text, "group <h2> section missing from html export"
+    for item_name in pm.item_names:
+        assert item_name in text, f"item {item_name!r} not in html export"
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _HAS_WEASYPRINT, reason="weasyprint not installed")
+def test_live_pm_board_export_pdf(pm_board_session: PmBoard, tmp_path: Path) -> None:
+    """`export board --format pdf --out` renders a non-empty PDF via WeasyPrint."""
+    pm = pm_board_session
+    out = tmp_path / "pm_export.pdf"
+    invoke(
+        ["export", "board", str(pm.board_id), "--format", "pdf", "--out", str(out)],
+        expect_exit=0,
+    )
+    assert out.exists() and out.stat().st_size > 0, "pdf export empty"
+    # A real PDF starts with the `%PDF-` magic.
+    assert out.read_bytes()[:5] == b"%PDF-"
+
+
+@pytest.mark.integration
+def test_live_pm_board_export_markdown_grouped(pm_board_session: PmBoard) -> None:
+    """Grouped (default) md emits one `## <group>` section per monday group."""
+    pm = pm_board_session
+    result = invoke(["export", "board", str(pm.board_id), "--format", "md"], expect_exit=0)
+    md = result.stdout
+    assert md.strip(), "markdown export empty"
+
+    # Board-name h1 title.
+    assert "# E2E PM Board" in md, f"board-name # title missing: {md[:300]!r}"
+    # One section heading per group (grouped is the default for md).
+    for group_title in ("Backlog", "In Progress", "Done"):
+        assert f"## {group_title}" in md, f"group section '## {group_title}' missing"
+    # In grouped mode `group` is the heading, not a table column.
+    assert "| group |" not in md, "grouped md should not carry a `group` table column"
+
+
+@pytest.mark.integration
+def test_live_pm_board_export_markdown_flat(pm_board_session: PmBoard) -> None:
+    """`--flat` md collapses to a single table carrying a `group` column."""
+    pm = pm_board_session
+    result = invoke(
+        ["export", "board", str(pm.board_id), "--format", "md", "--flat"],
+        expect_exit=0,
+    )
+    md = result.stdout
+    assert md.strip(), "flat markdown export empty"
+
+    # Flat keeps the `group` column and emits NO `## <group>` section headings.
+    assert "| group |" in md, "flat md should carry a `group` table column"
+    for group_title in ("Backlog", "In Progress", "Done"):
+        assert f"## {group_title}" not in md, f"flat md must not emit '## {group_title}' section"
+    # Every item still present in the single table.
+    for item_name in pm.item_names:
+        assert item_name in md, f"item {item_name!r} not in flat markdown export"
+
+
+@pytest.mark.integration
+def test_live_pm_board_export_filter_narrows_rows(pm_board_session: PmBoard) -> None:
+    """`--filter status=Done` (seeded only on item 0) narrows the JSON export to that item."""
+    pm = pm_board_session
+    result = invoke(
+        [
+            "export",
+            "board",
+            str(pm.board_id),
+            "--format",
+            "json",
+            "--filter",
+            f"{pm.column_ids['status']}={pm.status_value}",
+        ],
+        expect_exit=0,
+    )
+    items = _extract_items_from_export(json.loads(result.stdout))
+    names = {it["name"] for it in items}
+    # Only item_ids[0] carries the seeded "Done" status.
+    assert names == {pm.item_names[0]}, f"filter did not narrow rows: {names}"
+
+
+@pytest.mark.integration
+def test_live_pm_board_export_columns_subset(pm_board_session: PmBoard) -> None:
+    """`--columns` restricts emitted board columns to the requested subset (meta kept)."""
+    pm = pm_board_session
+    result = invoke(
+        [
+            "export",
+            "board",
+            str(pm.board_id),
+            "--format",
+            "csv",
+            "--columns",
+            "Story Points",
+        ],
+        expect_exit=0,
+    )
+    rows = list(csv.DictReader(result.stdout.splitlines()))
+    assert rows, "columns-subset export empty"
+    headers = set(rows[0].keys())
+    # Meta columns are always kept.
+    for meta in ("id", "name", "state", "group"):
+        assert meta in headers, f"meta column {meta!r} missing from --columns export"
+    # The requested column survives; an unrelated column is projected out.
+    assert "Story Points" in headers, "requested column missing from --columns export"
+    assert "Owner Email" not in headers, "unrequested column leaked into --columns export"
 
 
 # ---------------------------------------------------------------------------

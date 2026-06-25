@@ -3,7 +3,7 @@
 Two surfaces:
 
 - **`--batch <file.json>`** on per-resource commands (`item create`, `column set`, …): one HTTP round-trip, per-row envelope, partial-failure semantics.
-- **`mondo export board` / `mondo import board`**: full-board CSV / XLSX / JSON / Markdown round-trips.
+- **`mondo export board` / `mondo import board`**: full-board export in CSV / TSV / JSON / XLSX / Markdown / HTML / PDF (all rendered client-side — monday has no native board-export endpoint). CSV/XLSX/JSON round-trip back via `import board`.
 
 See `mondo help batch-operations` for the canonical prose deep-dive.
 
@@ -58,6 +58,8 @@ exit 1
 
 ## Export a board
 
+Formats: `csv | tsv | json | xlsx | md | html | pdf`. Stdout for csv/tsv/json/md/html; `--out` **required** for xlsx and pdf (exit 2 otherwise).
+
 ```bash
 # JSON to stdout:
 mondo export board 5094861043 --format json -o json
@@ -65,18 +67,44 @@ mondo export board 5094861043 --format json -o json
 # CSV to a file:
 mondo export board 5094861043 --format csv --out ./pm_export.csv
 
-# XLSX (Excel):
-mondo export board 5094861043 --format xlsx --out ./pm_export.xlsx
+# XLSX (Excel) — bold/frozen header, autofilter, autosized cols; subitems on a 2nd sheet:
+mondo export board 5094861043 --format xlsx --out ./pm_export.xlsx --include-subitems
 
-# Markdown table:
+# Markdown — grouped by default (board title <h1> + one ## section per group):
 mondo export board 5094861043 --format md --out ./pm_export.md
+
+# Self-contained HTML (defaults to stdout; --out optional):
+mondo export board 5094861043 --format html --out ./pm_export.html
+
+# PDF via WeasyPrint (requires --out):
+mondo export board 5094861043 --format pdf --out ./pm_export.pdf
 ```
 
-```text
-(stdout for --format json; file at --out for csv/xlsx/md)
+### Grouped vs flat (md / html / pdf only)
+
+These three "human" formats are **grouped by default**: a board-name `# Title` (best-effort fetch; falls back to `Board <id>`, never errors) followed by one `## <group title>` / `<h2>` section per group that contains items, each with its own table. Grouped table headers are `id, name, state` + the column titles — `group` becomes the section heading, not a column. Group order = first-seen (board order); empty groups are omitted, and two groups sharing a title render under one heading.
+
+```bash
+# Single flat table instead (headers: id, name, state, group + column titles):
+mondo export board 5094861043 --format md --flat
 ```
 
-*Gotcha:* CSV flattens column values to strings using the **column title** as the header. The `group` field carries the group title (not the id). When parsing CSV, assume the headers match what `column list` reports under `title`.
+`--flat` has **no effect** on csv/tsv/json/xlsx. `--include-subitems` always appends a trailing `## Subitems` / `<h2>Subitems</h2>` section, grouped or flat.
+
+### Narrowing & projection (all formats)
+
+```bash
+# Server-side filter (repeatable, AND'ed; labels resolve to indices/ids):
+mondo export board 5094861043 --format csv --filter status=Done --filter owner!=
+
+# One group (sugar for --filter group=<id>):
+mondo export board 5094861043 --format md --group topics
+
+# Client-side column projection (by id OR title, case-insensitive; meta cols always kept):
+mondo export board 5094861043 --format csv --columns status,date4
+```
+
+*Gotcha:* `--filter`/`--group` narrow **server-side** via the items query (cheap on big boards); malformed `--filter` syntax fails fast with exit 2 before the client opens. `--columns` is **client-side projection only** — it doesn't reduce GraphQL cost; an unmatched token is a usage error (exit 2). `id/name/state` (+ `group` in flat mode) are always emitted regardless of `--columns`. CSV flattens column values to strings using the **column title** as the header; the `group` field carries the group title (not the id), matching `column list`'s `title`.
 
 ## Import a board from CSV
 

@@ -1409,8 +1409,32 @@ EXAMPLES: dict[str, list[Example]] = {
             "--out board.xlsx --include-subitems",
         ),
         Example(
-            "Markdown table (capped at 1000 rows)",
+            "Grouped markdown (board title + one ## section per group — the default)",
             "mondo export board --board 1234567890 --format md --max-items 1000",
+        ),
+        Example(
+            "Self-contained HTML to stdout",
+            "mondo export board --board 1234567890 --format html --out board.html",
+        ),
+        Example(
+            "PDF via WeasyPrint (requires --out)",
+            "mondo export board --board 1234567890 --format pdf --out board.pdf",
+        ),
+        Example(
+            "Single flat table instead of per-group sections",
+            "mondo export board --board 1234567890 --format md --flat",
+        ),
+        Example(
+            "Server-side filter by a status column",
+            "mondo export board --board 1234567890 --format csv --filter status=Done",
+        ),
+        Example(
+            "Just one group (sugar for --filter group=<id>)",
+            "mondo export board --board 1234567890 --format md --group topics",
+        ),
+        Example(
+            "Project to a subset of columns (by id or title)",
+            "mondo export board --board 1234567890 --format csv --columns status,date4",
         ),
     ],
     # --- import ------------------------------------------------------------

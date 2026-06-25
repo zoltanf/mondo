@@ -411,14 +411,39 @@ group_column: group      # optional; defaults to 'group'
 mondo export board --board 1234567890 --format csv                        # to stdout
 mondo export board --board 1234567890 --format json --out board.json
 mondo export board --board 1234567890 --format xlsx --out board.xlsx      # required for xlsx
-mondo export board --board 1234567890 --format md   --include-subitems    # markdown pipe table
-mondo export board --board 1234567890 --format tsv  --max-items 1000
+mondo export board --board 1234567890 --format md   --include-subitems    # grouped markdown
+mondo export board --board 1234567890 --format html --out board.html      # self-contained HTML
+mondo export board --board 1234567890 --format pdf  --out board.pdf       # required for pdf
+mondo export board --board 1234567890 --format csv  --filter status=Done --columns status,date4
+mondo export board --board 1234567890 --format md   --group topics        # one group only
 ```
 
-Formats: `csv | tsv | json | xlsx | md`. Column headers are the board's column
-titles (archived columns are dropped). With `--include-subitems`, the CSV /
-TSV emit a second blank-line-separated block, JSON gets a `subitems` array,
-Markdown gets a `### Subitems` section, and XLSX gets a second worksheet.
+Formats: `csv | tsv | json | xlsx | md | html | pdf`. Column headers are the
+board's column titles (archived columns are dropped). monday has no native
+board-export API, so every format is rendered client-side.
+
+The human-readable formats (`md`, `html`, `pdf`) are **grouped by default**: the
+output opens with a board-name title and then one section per group that contains
+items (in the order items appear; empty groups are omitted), each followed by a
+table of that group's items (the `group` column becomes the section heading, so
+it's not a table column). Pass `--flat` to keep the title but render a single
+table with a `group` column instead of per-group sections. `--flat` has no effect
+on `csv/tsv/json/xlsx`.
+
+Filtering and projection apply to all formats: `--filter COL=VAL` (repeatable)
+narrows server-side (status/dropdown labels resolve to indices), `--group <id>`
+is sugar for `--filter group=<id>`, and `--columns a,b,c` projects client-side to
+a subset of columns by id or title (case-insensitive); the meta columns
+(`id/name/state/group`) are always kept.
+
+`--format pdf` always requires `--out` and renders the self-contained HTML
+through [WeasyPrint](https://weasyprint.org/) — install it on first use
+(`brew install weasyprint`), or fall back to `--format html` and print to PDF
+from a browser. `--format html` defaults to stdout; `--out` is optional.
+
+With `--include-subitems`, the CSV / TSV emit a second blank-line-separated
+block, JSON gets a `subitems` array, the human formats append a trailing
+`Subitems` section, and XLSX gets a second worksheet.
 
 ### Users
 

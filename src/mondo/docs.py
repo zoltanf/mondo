@@ -1029,9 +1029,7 @@ def _render_html_table(
     if not isinstance(cells_matrix, list) or not cells_matrix:
         return None
 
-    cells_by_id = {
-        str(b.get("id")): b for b in children_of.get(str(block.get("id") or ""), [])
-    }
+    cells_by_id = {str(b.get("id")): b for b in children_of.get(str(block.get("id") or ""), [])}
     # (inner_html, style_attr) per cell.
     grid: list[list[tuple[str, str]]] = []
     for row in cells_matrix:

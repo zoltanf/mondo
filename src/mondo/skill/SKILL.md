@@ -58,7 +58,7 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 - `references/docs.md` — workspace docs **and** doc-column ops; markdown round-trip; create/append/clear.
 - `references/files.md` — upload to file columns, attach to updates, download assets.
 - `references/workspaces-and-folders.md` — workspace lookup, folder tree, create / move / delete folders.
-- `references/bulk.md` — `--batch` envelopes, `mondo export` / `mondo import` for CSV/XLSX/JSON/Markdown round-trips.
+- `references/bulk.md` — `--batch` envelopes, `mondo export` / `mondo import` for CSV/TSV/XLSX/JSON/Markdown/HTML/PDF (grouped-by-default for md/html/pdf; `--flat`, `--group`, `--filter`, `--columns`).
 - `references/admin.md` — users, teams, webhooks, tags, activity logs, favorites, notify, validation, complexity.
 
 ## Operating norms (every command obeys these)
