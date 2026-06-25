@@ -158,6 +158,7 @@ def _sanitize_pdf_image_srcs(html_text: str) -> str:
         html_text,
     )
 
+
 # The `--doc` XOR `--object-id` pair shared by every doc-targeting subcommand
 # (same shared-option pattern as the Poll*Opt trio in `mondo.cli._exec`).
 DocIdOpt = Annotated[
