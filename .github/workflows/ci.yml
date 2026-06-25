@@ -37,3 +37,32 @@ jobs:
 
       - name: Repo hygiene (no gitignored tracked files)
         run: test -z "$(git ls-files -i -c --exclude-standard)"
+
+  windows:
+    name: tests (windows)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Install deps
+        run: uv sync --frozen --extra dev
+
+      - name: Parse install.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/install.ps1), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { $_.Message }; throw "install.ps1 has parse errors" }
+          "install.ps1 parses OK"
+
+      - name: Pytest
+        run: uv run pytest -m "not integration and not eval"

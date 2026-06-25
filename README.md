@@ -155,6 +155,35 @@ brew untap zoltanf/mondo   # optional
 > on an Apple Silicon Mac (almost always means Homebrew is running under
 > Rosetta), and other common install gotchas.
 
+### Scoop (Windows) — recommended
+
+```powershell
+scoop bucket add mondo https://github.com/zoltanf/scoop-mondo
+scoop install mondo
+```
+
+Scoop downloads the right Windows binary, puts `mondo` on your `PATH`, and
+keeps it current with:
+
+```powershell
+scoop update mondo
+```
+
+Uninstall with `scoop uninstall mondo`.
+
+### PowerShell install script (Windows)
+
+No Scoop? Install per-user with a single command — it downloads the latest
+release, extracts it to `%LOCALAPPDATA%\Programs\mondo`, and adds that to your
+PATH:
+
+```powershell
+irm https://raw.githubusercontent.com/zoltanf/mondo/main/scripts/install.ps1 | iex
+```
+
+Pin a version by setting `$env:MONDO_VERSION` first (e.g. `$env:MONDO_VERSION = "0.11.0"`).
+Open a new terminal afterwards so the PATH change takes effect.
+
 ### Direct download (all platforms)
 
 Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
@@ -1023,9 +1052,10 @@ What this does, in order:
 
 Pushing the tag triggers [.github/workflows/release.yml](.github/workflows/release.yml), which:
 
-1. **Builds five binaries in parallel** — macOS (arm64 + Intel), Linux (x86_64 + arm64), Windows (x86_64) — using PyInstaller on matching GitHub runners. Each binary is smoke-tested with `--version` and `--help` before being archived.
-2. **Creates the GitHub Release** — attaches all five archives to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
+1. **Builds four binaries in parallel** — macOS (arm64), Linux (x86_64 + arm64), Windows (x86_64) — using PyInstaller on matching GitHub runners. Each binary is smoke-tested with `--version` and `--help` before being archived.
+2. **Creates the GitHub Release** — attaches all four archives to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
 3. **Updates the Homebrew tap** — regenerates `Formula/mondo.rb` in [zoltanf/homebrew-mondo][tap] with the new version and SHA256s, then pushes. Users get the new binary on their next `brew upgrade mondo`.
+4. **Updates the Scoop bucket** — regenerates `bucket/mondo.json` in [zoltanf/scoop-mondo](https://github.com/zoltanf/scoop-mondo) with the new version and Windows SHA256, then pushes. Windows users get it on their next `scoop update mondo`.
 
 End-to-end latency is roughly 6–10 minutes depending on runner availability.
 
@@ -1042,9 +1072,10 @@ The script accepts any semver-compatible pre-release identifier
 
 - The GitHub Release is created with the "pre-release" flag set, so it
   doesn't show up as the "Latest" release on the repo page.
-- The Homebrew tap is **not** updated. Pre-releases are only discoverable by
-  browsing the Releases page or downloading the assets directly, so
-  `brew upgrade mondo` never silently moves users onto an RC build.
+- The Homebrew tap and Scoop bucket are **not** updated. Pre-releases are only
+  discoverable by browsing the Releases page or downloading the assets
+  directly, so `brew upgrade mondo` / `scoop update mondo` never silently move
+  users onto an RC build.
 
 To hand-test an RC via Homebrew anyway, edit `Formula/mondo.rb` locally in a
 checkout of [zoltanf/homebrew-mondo][tap] and run `brew install --build-from-tap`.
