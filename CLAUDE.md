@@ -67,8 +67,9 @@ Cut releases with `scripts/release.sh <version>` (e.g.
 suite, commits `chore(release): v<version>`, tags `v<version>`, and
 pushes `main` + the tag. The tag push triggers
 `.github/workflows/release.yml`, which builds the four platform
-binaries, creates the GitHub Release, and updates the Homebrew tap at
-`zoltanf/homebrew-mondo`. Pass `--skip-tests` only in emergencies.
+binaries, creates the GitHub Release, updates the Homebrew tap at
+`zoltanf/homebrew-mondo`, and updates the Scoop bucket at
+`zoltanf/scoop-mondo` (Windows). Pass `--skip-tests` only in emergencies.
 
 Preconditions enforced by the script: clean working tree, on `main`,
 local in sync with `origin/main`, tag not already present.
