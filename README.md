@@ -123,6 +123,11 @@ Expand-Archive mondo-<ver>-windows-x86_64.zip
 mondo --version
 ```
 
+> **Windows install troubles?** See [docs/troubleshooting-installation.md](docs/troubleshooting-installation.md)
+> — covers SmartScreen blocking the unsigned binary and `mondo` "not
+> recognized" when a terminal predates the PATH change. `scoop install` avoids
+> both.
+
 #### macOS: working around Gatekeeper ("unidentified developer")
 
 The macOS binaries are currently **unsigned** and **unnotarized**. This is only
