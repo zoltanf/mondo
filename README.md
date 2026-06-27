@@ -76,8 +76,8 @@ Uninstall with `scoop uninstall mondo`.
 ### PowerShell install script (Windows)
 
 No Scoop? Install per-user with a single command — it downloads the latest
-release, extracts it to `%LOCALAPPDATA%\Programs\mondo`, and adds that to your
-PATH:
+release, verifies its SHA256 checksum, extracts it to
+`%LOCALAPPDATA%\Programs\mondo`, and adds that to your PATH:
 
 ```powershell
 irm https://raw.githubusercontent.com/zoltanf/mondo/main/scripts/install.ps1 | iex
@@ -1089,7 +1089,7 @@ What this does, in order:
 Pushing the tag triggers [.github/workflows/release.yml](.github/workflows/release.yml), which:
 
 1. **Builds four binaries in parallel** — macOS (arm64), Linux (x86_64 + arm64), Windows (x86_64) — using PyInstaller on matching GitHub runners. Each binary is smoke-tested with `--version` and `--help` before being archived.
-2. **Creates the GitHub Release** — attaches all four archives to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
+2. **Creates the GitHub Release** — attaches all four archives plus a `SHA256SUMS.txt` to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
 3. **Updates the Homebrew tap** — regenerates `Formula/mondo.rb` in [zoltanf/homebrew-mondo][tap] with the new version and SHA256s, then pushes. Users get the new binary on their next `brew upgrade mondo`.
 4. **Updates the Scoop bucket** — regenerates `bucket/mondo.json` in [zoltanf/scoop-mondo](https://github.com/zoltanf/scoop-mondo) with the new version and Windows SHA256, then pushes. Windows users get it on their next `scoop update mondo`.
 

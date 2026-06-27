@@ -3,8 +3,9 @@
     Install the mondo CLI on Windows (x86_64).
 
 .DESCRIPTION
-    Downloads the latest mondo release archive from GitHub, extracts it to
-    %LOCALAPPDATA%\Programs\mondo, and adds that directory to the user PATH.
+    Downloads the latest mondo release archive from GitHub, verifies its
+    SHA256 checksum, extracts it to %LOCALAPPDATA%\Programs\mondo, and adds
+    that directory to the user PATH.
 
     Intended for the one-liner:
 
@@ -23,14 +24,15 @@ $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\mondo"
 $Version = $env:MONDO_VERSION
 if (-not $Version) {
     Write-Host "Resolving latest mondo release..."
-    $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+    $latest = Invoke-RestMethod -UseBasicParsing `
+        -Uri "https://api.github.com/repos/$Repo/releases/latest" `
         -Headers @{ "User-Agent" = "mondo-install" }
     $Version = $latest.tag_name -replace '^v', ''
 }
 $Version = $Version -replace '^v', ''
 
 $asset = "mondo-$Version-windows-x86_64.zip"
-$url = "https://github.com/$Repo/releases/download/v$Version/$asset"
+$base = "https://github.com/$Repo/releases/download/v$Version"
 
 Write-Host "Installing mondo $Version -> $InstallDir"
 
@@ -38,8 +40,30 @@ $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("mondo-install-" + [guid]::N
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
     $zip = Join-Path $tmp $asset
-    Write-Host "Downloading $url"
-    Invoke-WebRequest -Uri $url -OutFile $zip
+    Write-Host "Downloading $base/$asset"
+    Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $zip
+
+    # Verify the SHA256 against the release's SHA256SUMS.txt. Releases predating
+    # the checksum file (older pinned versions) skip verification — HTTPS to
+    # github.com still authenticates the transport.
+    try {
+        $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS.txt").Content
+    } catch {
+        $sums = $null
+    }
+    if ($sums) {
+        $line = ($sums -split "`n") |
+            Where-Object { $_ -match [regex]::Escape($asset) } | Select-Object -First 1
+        if (-not $line) { throw "no checksum for $asset in SHA256SUMS.txt" }
+        $expected = (($line -split '\s+') | Where-Object { $_ })[0].ToLower()
+        $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected) {
+            throw "SHA256 mismatch for ${asset}:`n  expected $expected`n  actual   $actual"
+        }
+        Write-Host "Verified SHA256 checksum."
+    } else {
+        Write-Warning "SHA256SUMS.txt not published for v$Version - skipping integrity check."
+    }
 
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
 
@@ -60,15 +84,26 @@ finally {
 }
 
 # Add $InstallDir to the user PATH (persisted) and the current session.
+# Normalize entries (expand env vars, drop trailing slash, case-insensitive)
+# so a cosmetically-different existing entry doesn't produce a duplicate.
+function Get-NormalizedPath([string]$p) {
+    if (-not $p) { return "" }
+    return [Environment]::ExpandEnvironmentVariables($p).TrimEnd('\').ToLowerInvariant()
+}
+$targetNorm = Get-NormalizedPath $InstallDir
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $entries = ($userPath -split ';') | Where-Object { $_ -ne '' }
-if ($entries -notcontains $InstallDir) {
+$present = $false
+foreach ($e in $entries) { if ((Get-NormalizedPath $e) -eq $targetNorm) { $present = $true; break } }
+if (-not $present) {
     $newPath = (@($entries) + $InstallDir) -join ';'
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
     Write-Host "Added $InstallDir to your user PATH."
     Write-Host "Open a new terminal for the PATH change to take effect."
 }
-if (($env:Path -split ';') -notcontains $InstallDir) {
+# Make mondo usable in the current session too.
+$sessionNorm = ($env:Path -split ';') | ForEach-Object { Get-NormalizedPath $_ }
+if ($sessionNorm -notcontains $targetNorm) {
     $env:Path = "$env:Path;$InstallDir"
 }
 

@@ -90,6 +90,11 @@ jobs:
           .\dist\mondo\mondo.exe help codecs | Out-Null
           .\dist\mondo\mondo.exe skill install --global | Out-Null
           if (-not (Test-Path "$HOME/.claude/skills/mondo/SKILL.md")) { throw "SKILL.md missing" }
+          # Verify `--collect-data tzdata` bundled the IANA tz database the
+          # world_clock codec needs (Windows has no system zoneinfo source).
+          $tz = Get-ChildItem -Recurse -Path .\dist\mondo -Filter London -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'zoneinfo' } | Select-Object -First 1
+          if (-not $tz) { throw "bundled tzdata zoneinfo data missing from onedir (--collect-data tzdata regressed)" }
 
       - name: Archive (unix)
         if: runner.os != 'Windows'
@@ -133,6 +138,12 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Compute checksums
+        run: |
+          cd artifacts
+          sha256sum mondo-*.tar.gz mondo-*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,7 +164,7 @@ jobs:
             --notes "$notes" \
             --verify-tag \
             $prerelease_flag \
-            artifacts/mondo-*.tar.gz artifacts/mondo-*.zip
+            artifacts/mondo-*.tar.gz artifacts/mondo-*.zip artifacts/SHA256SUMS.txt
 
   update-homebrew:
     needs: release
