@@ -88,6 +88,12 @@ Open a new terminal afterwards so the PATH change takes effect.
 
 ### Direct download (all platforms)
 
+> This is the manual fallback — you extract the archive and wire up your
+> `PATH` by hand. Prefer a package manager if you can: **Homebrew** on
+> macOS/Linux, **Scoop** or the **PowerShell install script** on Windows
+> (all above). They handle `PATH`, updates, and — on Windows — sidestep the
+> SmartScreen prompt.
+
 Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
 
 | Platform           | Asset                                     |
