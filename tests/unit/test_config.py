@@ -77,7 +77,10 @@ class TestConfigPath:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-        monkeypatch.setenv("HOME", str(tmp_path))
+        # config_path() resolves the home dir via Path.home(), which reads
+        # USERPROFILE on Windows and HOME on POSIX — patch the call directly
+        # so the test is platform-independent.
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
         assert config_path() == tmp_path / ".config" / "mondo" / "config.yaml"
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

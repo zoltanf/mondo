@@ -11,6 +11,8 @@ sees), then a quick diagnosis, then the fix.
 
 1. [`brew install` errors with "arm64 architecture is required" on an Apple Silicon Mac](#scenario-1-brew-install-errors-with-arm64-architecture-is-required-on-an-apple-silicon-mac)
 2. [macOS: "`mondo` cannot be opened" / "`mondo` is damaged"](#scenario-2-macos-mondo-cannot-be-opened--mondo-is-damaged) (Gatekeeper)
+3. [Windows: "Windows protected your PC" / SmartScreen blocks the binary](#scenario-3-windows-windows-protected-your-pc--smartscreen-blocks-the-binary)
+4. [Windows: `mondo` not recognized after install (PATH not active yet)](#scenario-4-windows-mondo-not-recognized-after-install-path-not-active-yet)
 
 ---
 
@@ -153,3 +155,99 @@ The fix is covered in detail in the README:
 [macOS: working around Gatekeeper](../README.md#macos-working-around-gatekeeper-unidentified-developer).
 Short version: `xattr -dr com.apple.quarantine ./mondo` (recursive — the
 release archive extracts to a `mondo/` directory).
+
+---
+
+## Scenario 3: Windows "Windows protected your PC" / SmartScreen blocks the binary
+
+### Symptom
+
+After downloading the release `.zip` in a browser and launching `mondo.exe`
+from Explorer, you see a blue dialog:
+
+```
+Windows protected your PC
+Microsoft Defender SmartScreen prevented an unrecognized app from starting.
+Running this app might put your PC at risk.
+```
+
+### Diagnosis
+
+The Windows binaries are **unsigned** (no code-signing certificate — the same
+reason macOS shows the Gatekeeper dialog in Scenario 2). SmartScreen flags
+files that carry the "Mark of the Web" — an alternate data stream Windows adds
+to anything downloaded through a browser — until the app builds reputation.
+
+This mainly trips when you **double-click the `.exe` in Explorer**. Running
+`mondo` from a terminal (PowerShell / cmd) usually isn't blocked, and the
+recommended install paths avoid it entirely.
+
+### Fix
+
+**Best: use Scoop or the install script.** Neither goes through the
+browser-download + Explorer-launch path that trips SmartScreen:
+
+```powershell
+scoop bucket add mondo https://github.com/zoltanf/scoop-mondo
+scoop install mondo
+# or:
+irm https://raw.githubusercontent.com/zoltanf/mondo/main/scripts/install.ps1 | iex
+```
+
+**If you already downloaded the `.zip` and hit the dialog:**
+
+- Click **More info** → **Run anyway** in the SmartScreen dialog, or
+- Strip the Mark of the Web before extracting, so none of the files inherit
+  it:
+
+  ```powershell
+  Unblock-File .\mondo-<ver>-windows-x86_64.zip
+  Expand-Archive .\mondo-<ver>-windows-x86_64.zip
+  # if you already extracted, unblock the whole directory instead:
+  Get-ChildItem -Recurse .\mondo | Unblock-File
+  ```
+
+**Why unsigned?** Code-signing certificates cost money; for now we ship
+unsigned Windows binaries to keep releases free. `scoop install` is the
+low-friction path.
+
+---
+
+## Scenario 4: Windows `mondo` not recognized after install (PATH not active yet)
+
+### Symptom
+
+You just installed `mondo` (via `scripts/install.ps1`, Scoop, or by adding the
+folder to PATH yourself), but the same terminal still says:
+
+```
+mondo : The term 'mondo' is not recognized as the name of a cmdlet, function,
+script file, or operable program.
+```
+
+### Diagnosis
+
+`PATH` changes only take effect for **newly launched** processes. Your current
+terminal read its environment at startup and won't pick up an entry added
+afterwards. The installers persist the change to your **user** PATH correctly —
+the running shell just predates it.
+
+### Fix
+
+Simplest: **open a new terminal** and try again:
+
+```powershell
+mondo --version
+```
+
+To avoid reopening, reload PATH in the current PowerShell session:
+
+```powershell
+$env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" +
+            [Environment]::GetEnvironmentVariable("Path", "Machine")
+mondo --version
+```
+
+(`install.ps1` already updates the *current* session's PATH, so this mostly
+affects Scoop installs and manual PATH edits, or a second terminal that was
+open while you installed.)

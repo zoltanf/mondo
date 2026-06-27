@@ -15,6 +15,191 @@ Ships with an agent-facing help system (`mondo help`, `mondo help --dump-spec`) 
 
 ---
 
+## Installation
+
+### Homebrew (macOS, Linux) — recommended
+
+```bash
+brew install zoltanf/mondo/mondo
+```
+
+That single command is shorthand for:
+
+```bash
+brew tap zoltanf/mondo    # add the zoltanf/homebrew-mondo tap
+brew install mondo        # install the right binary for your OS/arch
+```
+
+Homebrew picks the correct artifact for your platform (Apple Silicon macOS, or
+arm64/x86_64 on Linux), puts `mondo` on your `PATH`, and — importantly on macOS
+— **strips Apple's quarantine attribute automatically**, so you don't run into
+the Gatekeeper warning described below.
+
+> **Intel Macs are not supported** by the binary builds. `brew install` will
+> refuse with a clean "requires arm64 architecture" message. If you're still on
+> Intel hardware, install from source (see [From source](#from-source) below).
+
+Upgrade later with:
+
+```bash
+brew upgrade mondo
+```
+
+Uninstall:
+
+```bash
+brew uninstall mondo
+brew untap zoltanf/mondo   # optional
+```
+
+> **Install troubles?** See [docs/troubleshooting-installation.md](docs/troubleshooting-installation.md)
+> — covers e.g. `brew install` failing with "arm64 architecture is required"
+> on an Apple Silicon Mac (almost always means Homebrew is running under
+> Rosetta), and other common install gotchas.
+
+### Scoop (Windows) — recommended
+
+```powershell
+scoop bucket add mondo https://github.com/zoltanf/scoop-mondo
+scoop install mondo
+```
+
+Scoop downloads the right Windows binary, puts `mondo` on your `PATH`, and
+keeps it current with:
+
+```powershell
+scoop update mondo
+```
+
+Uninstall with `scoop uninstall mondo`.
+
+### PowerShell install script (Windows)
+
+No Scoop? Install per-user with a single command — it downloads the latest
+release, verifies its SHA256 checksum, extracts it to
+`%LOCALAPPDATA%\Programs\mondo`, and adds that to your PATH:
+
+```powershell
+irm https://raw.githubusercontent.com/zoltanf/mondo/main/scripts/install.ps1 | iex
+```
+
+Pin a version by setting `$env:MONDO_VERSION` first (e.g. `$env:MONDO_VERSION = "0.11.0"`).
+Open a new terminal afterwards so the PATH change takes effect.
+
+### Direct download (all platforms)
+
+> This is the manual fallback — you extract the archive and wire up your
+> `PATH` by hand. Prefer a package manager if you can: **Homebrew** on
+> macOS/Linux, **Scoop** or the **PowerShell install script** on Windows
+> (all above). They handle `PATH`, updates, and — on Windows — sidestep the
+> SmartScreen prompt.
+
+Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
+
+| Platform           | Asset                                     |
+|--------------------|-------------------------------------------|
+| macOS (Apple Si.)  | `mondo-<ver>-darwin-arm64.tar.gz`         |
+| Linux (x86_64)     | `mondo-<ver>-linux-x86_64.tar.gz`         |
+| Linux (arm64)      | `mondo-<ver>-linux-arm64.tar.gz`          |
+| Windows (x86_64)   | `mondo-<ver>-windows-x86_64.zip`          |
+
+Intel Mac users: no pre-built binary — install [from source](#from-source).
+
+Then:
+
+The archive contains a `mondo/` directory (the executable plus its
+`_internal/` runtime — onedir layout, ~6x faster startup than a
+self-extracting single file). Put the directory somewhere permanent and
+symlink the inner binary onto your PATH:
+
+```bash
+# macOS / Linux
+tar -xzf mondo-<ver>-<os>-<arch>.tar.gz
+sudo mkdir -p /usr/local/lib
+sudo rm -rf /usr/local/lib/mondo
+sudo mv mondo /usr/local/lib/
+sudo ln -sf /usr/local/lib/mondo/mondo /usr/local/bin/mondo
+mondo --version
+```
+
+```powershell
+# Windows
+Expand-Archive mondo-<ver>-windows-x86_64.zip
+# move the extracted mondo\ directory somewhere permanent and add it to PATH
+mondo --version
+```
+
+> **Windows install troubles?** See [docs/troubleshooting-installation.md](docs/troubleshooting-installation.md)
+> — covers SmartScreen blocking the unsigned binary and `mondo` "not
+> recognized" when a terminal predates the PATH change. `scoop install` avoids
+> both.
+
+#### macOS: working around Gatekeeper ("unidentified developer")
+
+The macOS binaries are currently **unsigned** and **unnotarized**. This is only
+an issue for **direct downloads** — `brew install` handles it for you, see
+above.
+
+When you run a directly-downloaded `mondo` for the first time you'll see one
+of these dialogs:
+
+- *"`mondo` cannot be opened because the developer cannot be verified."*
+- *"`mondo` is damaged and can't be opened. You should move it to the Trash."*
+  (confusingly, this is also Gatekeeper — it's not actually damaged)
+
+Pick one of the fixes below.
+
+**Fix 1 — one-liner in Terminal (recommended):**
+
+```bash
+xattr -dr com.apple.quarantine ./mondo
+./mondo/mondo --version
+```
+
+The `com.apple.quarantine` xattr is what macOS sets on anything downloaded
+through a browser. Removing it (recursively — the archive is a directory
+of files) tells Gatekeeper the binary is locally provenanced.
+
+**Fix 2 — GUI, per-binary:**
+
+1. In Finder, open the extracted `mondo` folder, **Control-click** the inner `mondo` executable, choose **Open**.
+2. Confirm **Open** in the dialog that appears.
+3. Subsequent runs from Terminal then work without further prompts.
+
+Caveat: Finder approves only the file you clicked — the bundled libraries
+under `_internal/` may stay quarantined and still trip Gatekeeper. If that
+happens, use Fix 1, which clears the whole directory.
+
+**Fix 3 — "damaged and can't be opened":**
+
+If Fix 2 doesn't offer an **Open** button and you only see the *damaged* error,
+Fix 1 is the answer — that message is how recent macOS versions surface the
+same quarantine check.
+
+**Why not sign the binary?** Signing + notarizing requires a $99/yr Apple
+Developer account. For now we ship unsigned binaries to keep releases free.
+If you want the friction gone entirely, `brew install` is the easy path.
+
+### From source
+
+```bash
+git clone https://github.com/zoltanf/mondo.git
+cd mondo
+uv sync --all-extras
+uv run mondo --version
+```
+
+Quick smoke test:
+
+```bash
+export MONDAY_API_TOKEN="<paste your token>"
+uv run mondo auth status
+```
+
+[releases]: https://github.com/zoltanf/mondo/releases
+
+---
+
 ## Features
 
 **Complete monday platform API coverage.** Boards, items, subitems, columns
@@ -110,151 +295,6 @@ mondo graphql 'query ($ids:[ID!]!){items(ids:$ids){id name}}' \
 # Pipeline-friendly: extract a scalar, branch on stable exit codes
 count=$(mondo item list --board 42 -q "length(@)" -o none)
 ```
-
----
-
-## Installation
-
-### Homebrew (macOS, Linux) — recommended
-
-```bash
-brew install zoltanf/mondo/mondo
-```
-
-That single command is shorthand for:
-
-```bash
-brew tap zoltanf/mondo    # add the zoltanf/homebrew-mondo tap
-brew install mondo        # install the right binary for your OS/arch
-```
-
-Homebrew picks the correct artifact for your platform (Apple Silicon macOS, or
-arm64/x86_64 on Linux), puts `mondo` on your `PATH`, and — importantly on macOS
-— **strips Apple's quarantine attribute automatically**, so you don't run into
-the Gatekeeper warning described below.
-
-> **Intel Macs are not supported** by the binary builds. `brew install` will
-> refuse with a clean "requires arm64 architecture" message. If you're still on
-> Intel hardware, install from source (see [From source](#from-source) below).
-
-Upgrade later with:
-
-```bash
-brew upgrade mondo
-```
-
-Uninstall:
-
-```bash
-brew uninstall mondo
-brew untap zoltanf/mondo   # optional
-```
-
-> **Install troubles?** See [docs/troubleshooting-installation.md](docs/troubleshooting-installation.md)
-> — covers e.g. `brew install` failing with "arm64 architecture is required"
-> on an Apple Silicon Mac (almost always means Homebrew is running under
-> Rosetta), and other common install gotchas.
-
-### Direct download (all platforms)
-
-Grab a pre-built binary for your OS/arch from the [Releases page][releases]:
-
-| Platform           | Asset                                     |
-|--------------------|-------------------------------------------|
-| macOS (Apple Si.)  | `mondo-<ver>-darwin-arm64.tar.gz`         |
-| Linux (x86_64)     | `mondo-<ver>-linux-x86_64.tar.gz`         |
-| Linux (arm64)      | `mondo-<ver>-linux-arm64.tar.gz`          |
-| Windows (x86_64)   | `mondo-<ver>-windows-x86_64.zip`          |
-
-Intel Mac users: no pre-built binary — install [from source](#from-source).
-
-Then:
-
-The archive contains a `mondo/` directory (the executable plus its
-`_internal/` runtime — onedir layout, ~6x faster startup than a
-self-extracting single file). Put the directory somewhere permanent and
-symlink the inner binary onto your PATH:
-
-```bash
-# macOS / Linux
-tar -xzf mondo-<ver>-<os>-<arch>.tar.gz
-sudo mkdir -p /usr/local/lib
-sudo rm -rf /usr/local/lib/mondo
-sudo mv mondo /usr/local/lib/
-sudo ln -sf /usr/local/lib/mondo/mondo /usr/local/bin/mondo
-mondo --version
-```
-
-```powershell
-# Windows
-Expand-Archive mondo-<ver>-windows-x86_64.zip
-# move the extracted mondo\ directory somewhere permanent and add it to PATH
-mondo --version
-```
-
-#### macOS: working around Gatekeeper ("unidentified developer")
-
-The macOS binaries are currently **unsigned** and **unnotarized**. This is only
-an issue for **direct downloads** — `brew install` handles it for you, see
-above.
-
-When you run a directly-downloaded `mondo` for the first time you'll see one
-of these dialogs:
-
-- *"`mondo` cannot be opened because the developer cannot be verified."*
-- *"`mondo` is damaged and can't be opened. You should move it to the Trash."*
-  (confusingly, this is also Gatekeeper — it's not actually damaged)
-
-Pick one of the fixes below.
-
-**Fix 1 — one-liner in Terminal (recommended):**
-
-```bash
-xattr -dr com.apple.quarantine ./mondo
-./mondo/mondo --version
-```
-
-The `com.apple.quarantine` xattr is what macOS sets on anything downloaded
-through a browser. Removing it (recursively — the archive is a directory
-of files) tells Gatekeeper the binary is locally provenanced.
-
-**Fix 2 — GUI, per-binary:**
-
-1. In Finder, open the extracted `mondo` folder, **Control-click** the inner `mondo` executable, choose **Open**.
-2. Confirm **Open** in the dialog that appears.
-3. Subsequent runs from Terminal then work without further prompts.
-
-Caveat: Finder approves only the file you clicked — the bundled libraries
-under `_internal/` may stay quarantined and still trip Gatekeeper. If that
-happens, use Fix 1, which clears the whole directory.
-
-**Fix 3 — "damaged and can't be opened":**
-
-If Fix 2 doesn't offer an **Open** button and you only see the *damaged* error,
-Fix 1 is the answer — that message is how recent macOS versions surface the
-same quarantine check.
-
-**Why not sign the binary?** Signing + notarizing requires a $99/yr Apple
-Developer account. For now we ship unsigned binaries to keep releases free.
-If you want the friction gone entirely, `brew install` is the easy path.
-
-### From source
-
-```bash
-git clone https://github.com/zoltanf/mondo.git
-cd mondo
-uv sync --all-extras
-uv run mondo --version
-```
-
-Quick smoke test:
-
-```bash
-export MONDAY_API_TOKEN="<paste your token>"
-uv run mondo auth status
-```
-
-[releases]: https://github.com/zoltanf/mondo/releases
 
 ---
 
@@ -1048,9 +1088,10 @@ What this does, in order:
 
 Pushing the tag triggers [.github/workflows/release.yml](.github/workflows/release.yml), which:
 
-1. **Builds five binaries in parallel** — macOS (arm64 + Intel), Linux (x86_64 + arm64), Windows (x86_64) — using PyInstaller on matching GitHub runners. Each binary is smoke-tested with `--version` and `--help` before being archived.
-2. **Creates the GitHub Release** — attaches all five archives to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
+1. **Builds four binaries in parallel** — macOS (arm64), Linux (x86_64 + arm64), Windows (x86_64) — using PyInstaller on matching GitHub runners. Each binary is smoke-tested with `--version` and `--help` before being archived.
+2. **Creates the GitHub Release** — attaches all four archives plus a `SHA256SUMS.txt` to a new Release at `https://github.com/zoltanf/mondo/releases/tag/v<ver>` with auto-generated notes from commit history.
 3. **Updates the Homebrew tap** — regenerates `Formula/mondo.rb` in [zoltanf/homebrew-mondo][tap] with the new version and SHA256s, then pushes. Users get the new binary on their next `brew upgrade mondo`.
+4. **Updates the Scoop bucket** — regenerates `bucket/mondo.json` in [zoltanf/scoop-mondo](https://github.com/zoltanf/scoop-mondo) with the new version and Windows SHA256, then pushes. Windows users get it on their next `scoop update mondo`.
 
 End-to-end latency is roughly 6–10 minutes depending on runner availability.
 
@@ -1067,9 +1108,10 @@ The script accepts any semver-compatible pre-release identifier
 
 - The GitHub Release is created with the "pre-release" flag set, so it
   doesn't show up as the "Latest" release on the repo page.
-- The Homebrew tap is **not** updated. Pre-releases are only discoverable by
-  browsing the Releases page or downloading the assets directly, so
-  `brew upgrade mondo` never silently moves users onto an RC build.
+- The Homebrew tap and Scoop bucket are **not** updated. Pre-releases are only
+  discoverable by browsing the Releases page or downloading the assets
+  directly, so `brew upgrade mondo` / `scoop update mondo` never silently move
+  users onto an RC build.
 
 To hand-test an RC via Homebrew anyway, edit `Formula/mondo.rb` locally in a
 checkout of [zoltanf/homebrew-mondo][tap] and run `brew install --build-from-tap`.
