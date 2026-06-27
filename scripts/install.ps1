@@ -44,25 +44,31 @@ try {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $zip
 
     # Verify the SHA256 against the release's SHA256SUMS.txt. Releases predating
-    # the checksum file (older pinned versions) skip verification — HTTPS to
-    # github.com still authenticates the transport.
+    # the checksum file return 404 and skip verification (HTTPS to github.com
+    # still authenticates the transport); any *other* fetch failure is fatal so
+    # a transient network/TLS error can't silently downgrade integrity.
+    $sums = $null
     try {
         $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS.txt").Content
     } catch {
-        $sums = $null
+        $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+        if ($status -eq 404) {
+            Write-Warning "SHA256SUMS.txt not published for v$Version - skipping integrity check."
+        } else {
+            throw "failed to fetch SHA256SUMS.txt: $($_.Exception.Message)"
+        }
     }
     if ($sums) {
-        $line = ($sums -split "`n") |
-            Where-Object { $_ -match [regex]::Escape($asset) } | Select-Object -First 1
-        if (-not $line) { throw "no checksum for $asset in SHA256SUMS.txt" }
-        $expected = (($line -split '\s+') | Where-Object { $_ })[0].ToLower()
+        # Anchored match: 64 hex digits, optional '*' (binary marker), exact asset.
+        $pattern = '(?m)^([A-Fa-f0-9]{64})\s+\*?' + [regex]::Escape($asset) + '\s*$'
+        $m = [regex]::Match($sums, $pattern)
+        if (-not $m.Success) { throw "no checksum for $asset in SHA256SUMS.txt" }
+        $expected = $m.Groups[1].Value.ToLower()
         $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
         if ($actual -ne $expected) {
             throw "SHA256 mismatch for ${asset}:`n  expected $expected`n  actual   $actual"
         }
         Write-Host "Verified SHA256 checksum."
-    } else {
-        Write-Warning "SHA256SUMS.txt not published for v$Version - skipping integrity check."
     }
 
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
