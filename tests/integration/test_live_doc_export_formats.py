@@ -99,4 +99,4 @@ def test_live_doc_get_html_out_rejected_for_json(live_test_doc_id: int, tmp_path
         expect_exit=None,
     )
     assert result.exit_code == 2, result.stderr
-    assert "markdown, mdx, or html" in result.stderr
+    assert "markdown, mdx, html, or pdf" in result.stderr
