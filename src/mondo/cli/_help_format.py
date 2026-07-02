@@ -38,6 +38,41 @@ _OUTPUT_PARAM_NAMES: frozenset[str] = frozenset({"output", "query", "fields"})
 # Mirror the carve-outs in `mondo.cli.argv`.
 _ROOT_PARAM_SKIP: frozenset[str] = frozenset({"help", "install_completion", "show_completion"})
 
+# Tombstones for commands removed in past releases, keyed by
+# (command path below the prog name, attempted subcommand). Matched in
+# `MondoGroup.resolve_command`: the hint replaces the fuzzy did-you-mean
+# (which would steer e.g. a `doc export-markdown` read intent at the
+# `add-markdown` write command) and also feeds the JSON envelope's
+# `suggestion` field via `mondo.cli._errors.suggest_for_no_such_option`.
+# Keying on the command path (rather than the bare group name) keeps
+# nested groups that share a name distinct (`mondo column doc` never had
+# `export-markdown`); plural aliases render their own path (`docs`), so
+# each removed command lists both spellings. The path excludes the prog
+# name (see `_group_path`) so a differently-named entry point still
+# matches.
+_DOC_EXPORT_MARKDOWN_TOMBSTONE = (
+    "removed in 0.11 — use: mondo doc get --doc <id> --format markdown [--engine server]"
+)
+_REMOVED_COMMANDS: dict[tuple[str, str], str] = {
+    ("doc", "export-markdown"): _DOC_EXPORT_MARKDOWN_TOMBSTONE,
+    ("docs", "export-markdown"): _DOC_EXPORT_MARKDOWN_TOMBSTONE,
+}
+
+
+def _group_path(ctx: click.Context) -> str:
+    """Command path of `ctx` without the prog name, e.g. "column doc".
+
+    Built from the context chain rather than `ctx.command_path` because the
+    prog name may itself contain spaces (click reports `python -m pytest`
+    when invoked as a module).
+    """
+    names: list[str] = []
+    node: click.Context | None = ctx
+    while node is not None and node.parent is not None:
+        names.append(node.info_name or "")
+        node = node.parent
+    return " ".join(reversed(names))
+
 
 def is_global_param(param: click.Parameter) -> bool:
     """True if `param` (from the root command) is a true global option."""
@@ -116,7 +151,19 @@ class MondoGroup(typer.core.TyperGroup):
         a sibling under `item` when the user actually wanted `update create`.
         Listing every sibling subcommand lets the agent recover regardless
         of how close their typo was.
+
+        Typer's `TyperGroup.resolve_command` appends its own single-candidate
+        `Did you mean ...?` (`suggest_commands`, on by default since Typer
+        0.16 — guard with getattr, the declared floor 0.15 predates it),
+        which doubled our multi-candidate hint (#76) — disable it for the
+        duration of the call. Commands removed in past releases
+        (`_REMOVED_COMMANDS`) get a tombstone pointing at the replacement
+        invocation instead of a fuzzy match, and the tombstone rides along
+        on `exc.mondo_suggestion` for the JSON error envelope.
         """
+        suggest_commands = getattr(self, "suggest_commands", None)
+        if suggest_commands is not None:
+            self.suggest_commands = False
         try:
             return super().resolve_command(ctx, args)
         except click.UsageError as exc:
@@ -125,13 +172,21 @@ class MondoGroup(typer.core.TyperGroup):
 
                 siblings = sorted(self.list_commands(ctx))
                 if siblings:
-                    close = get_close_matches(args[0], siblings)
-                    parts = [exc.message.rstrip(".")]
-                    if close:
-                        parts.append("Did you mean " + ", ".join(repr(m) for m in close) + "?")
+                    parts = [exc.message.rstrip(".") + "."]
+                    tombstone = _REMOVED_COMMANDS.get((_group_path(ctx), args[0]))
+                    if tombstone:
+                        parts.append(f"'{args[0]}' was {tombstone}.")
+                        exc.mondo_suggestion = tombstone  # type: ignore[attr-defined]
+                    else:
+                        close = get_close_matches(args[0], siblings)
+                        if close:
+                            parts.append("Did you mean " + ", ".join(repr(m) for m in close) + "?")
                     parts.append("Available subcommands: " + ", ".join(siblings) + ".")
                     exc.message = " ".join(parts)
             raise
+        finally:
+            if suggest_commands is not None:
+                self.suggest_commands = suggest_commands
 
 
 class MondoCommand(typer.core.TyperCommand):
