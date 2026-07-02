@@ -185,6 +185,67 @@ class TestList:
         parsed = json.loads(result.stdout)
         assert [d["id"] for d in parsed] == ["2", "3"]
 
+    def test_folder_filters_client_side(self, httpx_mock: HTTPXMock) -> None:
+        """--folder keeps only docs whose doc_folder_id matches; docs at the
+        workspace root (doc_folder_id null) never match."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "name": "A", "doc_folder_id": "555"},
+                        {"id": "2", "name": "B", "doc_folder_id": None},
+                        {"id": "3", "name": "C", "doc_folder_id": "777"},
+                        {"id": "4", "name": "D", "doc_folder_id": "555"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list", "--folder", "555"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["1", "4"]
+
+    def test_folder_composes_with_name_filter(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "name": "Spec v1", "doc_folder_id": "555"},
+                        {"id": "2", "name": "Roadmap", "doc_folder_id": "555"},
+                        {"id": "3", "name": "spec doc", "doc_folder_id": "777"},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(
+            app,
+            ["doc", "list", "--folder", "555", "--name-contains", "spec"],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert [d["id"] for d in parsed] == ["1"]
+
+    def test_folder_no_match_emits_empty_list(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "docs": [
+                        {"id": "1", "name": "A", "doc_folder_id": "555"},
+                        {"id": "2", "name": "B", "doc_folder_id": None},
+                    ]
+                }
+            ),
+        )
+        result = runner.invoke(app, ["doc", "list", "--folder", "999"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == []
+
     def test_query_includes_doc_folder_id_and_updated_at(self, httpx_mock: HTTPXMock) -> None:
         """Both are native on Monday's `Doc` type and populate the
         `folder_id` / `updated_at` core shape fields."""
@@ -430,9 +491,9 @@ class TestListCache:
         assert httpx_mock.get_requests() == []
 
     def _queue_prime_for_fuzzy(self, httpx_mock: HTTPXMock) -> None:
-        """Seed the docs cache with a richer mix so fuzzy / kind tests can
-        distinguish matches. One workspace, four docs varying in name and
-        doc_kind."""
+        """Seed the docs cache with a richer mix so fuzzy / kind / folder
+        tests can distinguish matches. One workspace, four docs varying in
+        name, doc_kind and doc_folder_id (docs 2 and 4 sit at the root)."""
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
@@ -450,6 +511,7 @@ class TestListCache:
                             "name": "Product Launch",
                             "workspace_id": "42",
                             "doc_kind": "public",
+                            "doc_folder_id": "555",
                         },
                         {
                             "id": "2",
@@ -457,6 +519,7 @@ class TestListCache:
                             "name": "Marketing Plan",
                             "workspace_id": "42",
                             "doc_kind": "private",
+                            "doc_folder_id": None,
                         },
                         {
                             "id": "3",
@@ -464,6 +527,7 @@ class TestListCache:
                             "name": "Product Roadmap",
                             "workspace_id": "42",
                             "doc_kind": "public",
+                            "doc_folder_id": "555",
                         },
                         {
                             "id": "4",
@@ -471,6 +535,7 @@ class TestListCache:
                             "name": "Unrelated Stuff",
                             "workspace_id": "42",
                             "doc_kind": "private",
+                            "doc_folder_id": None,
                         },
                     ]
                 }
@@ -511,6 +576,15 @@ class TestListCache:
         assert result.exit_code == 0, result.stdout
         parsed = json.loads(result.stdout)
         assert sorted(d["id"] for d in parsed) == ["2", "4"]
+
+    def test_folder_filters_client_side_cache(self, httpx_mock: HTTPXMock) -> None:
+        """--folder served from the cache keeps only in-folder docs; docs at
+        the workspace root (doc_folder_id null) are excluded."""
+        self._queue_prime_for_fuzzy(httpx_mock)
+        result = runner.invoke(app, ["doc", "list", "--folder", "555"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert sorted(d["id"] for d in parsed) == ["1", "3"]
 
     def test_name_filters_mutually_exclusive_cache(self, httpx_mock: HTTPXMock) -> None:
         # No priming required — validation happens before any cache read.
