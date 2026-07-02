@@ -580,6 +580,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "mondo doc list --object-id 77",
         ),
         Example(
+            "Only docs inside one folder (client-side; root docs never match)",
+            "mondo doc list --workspace 42 --folder 987654",
+        ),
+        Example(
             "Filter by name (client-side substring)",
             "mondo doc list --name-contains spec",
         ),

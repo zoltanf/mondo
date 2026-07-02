@@ -283,6 +283,12 @@ def list_cmd(
         help="Filter by doc object_id (repeatable).",
         rich_help_panel="Filters",
     ),
+    folder: int | None = typer.Option(
+        None,
+        "--folder",
+        help="Client-side filter on folder ID (workspace-root docs never match).",
+        rich_help_panel="Filters",
+    ),
     kind: DocKind | None = typer.Option(
         None,
         "--kind",
@@ -366,8 +372,10 @@ def list_cmd(
     """List docs (page-based).
 
     Use --name-contains / --name-matches / --name-fuzzy to narrow by name,
-    --workspace to restrict to workspaces, and --kind to pick public/private/
-    share. Served from the local directory cache when available.
+    --workspace to restrict to workspaces, --folder to keep only docs inside
+    one folder (docs at the workspace root have no folder and never match),
+    and --kind to pick public/private/share. Served from the local directory
+    cache when available.
     """
     from mondo.api.errors import UsageError
     from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
@@ -387,6 +395,7 @@ def list_cmd(
             opts,
             workspace=workspace,
             object_id=object_id,
+            folder=folder,
             kind=kind,
             order_by=order_by,
             needle_lower=needle_lower,
@@ -416,6 +425,7 @@ def list_cmd(
                     **variables,
                     "limit": limit,
                     "max_items": max_items,
+                    "folder": folder,
                     "kind": kind.value if kind else None,
                     "name_contains": name_contains,
                     "name_matches": name_matches,
@@ -424,11 +434,13 @@ def list_cmd(
             }
         )
         raise typer.Exit(0)
-    # Client-side filters (kind / name_*) require fetching every page before
-    # capping, otherwise we'd drop matches past the first `max_items` pre-filter
-    # rows. When no client-side filter is active, let pagination stop early.
+    # Client-side filters (folder / kind / name_*) require fetching every page
+    # before capping, otherwise we'd drop matches past the first `max_items`
+    # pre-filter rows. When no client-side filter is active, let pagination
+    # stop early.
     client_side_filter_active = (
-        kind is not None
+        folder is not None
+        or kind is not None
         or needle_lower is not None
         or pattern is not None
         or name_fuzzy is not None
@@ -457,7 +469,8 @@ def list_cmd(
                         max_items=fetch_cap,
                     )
                 )
-                if (kind is None or (d.get("kind") or "") == kind.value)
+                if (folder is None or str(d.get("folder_id") or "") == str(folder))
+                and (kind is None or (d.get("kind") or "") == kind.value)
                 and _name_matches(d, needle_lower, pattern)
             ]
     except MondoError as e:
@@ -489,6 +502,7 @@ def _list_via_cache(
     *,
     workspace: list[int] | None,
     object_id: list[int] | None,
+    folder: int | None,
     kind: DocKind | None,
     order_by: DocsOrderBy | None,
     needle_lower: str | None,
@@ -516,6 +530,7 @@ def _list_via_cache(
                 "filters": {
                     "workspace_ids": workspace or None,
                     "object_ids": object_id or None,
+                    "folder": folder,
                     "kind": kind.value if kind else None,
                     "order_by": order_by.value if order_by else None,
                     "name_fuzzy": name_fuzzy,
@@ -545,6 +560,8 @@ def _list_via_cache(
     if object_id:
         wanted_obj = {str(o) for o in object_id}
         entries = [e for e in entries if str(e.get("object_id") or "") in wanted_obj]
+    if folder is not None:
+        entries = [e for e in entries if str(e.get("folder_id") or "") == str(folder)]
     entries = [e for e in entries if _name_matches(e, needle_lower, pattern)]
 
     if order_by is not None:
