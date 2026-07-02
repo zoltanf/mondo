@@ -113,9 +113,17 @@ mondo item list --board 5094861043 --fields id,name \
 mondo item find --board 5094861043 --column e2e_status --value Done -o json
 mondo item find --board 5094861043 --column e2e_status --value 'Done,Working on it'  # any-of
 mondo item find --board 5094861043 --column e2e_status --value Done -q 'length(@)' -o none
+mondo item find --board 5094861043 --column e2e_status --value Done --with-url  # + clickable item URLs
 ```
 
-*Gotcha:* `mondo item find` is sugar over `item list --filter COL=VAL`, returns the same shape, and inherits the same codec dispatch (so `--value` accepts status labels, dates, etc.) plus the `mondo column labels` pointer on unknown labels.
+*Gotcha:* `mondo item find` is sugar over `item list --filter COL=VAL`, returns the same shape, and inherits the same codec dispatch (so `--value` accepts status labels, dates, etc.) plus the `mondo column labels` pointer on unknown labels. `--with-url` works on `item find` and `item list` too (not with `--parent` — subitems live on a separate board).
+
+## Rename an item
+
+```bash
+mondo item rename --id 987 --name "New title"                    # --board auto-resolved from the id
+mondo item rename --board 5094861043 --name-contains "Old" --name "New"  # name selection needs --board
+```
 
 ## Wait for an async state change
 
