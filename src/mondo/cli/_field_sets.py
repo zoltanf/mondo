@@ -102,8 +102,12 @@ def item_get_fields() -> frozenset[str]:
 
 @lru_cache(maxsize=1)
 def item_list_fields() -> frozenset[str]:
-    return extract_selected_fields(ITEMS_PAGE_INITIAL) | extract_selected_fields(
-        ITEMS_PAGE_INITIAL_WITH_SUBITEMS
+    # `url` is synthesized by `--with-url`; allow it unconditionally to
+    # avoid warnings under that flag (same policy as boards).
+    return (
+        extract_selected_fields(ITEMS_PAGE_INITIAL)
+        | extract_selected_fields(ITEMS_PAGE_INITIAL_WITH_SUBITEMS)
+        | frozenset({"url"})
     )
 
 

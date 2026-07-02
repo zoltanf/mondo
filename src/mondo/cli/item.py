@@ -19,6 +19,7 @@ from mondo.api.errors import (
 from mondo.api.pagination import MAX_PAGE_SIZE, iter_items_page
 from mondo.api.queries import (
     ITEM_ARCHIVE,
+    ITEM_BOARD_LOOKUP,
     ITEM_CREATE,
     ITEM_DELETE,
     ITEM_DUPLICATE,
@@ -290,6 +291,12 @@ def list_cmd(
         "Unknown/typo'd column ids are silently omitted by the API (no error).",
         rich_help_panel="Filters",
     ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include a synthesized monday.com `url` on every emitted item "
+        "(one extra account-slug query; not supported with --parent).",
+    ),
     limit: int = typer.Option(
         MAX_PAGE_SIZE,
         "--limit",
@@ -343,6 +350,7 @@ def list_cmd(
         filter_expr=filter_expr,
         order_by=order_by,
         columns_sel=columns_sel,
+        with_url=with_url,
         limit=limit,
         max_items=max_items,
         poll_until=poll_until,
@@ -363,6 +371,7 @@ def _list_items_impl(
     filter_expr: list[str] | None = None,
     order_by: str | None = None,
     columns_sel: str | None = None,
+    with_url: bool = False,
     limit: int = MAX_PAGE_SIZE,
     max_items: int | None = None,
     poll_until: str | None = None,
@@ -383,6 +392,10 @@ def _list_items_impl(
     if parent_id is not None:
         if columns_sel is not None:
             usage_error_or_exit("--columns is not supported with --parent (subitem listing).")
+        if with_url:
+            usage_error_or_exit(
+                "--with-url is not supported with --parent (subitems live on a separate board)."
+            )
         data = execute(opts, SUBITEMS_LIST, {"parent": parent_id})
         items = data.get("items") or []
         if not items:
@@ -391,6 +404,17 @@ def _list_items_impl(
         return
 
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
+
+    def _decorate_and_emit(items: list[dict[str, Any]]) -> None:
+        """Shared emit tail for the cache-hit and live paths: optional
+        --with-url decoration, then the field-selected emit."""
+        if with_url:
+            from mondo.cli._list_decorate import apply_item_urls
+
+            apply_item_urls(items, opts, board_id=board_id)
+        from mondo.cli._field_sets import item_list_fields
+
+        opts.emit(items, selected_fields=item_list_fields())
 
     # Cache eligibility (#21) keys off the *user's* filters; the --group
     # sugar is served from the cached full-board list by filtering
@@ -458,7 +482,6 @@ def _list_items_impl(
         cached = store.read()
         if cached is not None:
             from mondo.cli._cache_flags import emit_cache_provenance
-            from mondo.cli._field_sets import item_list_fields
 
             emit_cache_provenance(opts, cached, store=store)
             items = cached.entries
@@ -466,7 +489,7 @@ def _list_items_impl(
                 items = [it for it in items if (it.get("group") or {}).get("id") == group_id]
             if max_items is not None:
                 items = items[:max_items]
-            opts.emit(items, selected_fields=item_list_fields())
+            _decorate_and_emit(items)
             return
     # Only the full-board, full-shape result may be written back — a group
     # slice, a max-items prefix, or a slimmed selection would poison the
@@ -536,9 +559,9 @@ def _list_items_impl(
     except UsageError as e:
         usage_error_or_exit(str(e))
 
-    from mondo.cli._field_sets import item_list_fields
-
-    opts.emit(items, selected_fields=item_list_fields())
+    # Decorate after the cache write above so the synthesized `url` never
+    # poisons the cached full-board list.
+    _decorate_and_emit(items)
 
 
 @app.command("find", epilog=epilog_for("item find"))
@@ -551,6 +574,12 @@ def find_cmd(
     column_id: str = typer.Option(..., "--column", help="Column ID to match on (e.g. 'status')."),
     value: str = typer.Option(
         ..., "--value", help="Column value to match (label, index #N, or CSV)."
+    ),
+    with_url: bool = typer.Option(
+        False,
+        "--with-url",
+        help="Include a synthesized monday.com `url` on every emitted item "
+        "(one extra account-slug query).",
     ),
 ) -> None:
     """Find items by column value.
@@ -566,6 +595,7 @@ def find_cmd(
         board_pos=board_pos,
         board_flag=board_flag,
         filter_expr=[f"{column_id}={value}"],
+        with_url=with_url,
     )
 
 
@@ -845,7 +875,12 @@ def rename_cmd(
     ctx: typer.Context,
     id_pos: int | None = typer.Argument(None, metavar="[ID]", help="Item ID (positional)."),
     id_flag: int | None = typer.Option(None, "--id", "--item", help="Item ID (flag form)."),
-    board_id: int = typer.Option(..., "--board", help="Parent board ID."),
+    board_id: int | None = typer.Option(
+        None,
+        "--board",
+        help="Parent board ID (auto-resolved from the item id when omitted; "
+        "required for name-based selection).",
+    ),
     name_contains: str | None = typer.Option(
         None, "--name-contains", help="Pick the item by case-insensitive name substring."
     ),
@@ -869,15 +904,39 @@ def rename_cmd(
     name match (`--name-contains` / `--name-matches` / `--name-fuzzy`). The
     filter path streams the board's items via `items_page` and is unsuitable
     for huge boards — pass an id directly when the target is known.
+
+    With an explicit id, `--board` may be omitted: it is auto-resolved from
+    the item with one cheap lookup query. Name-based selection still needs
+    `--board` to scope the search.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     explicit_id: int | None
     if id_pos is not None and id_flag is not None and id_pos != id_flag:
         raise typer.BadParameter("pass the item ID as a positional argument or via --id, not both.")
     explicit_id = id_pos if id_pos is not None else id_flag
+    # All local selector validation runs before any network call, so usage
+    # conflicts surface as exit 2 rather than a lookup/auth failure. Same
+    # id-vs-filter mutex (and message) that resolve_by_filters enforces.
+    if explicit_id is not None and (name_contains or name_matches_re or name_fuzzy):
+        raise typer.BadParameter(
+            "pass either an item id or one of "
+            "--name-contains / --name-matches / --name-fuzzy, not both."
+        )
+    if board_id is None and explicit_id is None:
+        usage_error_or_exit(
+            "--board is required for name-based selection "
+            "(--name-contains / --name-matches / --name-fuzzy). "
+            "Pass an item id to have the board auto-resolved."
+        )
     client = client_or_exit(opts)
     try:
         with client:
+            if board_id is None:
+                lookup = exec_or_exit(client, ITEM_BOARD_LOOKUP, {"id": explicit_id})
+                found = lookup.get("items") or []
+                if not found or not (found[0].get("board") or {}).get("id"):
+                    raise NotFoundError(f"item {explicit_id} not found.")
+                board_id = int(found[0]["board"]["id"])
             resolved_item = resolve_item_target(
                 client,
                 board_id,

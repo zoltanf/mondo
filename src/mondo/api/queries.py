@@ -44,6 +44,17 @@ query ($id: ID!) {
 """.strip()
 
 
+# Minimal board-id lookup used by `item rename` to auto-resolve --board
+# from an explicit item id.
+ITEM_BOARD_LOOKUP = """
+query ($id: ID!) {
+  items(ids: [$id]) {
+    board { id }
+  }
+}
+""".strip()
+
+
 ITEM_GET_WITH_UPDATES = """
 query ($id: ID!) {
   items(ids: [$id]) {

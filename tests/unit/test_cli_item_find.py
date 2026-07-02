@@ -146,6 +146,56 @@ def test_item_find_unknown_label_errors_with_pointer(httpx_mock: HTTPXMock) -> N
     assert "mondo column labels" in combined
 
 
+def test_item_find_with_url_attaches_urls(
+    httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #78: `item find --with-url` decorates each match with its
+    clickable pulses URL (same semantics as `item list --with-url`)."""
+    from mondo.cli import _url as url_mod
+
+    monkeypatch.setattr(url_mod, "_TENANT_SLUG_CACHE", None)
+    _stub_status_column(httpx_mock)
+    _stub_items(
+        httpx_mock,
+        [
+            {
+                "id": "1",
+                "name": "Alpha",
+                "state": "active",
+                "group": {"id": "g1", "title": "T"},
+                "column_values": [],
+            }
+        ],
+    )
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={
+            "data": {"me": {"account": {"slug": "marktguru"}}},
+            "extensions": {"request_id": "r"},
+        },
+    )
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "item",
+            "find",
+            "--board",
+            "42",
+            "--column",
+            "status",
+            "--value",
+            "Done",
+            "--with-url",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert rows[0]["url"] == "https://marktguru.monday.com/boards/42/pulses/1"
+
+
 def test_item_find_in_help_index() -> None:
     """`mondo item --help` should list 'find' alongside list/get/create."""
     result = runner.invoke(app, ["item", "--help"])
