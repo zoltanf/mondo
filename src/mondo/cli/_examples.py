@@ -281,6 +281,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "--refresh-cache / --no-cache: the bare board listing is cached per board (60s TTL)",
             "mondo item list --board 1234567890 --refresh-cache",
         ),
+        Example(
+            "Include each item's clickable URL",
+            "mondo item list --board 1234567890 --with-url",
+        ),
     ],
     "item find": [
         Example(
@@ -300,6 +304,10 @@ EXAMPLES: dict[str, list[Example]] = {
             "Count matches",
             "mondo item find --board 1234567890 --column status --value Done "
             "-q 'length(@)' -o none",
+        ),
+        Example(
+            "Include each match's clickable URL",
+            "mondo item find --board 1234567890 --column status --value Done --with-url",
         ),
     ],
     "item get": [
@@ -360,11 +368,11 @@ EXAMPLES: dict[str, list[Example]] = {
     ],
     "item rename": [
         Example(
-            "Rename an item",
-            'mondo item rename --id 987 --board 1234567890 --name "New title"',
+            "Rename an item (board auto-resolved from the item id)",
+            'mondo item rename 987 --name "New title"',
         ),
         Example(
-            "Rename by current name (case-insensitive substring)",
+            "Rename by current name (case-insensitive substring; needs --board)",
             'mondo item rename --board 1234567890 --name-contains "Old title" --name "New title"',
         ),
         Example(

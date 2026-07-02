@@ -6,6 +6,7 @@ url fields. Live-path and cache-path code funnel through the same helpers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from mondo.api.errors import MondoError
@@ -27,21 +28,40 @@ def enrich_workspaces_best_effort(entries: list[dict[str, Any]], opts: GlobalOpt
         pass
 
 
-def apply_board_urls(entries: list[dict[str, Any]], opts: GlobalOpts) -> None:
-    """Attach a synthesized monday `url` to each board entry."""
-    from mondo.cli._url import board_url, get_tenant_slug
+def _apply_urls(
+    entries: list[dict[str, Any]],
+    opts: GlobalOpts,
+    make_url: Callable[[str, int], str],
+) -> None:
+    """Resolve the tenant slug once, then set `url` on each entry with a
+    numeric id via `make_url(slug, entry_id)`."""
+    from mondo.cli._url import get_tenant_slug
 
     try:
         with opts.build_client() as client:
             slug = get_tenant_slug(client)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
-    for b in entries:
+    for entry in entries:
         try:
-            bid = int(b.get("id"))  # type: ignore[arg-type]
+            entry_id = int(entry.get("id"))  # type: ignore[arg-type]
         except TypeError, ValueError:
             continue
-        b["url"] = board_url(slug, bid)
+        entry["url"] = make_url(slug, entry_id)
+
+
+def apply_board_urls(entries: list[dict[str, Any]], opts: GlobalOpts) -> None:
+    """Attach a synthesized monday `url` to each board entry."""
+    from mondo.cli._url import board_url
+
+    _apply_urls(entries, opts, board_url)
+
+
+def apply_item_urls(entries: list[dict[str, Any]], opts: GlobalOpts, *, board_id: int) -> None:
+    """Attach a synthesized monday `url` to each item entry."""
+    from mondo.cli._url import item_url
+
+    _apply_urls(entries, opts, lambda slug, item_id: item_url(slug, board_id, item_id))
 
 
 def strip_url_fields(entries: list[dict[str, Any]]) -> None:

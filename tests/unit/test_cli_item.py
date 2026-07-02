@@ -255,6 +255,47 @@ class TestItemList:
         result = runner.invoke(app, ["item", "list", "--board", "42", "--no-cache"])
         assert result.exit_code == 0, (result.stdout or "") + (result.stderr or "")
 
+    def test_with_url_attaches_synthesized_urls(
+        self, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Issue #78: `item list --with-url` synthesizes a pulses URL per item."""
+        from mondo.cli import _url as url_mod
+
+        monkeypatch.setattr(url_mod, "_TENANT_SLUG_CACHE", None)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok(
+                {
+                    "boards": [
+                        {
+                            "items_page": {
+                                "cursor": None,
+                                "items": [{"id": "1", "name": "A"}, {"id": "2", "name": "B"}],
+                            }
+                        }
+                    ]
+                }
+            ),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"me": {"account": {"slug": "marktguru"}}}),
+        )
+        result = runner.invoke(app, ["item", "list", "--board", "42", "--with-url"])
+        assert result.exit_code == 0, result.output
+        parsed = json.loads(result.stdout)
+        assert [r["url"] for r in parsed] == [
+            "https://marktguru.monday.com/boards/42/pulses/1",
+            "https://marktguru.monday.com/boards/42/pulses/2",
+        ]
+
+    def test_with_url_rejected_with_parent(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(app, ["item", "list", "--parent", "987", "--with-url"])
+        assert result.exit_code == 2
+        assert httpx_mock.get_requests() == []
+
 
 def _columns_response(columns: list[dict[str, object]]) -> dict[str, object]:
     """Build a COLUMNS_ON_BOARD response with the given column defs."""
@@ -696,6 +737,52 @@ class TestItemRename:
         assert "change_simple_column_value" in body["query"]
         assert 'column_id: "name"' in body["query"]
         assert "change_item_name" not in body["query"]
+
+    def test_without_board_resolves_it_from_item_id(self, httpx_mock: HTTPXMock) -> None:
+        """Issue #77: with an explicit id, --board is looked up via one query."""
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"items": [{"board": {"id": "42"}}]}),
+        )
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"change_simple_column_value": {"id": "1", "name": "New name"}}),
+        )
+        result = runner.invoke(app, ["item", "rename", "1", "--name", "New name"])
+        assert result.exit_code == 0, result.output
+        reqs = [json.loads(r.content) for r in httpx_mock.get_requests()]
+        assert len(reqs) == 2
+        assert "board { id }" in reqs[0]["query"]
+        assert reqs[0]["variables"] == {"id": 1}
+        assert reqs[1]["variables"] == {"board": 42, "id": 1, "name": "New name"}
+
+    def test_without_board_missing_item_exits_6(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok({"items": []}))
+        result = runner.invoke(app, ["item", "rename", "999", "--name", "New name"])
+        assert result.exit_code == 6
+        assert "item 999 not found" in result.stderr
+        assert len(httpx_mock.get_requests()) == 1
+
+    def test_explicit_id_with_name_filter_exits_2_without_network(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """id vs name-filter mutex is validated locally — no board lookup."""
+        result = runner.invoke(
+            app, ["item", "rename", "999", "--name-contains", "old", "--name", "New"]
+        )
+        assert result.exit_code == 2
+        assert "not both" in result.stderr
+        assert httpx_mock.get_requests() == []
+
+    def test_name_contains_without_board_exits_2(self, httpx_mock: HTTPXMock) -> None:
+        result = runner.invoke(
+            app, ["item", "rename", "--name-contains", "banana", "--name", "Cherry"]
+        )
+        assert result.exit_code == 2
+        assert "--board is required" in result.stderr
+        assert httpx_mock.get_requests() == []
 
 
 class TestItemCreateBatch:
