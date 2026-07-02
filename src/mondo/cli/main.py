@@ -384,12 +384,12 @@ def _root(
     # parses stdout as JSON. The freshness-check module itself remains
     # callable from `tests/unit/test_cli_skill_freshness.py` (which exercises
     # `warn_if_skill_outdated()` directly).
-    # `benign_notices_enabled` (#25): the warning is benign noise to a
-    # pipeline — emit it only when a human is plausibly watching stderr.
-    from mondo.cli._notices import benign_notices_enabled
-
-    if not os.environ.get("PYTEST_CURRENT_TEST") and benign_notices_enabled(verbose=verbose):
-        warn_if_skill_outdated()
+    # The warning is exempt from the benign-notices gate (#25): agent
+    # (non-TTY) runs are exactly the audience consuming the skill. Instead,
+    # non-TTY runs are rate-limited to once per 24h per install location
+    # (see `_skill_freshness`); TTY/verbose runs warn every invocation.
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        warn_if_skill_outdated(verbose=verbose)
     ctx.obj = GlobalOpts(
         profile_name=profile,
         flag_token=api_token,
