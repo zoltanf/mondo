@@ -637,8 +637,8 @@ Distinct from the `doc` *column* type (`mondo column doc`): these are
 standalone documents inside a workspace, built from a block tree.
 
 ```bash
-mondo doc list           [--workspace 42] [--object-id 77] [--order-by used_at] \
-                         [--limit 100] [--max-items 500]
+mondo doc list           [--workspace 42] [--object-id 77] [--folder 987654] \
+                         [--order-by used_at] [--limit 100] [--max-items 500]
 mondo doc get            --id 7           # internal id
 mondo doc get            --object-id 77   # URL-visible id
 mondo doc get            --id 7 --format markdown    # render blocks → markdown
@@ -781,18 +781,19 @@ remaining group on a board with `DeleteLastGroupException`.
 
 ```bash
 mondo item list   --board 1234567890 [--max-items 50] [--filter status=Done] \
-                  [--order-by date4,desc] [--columns col1,col2]
+                  [--order-by date4,desc] [--columns col1,col2] [--with-url]
 mondo item list   --board 1234567890 --group backlog              # first-class group shortcut
 mondo item list   --parent 9876543210                             # subitems of a parent
 mondo item list   --board 1234567890 --poll-until 'length(@) > `0`' \
                   --poll-interval 2s --poll-timeout 30s           # wait for async state
-mondo item find   --board 1234567890 --column status --value Done # sugar over --filter
+mondo item find   --board 1234567890 --column status --value Done [--with-url]  # sugar over --filter
 mondo item get    --id 987 [--include-updates] [--include-subitems] [--columns col1,col2] [--with-url]
 mondo item get    --id 987 --poll-until 'state == `active`' --poll-timeout 60s
 mondo item create --board 1234567890 --name "Fix CI" \
                   --column status=Working --column owner=42 --column due=2026-04-25 \
                   [--with-url]                                    # returns URL in same call
-mondo item rename    --id 987 --board 1234567890 --name "New title"
+mondo item rename    --id 987 --name "New title"        # --board auto-resolved from the id
+mondo item rename    --board 1234567890 --name-contains "Old" --name "New"  # name selection needs --board
 mondo item archive   --id 987                            # reversible (30-day monday recovery)
 mondo item delete    --id 987 --hard --yes               # permanent
 mondo item move      --id 987 --group topics_two         # between groups, same board
