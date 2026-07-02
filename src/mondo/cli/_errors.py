@@ -99,8 +99,13 @@ def suggest_for_no_such_option(exc: click.exceptions.UsageError) -> str | None:
 
     Pulls Click's own `possibilities` (its difflib matches against
     registered options) first, then falls back to `FLAG_ALIAS_HINTS`
-    for cross-command aliases Click can't suggest.
+    for cross-command aliases Click can't suggest. A removed-command
+    tombstone attached by `MondoGroup.resolve_command` (as
+    `mondo_suggestion`) wins outright.
     """
+    tombstone = getattr(exc, "mondo_suggestion", None)
+    if tombstone:
+        return str(tombstone)
     if not isinstance(exc, click.exceptions.NoSuchOption):
         return None
     possibilities = getattr(exc, "possibilities", None) or []
