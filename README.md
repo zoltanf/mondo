@@ -992,7 +992,12 @@ mondo cache status                   # age, freshness, entry count per type
 mondo cache refresh boards           # force-refetch the boards directory
 mondo cache refresh columns --board 42   # refresh one board's columns
 mondo cache clear items              # drop every per-item cache file
+mondo cache clear --stale            # reclaim only files past their TTL
 ```
+
+`cache status` flags each expired-on-disk file with `stale: true` and, in table
+output, prints a reclaim hint; `cache clear --stale` drops exactly those files
+and leaves fresh ones alone.
 
 Per-command escape hatches on every cached read: `--no-cache` (skip) and
 `--refresh-cache` (force refetch). Fuzzy name matching

@@ -101,7 +101,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   type: `list[object]`
   fields: `type`, `path`, `removed`, `board?`
   source: `cache.clear results`
-  notes: Column-scope rows include board and order as type, board, path, removed.
+  notes: Column-scope rows include board and order as type, board, path, removed. --stale restricts removal to files past their TTL; unremoved fresh files are omitted from the result.
 - `cache refresh`
   type: `list[object]`
   fields: `type`, `fetched_at`, `count`, `board?`
@@ -109,9 +109,9 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   notes: Column-scope rows include board and order as type, board, fetched_at, count.
 - `cache status`
   type: `list[object]`
-  fields: `type`, `path`, `fetched_at`, `age`, `ttl_seconds`, `fresh`, `entries`, `board?`
+  fields: `type`, `path`, `fetched_at`, `age`, `ttl_seconds`, `fresh`, `stale`, `entries`, `board?`
   source: `cache.status rows`
-  notes: Column-scope rows append board last.
+  notes: Column-scope rows append board last. stale is true for a file that exists but has aged past its TTL; table output also prints a clear --stale hint to stderr.
 
 ## column
 
