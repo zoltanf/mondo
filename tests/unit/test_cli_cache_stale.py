@@ -108,6 +108,47 @@ class TestClearStale:
         assert not stale.exists()
         assert fresh.exists()
 
+    def test_endpoint_mismatched_file_is_preserved(self, tmp_path: Path) -> None:
+        # A file from a different monday endpoint, aged well past its TTL, is
+        # kept — read() deliberately keeps foreign-endpoint files, and --stale
+        # must not second-guess that.
+        foreign = _items_dir(tmp_path) / "111.json"
+        _write_envelope(
+            foreign, ttl_seconds=60, age_seconds=99999, endpoint="https://other.example/v2"
+        )
+        result = runner.invoke(app, ["cache", "clear", "items", "--stale"])
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == []
+        assert foreign.exists()
+
+    def test_configured_ttl_overrides_envelope_ttl(self, tmp_path: Path) -> None:
+        # Staleness uses the store's configured TTL (items=60s), not the
+        # envelope's stored ttl_seconds. A file 90s old with a bogus 100000s
+        # envelope TTL is still stale.
+        stale = _items_dir(tmp_path) / "111.json"
+        _write_envelope(stale, ttl_seconds=100000, age_seconds=90)
+        result = runner.invoke(app, ["cache", "clear", "items", "--stale"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert [r["board"] for r in rows] == ["111"]
+        assert not stale.exists()
+
+    def test_board_scoped_stale_with_board_filter(self, tmp_path: Path) -> None:
+        # --board narrows the targets; --stale then removes only the expired one.
+        cols = tmp_path / "cache" / "default" / "columns"
+        expired = cols / "42.json"
+        fresh = cols / "43.json"
+        # columns TTL defaults to 3600s.
+        _write_envelope(expired, ttl_seconds=3600, age_seconds=7200)
+        _write_envelope(fresh, ttl_seconds=3600, age_seconds=60)
+
+        result = runner.invoke(app, ["cache", "clear", "columns", "--board", "42", "--stale"])
+        assert result.exit_code == 0, result.stdout
+        rows = json.loads(result.stdout)
+        assert [r["board"] for r in rows] == ["42"]
+        assert not expired.exists()
+        assert fresh.exists()
+
 
 # -- status stale field + hint ----------------------------------------------
 
@@ -141,3 +182,49 @@ class TestStatusStale:
         result = runner.invoke(app, ["-o", "table", "cache", "status", "items"])
         assert result.exit_code == 0, result.stdout
         assert "clear --stale" not in (result.stderr or "")
+
+    def test_endpoint_mismatch_is_not_stale(self, tmp_path: Path) -> None:
+        _write_envelope(
+            _items_dir(tmp_path) / "111.json",
+            ttl_seconds=60,
+            age_seconds=99999,
+            endpoint="https://other.example/v2",
+        )
+        result = runner.invoke(app, ["cache", "status", "items"])
+        assert result.exit_code == 0, result.stdout
+        row = json.loads(result.stdout)[0]
+        # Foreign-endpoint file: not servable, but not "stale" either.
+        assert row["fresh"] is False
+        assert row["stale"] is False
+
+
+class TestStaleBoundary:
+    """The TTL boundary is `>=` everywhere: read(), is_stale(), and status agree."""
+
+    def test_age_equal_to_ttl_is_expired(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from datetime import datetime
+
+        from mondo.cache import store as store_mod
+        from mondo.cache.store import CacheStore
+
+        base = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        monkeypatch.setattr(store_mod, "_utcnow", lambda: base)
+        store = CacheStore(
+            entity_type="items",
+            cache_dir=tmp_path / "cache" / "default",
+            api_endpoint=ENDPOINT,
+            ttl_seconds=60,
+        )
+        store.write([{"id": "1"}])
+
+        # Exactly at the TTL boundary: expired.
+        monkeypatch.setattr(store_mod, "_utcnow", lambda: base + timedelta(seconds=60))
+        assert store.is_stale() is True
+        assert store.read() is None
+
+        # One second inside the TTL: fresh, and never stale.
+        monkeypatch.setattr(store_mod, "_utcnow", lambda: base + timedelta(seconds=59))
+        assert store.is_stale() is False
+        assert store.read() is not None

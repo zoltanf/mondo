@@ -120,17 +120,6 @@ def _scoped_board_ids(opts: GlobalOpts, entity: str) -> list[str]:
     return ids
 
 
-def _is_stale(store: CacheStore) -> bool:
-    """True when a cache file exists on disk but is older than its configured TTL.
-
-    Purely age-based and non-mutating (safe to call for reporting). Endpoint-
-    mismatched files are deliberately left alone — see docs/caching.md — so
-    this never removes a cache written against a different account.
-    """
-    age = store.age()
-    return age is not None and age.total_seconds() > store.ttl_seconds
-
-
 def _format_age(age: timedelta | None) -> str | None:
     if age is None:
         return None
@@ -209,7 +198,9 @@ def _status_row(opts: GlobalOpts, entity: str, *, scope: str | None = None) -> d
         "age": _format_age(age),
         "ttl_seconds": store.ttl_seconds,
         "fresh": cached is not None,
-        "stale": age is not None and age.total_seconds() > store.ttl_seconds,
+        # A file served fresh is never stale; otherwise ask the store (endpoint-
+        # and schema-aware, so foreign/incompatible files aren't flagged).
+        "stale": store.is_stale() if cached is None else False,
         "entries": len(cached.entries) if cached is not None else None,
     }
     if scope is not None:
@@ -408,7 +399,7 @@ def clear_cmd(
             results.extend(_clear_scoped(opts, boards, entity, stale=stale))
             continue
         store = opts.build_cache_store(cast(EntityType, entity))
-        if stale and not _is_stale(store):
+        if stale and not store.is_stale():
             continue
         path = str(store.path)
         if opts.dry_run:
@@ -423,7 +414,7 @@ def _clear_scoped(
     opts: GlobalOpts, boards: list[int], entity: str, *, stale: bool = False
 ) -> list[dict[str, Any]]:
     def _one(store: CacheStore, bid: str) -> dict[str, Any] | None:
-        if stale and not _is_stale(store):
+        if stale and not store.is_stale():
             return None
         path = str(store.path)
         if opts.dry_run:

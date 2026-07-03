@@ -322,6 +322,7 @@ operates on the `acme` profile's cache dir.
 | `api_endpoint` mismatch | Treated as cold; file kept (avoids re-warming when you switch back). |
 | Cache dir not writable | Fetched data served from memory; cache file not updated; WARNING logged once. |
 | Two processes refresh simultaneously | Both fetch, last `os.replace` wins; both callers return correct data. |
+| Delete races a write (`cache clear`/`--stale`, or `read()` self-heal, unlinks a file another process just refreshed) | The fresh replacement is removed; there is no delete-time revalidation or lock. Harmless — the next read re-fetches. Never corrupts data or serves a wrong file. Not guarded, by design (matches the last-writer-wins contract above). |
 | `rapidfuzz` import fails | Clean usage error on `--name-fuzzy` only; other flags unaffected. |
 | Network failure on refresh | Usual `MondoError` propagates. Stale cache is **not** served as a fallback. |
 

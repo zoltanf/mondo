@@ -185,8 +185,9 @@ class CacheStore:
         # Freshness is decided by the CURRENT configured TTL, not the TTL the
         # envelope was written under. The stored `ttl_seconds` is provenance
         # metadata only — lowering/raising the configured TTL must take effect
-        # on already-written files.
-        if cached.age.total_seconds() > self._ttl_seconds:
+        # on already-written files. A file is expired once age *reaches* the
+        # TTL (`>=`), matching `is_fresh()` and docs/caching.md.
+        if cached.age.total_seconds() >= self._ttl_seconds:
             logger.debug(
                 f"cache[{self._entity_type}]: expired (age={cached.age}, ttl={self._ttl_seconds}s)"
             )
@@ -237,6 +238,29 @@ class CacheStore:
             return _utcnow() - _parse_utc(raw["fetched_at"])
         except KeyError, TypeError, ValueError:
             return None
+
+    def is_stale(self) -> bool:
+        """True when a valid, same-endpoint envelope exists on disk but has
+        aged past the configured TTL. Non-mutating.
+
+        Endpoint- and schema-aware on purpose: a file written against a
+        different monday endpoint is deliberately kept (see docs/caching.md),
+        and a wrong-schema file self-heals on the next `read()`. Neither is
+        reported stale, so `cache clear --stale` never reclaims them — it only
+        removes caches that are genuinely expired for the current profile.
+        """
+        raw = self._read_envelope()
+        if raw is None:
+            return False
+        if raw.get("schema_version") != SCHEMA_VERSION:
+            return False
+        if raw.get("api_endpoint") != self._api_endpoint:
+            return False
+        try:
+            fetched_at = _parse_utc(raw["fetched_at"])
+        except KeyError, TypeError, ValueError:
+            return False
+        return (_utcnow() - fetched_at).total_seconds() >= self._ttl_seconds
 
     def _ensure_dir(self) -> None:
         target_dir = self.path.parent
