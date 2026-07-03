@@ -120,6 +120,17 @@ def _scoped_board_ids(opts: GlobalOpts, entity: str) -> list[str]:
     return ids
 
 
+def _is_stale(store: CacheStore) -> bool:
+    """True when a cache file exists on disk but is older than its configured TTL.
+
+    Purely age-based and non-mutating (safe to call for reporting). Endpoint-
+    mismatched files are deliberately left alone — see docs/caching.md — so
+    this never removes a cache written against a different account.
+    """
+    age = store.age()
+    return age is not None and age.total_seconds() > store.ttl_seconds
+
+
 def _format_age(age: timedelta | None) -> str | None:
     if age is None:
         return None
@@ -155,6 +166,28 @@ def status_cmd(
         else:
             rows.append(_status_row(opts, entity))
     opts.emit(rows)
+    _hint_stale(opts, rows)
+
+
+def _hint_stale(opts: GlobalOpts, rows: list[dict[str, Any]]) -> None:
+    """Print a one-line reclaim hint to stderr when the human-facing table
+    shows stale files. Suppressed for machine formats so pipelines stay clean."""
+    import sys
+
+    from mondo.output import choose_default_format
+
+    stale = sum(1 for r in rows if r.get("stale"))
+    if not stale:
+        return
+    is_tty = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    if (opts.output or choose_default_format(is_tty=is_tty)) != "table":
+        return
+    noun = "file" if stale == 1 else "files"
+    typer.secho(
+        f"{stale} stale cache {noun} — run 'mondo cache clear --stale' to reclaim.",
+        fg=typer.colors.YELLOW,
+        err=True,
+    )
 
 
 def _status_row(opts: GlobalOpts, entity: str, *, scope: str | None = None) -> dict[str, Any]:
@@ -176,6 +209,7 @@ def _status_row(opts: GlobalOpts, entity: str, *, scope: str | None = None) -> d
         "age": _format_age(age),
         "ttl_seconds": store.ttl_seconds,
         "fresh": cached is not None,
+        "stale": age is not None and age.total_seconds() > store.ttl_seconds,
         "entries": len(cached.entries) if cached is not None else None,
     }
     if scope is not None:
@@ -292,17 +326,19 @@ def _for_each_board_scope(
     opts: GlobalOpts,
     boards: list[int],
     entity: str,
-    op: Callable[[CacheStore, str], dict[str, Any]],
+    op: Callable[[CacheStore, str], dict[str, Any] | None],
 ) -> list[dict[str, Any]]:
     """Apply `op(store, board_id)` to every target scoped cache file.
 
     Target set is the explicit `boards` list if given, otherwise every board
-    already present in the selected scoped cache directory.
+    already present in the selected scoped cache directory. `op` may return
+    `None` to skip a file (e.g. `clear --stale` skipping a fresh one).
     """
     target_ids: list[str] = [str(b) for b in boards] if boards else _scoped_board_ids(opts, entity)
-    return [
+    results = (
         op(opts.build_cache_store(cast(EntityType, entity), scope=bid), bid) for bid in target_ids
-    ]
+    )
+    return [r for r in results if r is not None]
 
 
 _SCOPED_REFRESH_DISPATCH = {
@@ -345,11 +381,17 @@ def clear_cmd(
             "Omit to clear every per-board scoped cache for the selected types."
         ),
     ),
+    stale: bool = typer.Option(
+        False,
+        "--stale",
+        help="Only clear files past their TTL; leave fresh files untouched.",
+    ),
 ) -> None:
     """Delete the selected cache file(s). Idempotent.
 
     For `columns`/`groups`, removes one file per board id; omit `--board` to
-    clear every per-board scoped cache for the selected types.
+    clear every per-board scoped cache for the selected types. With `--stale`,
+    only files older than their configured TTL are removed.
     """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     types = _resolve_types(cache_type)
@@ -363,9 +405,11 @@ def clear_cmd(
     results: list[dict[str, Any]] = []
     for entity in types:
         if entity in _SCOPED_TYPES:
-            results.extend(_clear_scoped(opts, boards, entity))
+            results.extend(_clear_scoped(opts, boards, entity, stale=stale))
             continue
         store = opts.build_cache_store(cast(EntityType, entity))
+        if stale and not _is_stale(store):
+            continue
         path = str(store.path)
         if opts.dry_run:
             results.append({"type": entity, "path": path, "action": "clear"})
@@ -375,8 +419,12 @@ def clear_cmd(
     opts.emit(results)
 
 
-def _clear_scoped(opts: GlobalOpts, boards: list[int], entity: str) -> list[dict[str, Any]]:
-    def _one(store: CacheStore, bid: str) -> dict[str, Any]:
+def _clear_scoped(
+    opts: GlobalOpts, boards: list[int], entity: str, *, stale: bool = False
+) -> list[dict[str, Any]]:
+    def _one(store: CacheStore, bid: str) -> dict[str, Any] | None:
+        if stale and not _is_stale(store):
+            return None
         path = str(store.path)
         if opts.dry_run:
             return {"type": entity, "board": bid, "path": path, "action": "clear"}

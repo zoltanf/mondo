@@ -280,7 +280,7 @@ workspaces cache on first use to enrich each row with `workspace_name`
 ```
 mondo cache status  [<type>]
 mondo cache refresh [<type>] [--board ID ...]
-mondo cache clear   [<type>] [--board ID ...]
+mondo cache clear   [<type>] [--board ID ...] [--stale]
 ```
 
 Where `<type>` ∈ `boards | workspaces | users | teams | docs | folders |
@@ -289,8 +289,10 @@ updates | docs_blocks | all`. Default: `all`.
 
 - **`cache status`** — one row per single-file type plus, for scoped types,
   one row per file already on disk. Columns: `type`, `path`, `fetched_at`,
-  `age`, `ttl_seconds`, `fresh`, `entries`, and `board` (when the row is
-  per-board scoped).
+  `age`, `ttl_seconds`, `fresh`, `stale`, `entries`, and `board` (when the row
+  is per-board scoped). `stale` is `true` when a file exists but has aged past
+  its TTL (`fresh` false + a file on disk); a table-format run also prints a
+  one-line `cache clear --stale` reclaim hint to stderr when any row is stale.
 - **`cache refresh`** — force-refetches the selected type(s). `--board ID`
   is honored for `columns`, `groups`, `webhooks`, and `board_details`. The
   per-item / per-doc caches (`items`, `subitems`, `updates`, `docs_blocks`)
@@ -299,8 +301,10 @@ updates | docs_blocks | all`. Default: `all`.
   --refresh-cache`). Honors `--dry-run`.
 - **`cache clear`** — deletes the selected cache file(s). With `--board ID`
   for board-scoped types, only those board files are removed; without it,
-  every per-scope file for the selected type is removed. Idempotent. Honors
-  `--dry-run`.
+  every per-scope file for the selected type is removed. With `--stale`, only
+  files older than their configured TTL are removed (fresh files are kept;
+  endpoint-mismatched files are left alone per the table above). Idempotent.
+  Honors `--dry-run`.
 
 `--board` is only accepted when the selector includes a board-scoped type
 (`columns`, `groups`, `webhooks`, `board_details`).

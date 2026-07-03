@@ -213,7 +213,11 @@ MANUAL_ROWS: dict[str, Row] = {
         command="cache clear",
         output_type="list[object]",
         fields=["type", "path", "removed", "board?"],
-        notes="Column-scope rows include board and order as type, board, path, removed.",
+        notes=(
+            "Column-scope rows include board and order as type, board, path, removed. "
+            "--stale restricts removal to files past their TTL; unremoved fresh files are "
+            "omitted from the result."
+        ),
         source="cache.clear results",
     ),
     "cache refresh": Row(
@@ -226,8 +230,21 @@ MANUAL_ROWS: dict[str, Row] = {
     "cache status": Row(
         command="cache status",
         output_type="list[object]",
-        fields=["type", "path", "fetched_at", "age", "ttl_seconds", "fresh", "entries", "board?"],
-        notes="Column-scope rows append board last.",
+        fields=[
+            "type",
+            "path",
+            "fetched_at",
+            "age",
+            "ttl_seconds",
+            "fresh",
+            "stale",
+            "entries",
+            "board?",
+        ],
+        notes=(
+            "Column-scope rows append board last. stale is true for a file that exists but "
+            "has aged past its TTL; table output also prints a clear --stale hint to stderr."
+        ),
         source="cache.status rows",
     ),
     "column doc append": Row(
