@@ -182,7 +182,7 @@ mondo doc rename --doc 5095668850 --name "Spec — Q3 launch (v2)"
 {"id": 5095668870, "name": "Spec — Q3 launch — Copy"}
 ```
 
-*Gotcha:* `doc duplicate` and `doc rename` may currently `xfail` against monday's API due to an `Int!` vs `ID!` schema mismatch — check the test status if these regress (`tests/integration/test_live_doc_md_roundtrip.py::test_live_doc_duplicate_preserves_content`). If you need a guaranteed copy, `doc get --format markdown --engine server` + `create` + `add-markdown` is a safe fallback.
+*Gotcha:* `doc duplicate` and `doc rename` are covered by the live suite (`tests/integration/test_live_doc_md_roundtrip.py`); check that test's status if they regress. If you need a guaranteed copy, `doc get --format markdown --engine server` + `create` + `add-markdown` is a safe fallback.
 
 ## Delete a doc
 

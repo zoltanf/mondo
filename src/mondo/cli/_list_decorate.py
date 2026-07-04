@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
+
 from mondo.api.errors import MondoError
 from mondo.cli._exec import handle_mondo_error_or_exit
 
@@ -17,15 +19,23 @@ if TYPE_CHECKING:
 
 
 def enrich_workspaces_best_effort(entries: list[dict[str, Any]], opts: GlobalOpts) -> None:
-    """Add `workspace_name` to each entry; swallow MondoError silently."""
+    """Add `workspace_name` to each entry.
+
+    Best-effort by design: enrichment is a transparent convenience on a list
+    that already succeeded, so a `MondoError` here must not fail the command.
+    Unlike the `--with-url` path (which the user explicitly asked for, so its
+    failures are fatal), this stays non-fatal — but it is no longer *silent*:
+    the reason is logged at debug so `--debug` runs can see why names are
+    missing (finding #7).
+    """
     from mondo.cache.directory import enrich_workspace_names
 
     try:
         store = opts.build_cache_store("workspaces")
         with opts.build_client() as client:
             enrich_workspace_names(entries, client=client, store=store)
-    except MondoError:
-        pass
+    except MondoError as e:
+        logger.debug(f"workspace-name enrichment skipped: {e}")
 
 
 def _apply_urls(
