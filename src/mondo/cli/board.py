@@ -384,6 +384,7 @@ def _list_via_cache(
     client-side against that list.
     """
     from mondo.cache.directory import get_boards as cache_get_boards
+    from mondo.cli._list_common import filter_by_kind, filter_by_state
     from mondo.cli._list_decorate import apply_board_urls, enrich_workspaces_best_effort
     from mondo.domain.filters import apply_fuzzy
     from mondo.domain.filters import name_matches as _name_matches
@@ -427,11 +428,8 @@ def _list_via_cache(
     # Spec default for boards list is "active" when --state omitted. Preserve that
     # client-side since the cache holds all states.
     requested_state = state.value if state else "active"
-    entries = cached.entries
-    if requested_state != "all":
-        entries = [b for b in entries if (b.get("state") or "active") == requested_state]
-    if kind is not None:
-        entries = [b for b in entries if (b.get("kind") or "") == kind.value]
+    entries = filter_by_state(cached.entries, requested_state)
+    entries = filter_by_kind(entries, kind.value if kind else None)
     if type_filter is not BoardTypeFilter.all:
         entries = [b for b in entries if type_matches(b, type_filter)]
     if workspace:

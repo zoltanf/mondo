@@ -517,6 +517,7 @@ def _list_via_cache(
 ) -> None:
     from mondo.cache.directory import get_docs as cache_get_docs
     from mondo.cli._cache_flags import emit_cache_provenance
+    from mondo.cli._list_common import filter_by_kind
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
     from mondo.domain.filters import apply_fuzzy
     from mondo.domain.filters import name_matches as _name_matches
@@ -551,9 +552,7 @@ def _list_via_cache(
 
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
-    entries = cached.entries
-    if kind is not None:
-        entries = [e for e in entries if (e.get("kind") or "") == kind.value]
+    entries = filter_by_kind(cached.entries, kind.value if kind else None)
     if workspace:
         wanted_ws = {str(w) for w in workspace}
         entries = [e for e in entries if str(e.get("workspace_id") or "") in wanted_ws]

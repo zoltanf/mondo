@@ -181,6 +181,7 @@ def _list_workspaces_via_cache(
 ) -> None:
     from mondo.cache.directory import get_workspaces as cache_get_workspaces
     from mondo.cli._cache_flags import emit_cache_provenance
+    from mondo.cli._list_common import filter_by_kind, filter_by_state
     from mondo.domain.filters import apply_fuzzy
 
     if opts.dry_run:
@@ -214,11 +215,8 @@ def _list_workspaces_via_cache(
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     requested_state = state.value if state else "active"
-    entries = cached.entries
-    if requested_state != "all":
-        entries = [w for w in entries if (w.get("state") or "active") == requested_state]
-    if kind is not None:
-        entries = [w for w in entries if (w.get("kind") or "") == kind.value]
+    entries = filter_by_state(cached.entries, requested_state)
+    entries = filter_by_kind(entries, kind.value if kind else None)
 
     if name_fuzzy is not None:
         entries = apply_fuzzy(
