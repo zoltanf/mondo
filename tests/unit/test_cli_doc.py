@@ -2225,7 +2225,7 @@ class TestDocGetPdf:
     def test_sanitize_pdf_image_srcs_validates_magic_bytes(self) -> None:
         import base64
 
-        from mondo.cli.doc import _sanitize_pdf_image_srcs
+        from mondo.cli._doc_render import _sanitize_pdf_image_srcs
 
         def uri(mime: str, data: bytes) -> str:
             return f"data:{mime};base64,{base64.b64encode(data).decode()}"

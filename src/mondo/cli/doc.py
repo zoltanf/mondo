@@ -17,14 +17,12 @@ workspace with a block-structured body. The CLI covers:
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import json
 import re
-import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, NoReturn
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
@@ -41,12 +39,30 @@ from mondo.api.queries import (
     DOC_VERSION_HISTORY,
     DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
     DUPLICATE_DOC,
-    EXPORT_MARKDOWN_FROM_DOC,
     IMPORT_DOC_FROM_HTML,
     UPDATE_DOC_BLOCK,
     UPDATE_DOC_NAME,
 )
 from mondo.cli._cache_invalidate import invalidate_all_scopes, invalidate_entity
+from mondo.cli._doc_fetch import (
+    _DOC_BLOCKS_PAGE_SIZE,
+    _OBJECT_ID_HINT_EXIT_CODES,
+    _emit_doc_id_not_found,
+    _emit_doc_not_found,
+    _execute_doc_command,
+    _fail_with_object_id_hint,
+    _fetch_doc_by_id_all_blocks,
+    _fetch_doc_by_object_id_all_blocks,
+    _require_one_doc_flag,
+    _resolve_doc_in_client,
+)
+from mondo.cli._doc_io import _load_html, _load_markdown
+from mondo.cli._doc_render import (
+    _emit_server_markdown,
+    _render_html,
+    _render_markdown,
+    _render_pdf,
+)
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
     client_or_exit,
@@ -62,7 +78,6 @@ from mondo.cli.context import GlobalOpts
 from mondo.domain.resolve import resolve_required_id
 from mondo.services.docs import (
     last_block_id,
-    object_id_hint,
     object_id_hint_with_client,
     resolve_doc_id_from_object_id,
     top_level_block_ids,
@@ -108,57 +123,6 @@ class DuplicateDocType(StrEnum):
 
 # ----- helpers -----
 
-_DOC_BLOCKS_PAGE_SIZE = 100
-
-# Image `src` neutralization for PDF export. WeasyPrint dereferences URLs while
-# converting, so before HTML reaches it we keep ONLY base64 data URIs whose
-# decoded bytes are a known *raster* image, and blank everything else (remote /
-# `file://` URLs from untrusted doc content, non-data srcs, and SVG).
-#
-# The declared MIME is NOT trusted: WeasyPrint content-sniffs and will parse SVG
-# out of a `data:image/png` URI, then fetch the external resources an SVG can
-# reference (verified — that's an SSRF). So we validate the actual leading
-# bytes against raster magic numbers; SVG/XML and anything non-raster never
-# survive regardless of the declared type. Rasters are inert pixel data and
-# can't fetch. Safe on our own output: image src/alt are HTML-escaped, so no
-# literal `"` appears inside an attribute value.
-_IMG_SRC = re.compile(r'src="([^"]*)"')
-_DATA_URI_B64 = re.compile(r"data:[\w.+/-]*;base64,(.*)", re.IGNORECASE | re.DOTALL)
-_RASTER_MAGIC = (
-    b"\x89PNG\r\n\x1a\n",  # png
-    b"\xff\xd8\xff",  # jpeg
-    b"GIF87a",
-    b"GIF89a",
-    b"BM",  # bmp
-    b"II*\x00",  # tiff, little-endian
-    b"MM\x00*",  # tiff, big-endian
-)
-
-
-def _is_raster_data_uri(src: str) -> bool:
-    """True only for a `data:...;base64,` URI whose decoded bytes start with a
-    known raster image signature (so SVG/XML and non-images are rejected even
-    when they declare an `image/png` MIME)."""
-    m = _DATA_URI_B64.match(src)
-    if m is None:
-        return False
-    prefix = m.group(1)[:64]
-    prefix = prefix[: len(prefix) // 4 * 4]  # whole base64 groups → clean decode
-    try:
-        head = base64.b64decode(prefix)
-    except ValueError:
-        return False
-    return head.startswith(_RASTER_MAGIC) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
-
-
-def _sanitize_pdf_image_srcs(html_text: str) -> str:
-    """Blank every `<img>` src that isn't a base64 raster image data URI."""
-    return _IMG_SRC.sub(
-        lambda m: m.group(0) if _is_raster_data_uri(m.group(1)) else 'src=""',
-        html_text,
-    )
-
-
 # The `--doc` XOR `--object-id` pair shared by every doc-targeting subcommand
 # (same shared-option pattern as the Poll*Opt trio in `mondo.cli._exec`).
 DocIdOpt = Annotated[
@@ -176,93 +140,6 @@ DocObjectIdOpt = Annotated[
         click_type=MondayIdParam(),
     ),
 ]
-
-
-def _load_markdown(inline: str | None, path: Path | None, from_stdin: bool) -> str:
-    sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
-    if sources == 0:
-        usage_error_or_exit("provide --markdown, --from-file @path, or --from-stdin")
-    if sources > 1:
-        usage_error_or_exit("--markdown, --from-file, and --from-stdin are mutually exclusive")
-    if path is not None:
-        return path.read_text()
-    if from_stdin:
-        return sys.stdin.read()
-    assert inline is not None
-    return inline
-
-
-def _load_html(inline: str | None, path: Path | None, from_stdin: bool) -> str:
-    sources = sum(x is not None and x is not False for x in (inline, path, from_stdin))
-    if sources == 0:
-        usage_error_or_exit("provide --html, --from-file @path, or --from-stdin")
-    if sources > 1:
-        usage_error_or_exit("--html, --from-file, and --from-stdin are mutually exclusive")
-    if path is not None:
-        return path.read_text()
-    if from_stdin:
-        return sys.stdin.read()
-    assert inline is not None
-    return inline
-
-
-def _fetch_doc_with_all_blocks(
-    client: MondayClient,
-    *,
-    query: str,
-    identity: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Fetch all block pages for a single doc and return one merged payload."""
-    page = 1
-    merged: dict[str, Any] | None = None
-    all_blocks: list[dict[str, Any]] = []
-
-    while True:
-        data = exec_or_exit(
-            client,
-            query,
-            {
-                **identity,
-                "limit": _DOC_BLOCKS_PAGE_SIZE,
-                "page": page,
-            },
-        )
-        docs = data.get("docs") or []
-        if not docs:
-            return None
-        doc = docs[0]
-        page_blocks = doc.get("blocks") or []
-
-        if merged is None:
-            merged = {k: v for k, v in doc.items() if k != "blocks"}
-        if isinstance(page_blocks, list):
-            all_blocks.extend(page_blocks)
-
-        if len(page_blocks) < _DOC_BLOCKS_PAGE_SIZE:
-            break
-        page += 1
-
-    assert merged is not None
-    merged["blocks"] = all_blocks
-    return merged
-
-
-def _fetch_doc_by_id_all_blocks(client: MondayClient, doc_id: int) -> dict[str, Any] | None:
-    return _fetch_doc_with_all_blocks(
-        client,
-        query=DOC_GET_BY_ID_BLOCKS_PAGE,
-        identity={"ids": [doc_id]},
-    )
-
-
-def _fetch_doc_by_object_id_all_blocks(
-    client: MondayClient, object_id: int
-) -> dict[str, Any] | None:
-    return _fetch_doc_with_all_blocks(
-        client,
-        query=DOCS_BY_OBJECT_ID_BLOCKS_PAGE,
-        identity={"objs": [object_id]},
-    )
 
 
 # ----- read commands -----
@@ -781,265 +658,21 @@ def get_cmd(
         handle_mondo_error_or_exit(e)
 
     if fmt is DocFormat.html:
-        from mondo.docs import blocks_to_html
-
-        blocks = doc.get("blocks") or []
-        images: dict[str, tuple[str, str]] = {}
-        if not no_images:
-            from mondo.cli._doc_images import embed_doc_images
-
-            images = embed_doc_images(opts, blocks)
-        html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
-        if out is not None:
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(html_text, encoding="utf-8")
-            opts.emit({"out": str(out), "images": len(images)})
-            return
-        typer.echo(html_text)
+        _render_html(opts, doc, out=out, no_images=no_images)
         return
 
     if fmt is DocFormat.pdf:
         # PDF = the same self-contained HTML handed to WeasyPrint (issue #68).
         # `--out` is guaranteed present by the up-front guard.
         assert out is not None
-        from mondo.cli._doc_images import embed_doc_images
-        from mondo.cli._pdf import find_weasyprint, install_hint, render_pdf
-        from mondo.docs import blocks_to_html
-
-        # Preflight before the (network) image embed so a first-time user without
-        # WeasyPrint gets the install hint without paying for asset downloads.
-        if find_weasyprint() is None:
-            handle_mondo_error_or_exit(MondoError(install_hint()))
-
-        blocks = doc.get("blocks") or []
-        images = {} if no_images else embed_doc_images(opts, blocks)
-        html_text = blocks_to_html(blocks, images=images, title=doc.get("name"))
-        html_text = _sanitize_pdf_image_srcs(html_text)
-        try:
-            render_pdf(html_text, out)
-        except MondoError as e:
-            handle_mondo_error_or_exit(e)
-        opts.emit({"out": str(out), "engine": "weasyprint", "images": len(images)})
+        _render_pdf(opts, doc, out=out, no_images=no_images)
         return
 
     if fmt in (DocFormat.markdown, DocFormat.mdx):
-        from mondo.docs import blocks_to_markdown, blocks_to_mdx
-
-        render = blocks_to_markdown if fmt is DocFormat.markdown else blocks_to_mdx
-        blocks = doc.get("blocks") or []
-        if out is not None:
-            images = {}
-            if not no_images:
-                from mondo.cli._doc_images import download_doc_images
-
-                images = download_doc_images(opts, blocks, out.parent)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(render(blocks, images=images), encoding="utf-8")
-            opts.emit(
-                {
-                    "out": str(out),
-                    "images": [ref for _, ref in images.values()],
-                }
-            )
-            return
-        typer.echo(render(blocks))
+        _render_markdown(opts, doc, mdx=fmt is DocFormat.mdx, out=out, no_images=no_images)
         return
     doc = normalize_doc_entry(doc)
     opts.emit(doc)
-
-
-def _emit_doc_not_found(
-    client: MondayClient,
-    *,
-    doc_id: int | None,
-    object_id: int | None,
-) -> None:
-    """Emit a helpful not-found message; probe BOARD_GET on --object-id
-    misses to distinguish a real-board id from a genuine miss.
-
-    Why: URLs of the form `/boards/<id>` commonly carry a real-board id;
-    users who paste one into `doc get --object-id` deserve a specific
-    "try board get" hint rather than a generic "not found". The probe is
-    skipped for --id (internal doc ids don't overlap with board ids in
-    practice).
-    """
-    from mondo.api.queries import BOARD_GET
-
-    if object_id is not None:
-        probe = exec_or_exit(client, BOARD_GET, {"id": object_id})
-        boards = probe.get("boards") or []
-        if boards and (boards[0].get("type") or "board") != "document":
-            typer.secho(
-                f"warning: id {object_id} is a regular board, not a workdoc. "
-                f"Consider: mondo board get {object_id}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-            return
-    if doc_id is not None:
-        _emit_doc_id_not_found(client, doc_id, probe=True)
-        return
-    typer.secho(f"doc object_id={object_id} not found.", fg=typer.colors.RED, err=True)
-
-
-# Exit codes worth the object-id probe: generic server failure, validation,
-# not-found, service error (a monday HTTP 5xx — the canonical symptom of an
-# object id sent as --doc — maps to exit 7; the probe degrades safely if it
-# also fails). Auth / rate-limit failures would just re-fail the probe.
-_OBJECT_ID_HINT_EXIT_CODES = frozenset({1, 5, 6, 7})
-
-
-def _emit_doc_id_not_found(client: MondayClient, doc_id: int, *, probe: bool) -> None:
-    """Standard `doc id=X not found.` line, plus the object-id retry hint
-    when the id was user-supplied via `--doc` (`probe=True`)."""
-    line = f"doc id={doc_id} not found."
-    if probe:
-        hint = object_id_hint_with_client(client, doc_id)
-        if hint is not None:
-            line = f"{line}\n{hint}"
-    typer.secho(line, fg=typer.colors.RED, err=True)
-
-
-def _fail_with_object_id_hint(opts: GlobalOpts, err_line: str, doc_id: int | None) -> NoReturn:
-    """Emit a mutation-envelope failure and exit 5, appending the object-id
-    retry hint when the failing id came from `--doc`.
-
-    The observed failure mode for an object id sent as --doc is an opaque
-    mutation-level 500 ("Fetcher response returned NON-OK status=500") —
-    probe before giving up.
-    """
-    hint = object_id_hint(opts, doc_id) if doc_id is not None else None
-    handle_mondo_error_or_exit(ValidationError(err_line), human_suffix=hint)
-
-
-def _resolve_object_id_live(client: MondayClient, object_id: int) -> int | None:
-    """Map a URL-visible `object_id` to the internal doc id via a head query."""
-    data = exec_or_exit(client, DOC_HEAD_BY_OBJECT_ID, {"objs": [object_id]})
-    docs = data.get("docs") or []
-    if not docs:
-        return None
-    try:
-        return int(docs[0]["id"])
-    except KeyError, TypeError, ValueError:
-        return None
-
-
-def _require_one_doc_flag(doc_id: int | None, object_id: int | None) -> None:
-    """Usage gate for commands taking `--doc` XOR `--object-id`."""
-    if (doc_id is None) == (object_id is None):
-        usage_error_or_exit("pass exactly one of --doc or --object-id.")
-
-
-def _resolve_doc_in_client(
-    opts: GlobalOpts,
-    client: MondayClient,
-    *,
-    doc_id: int | None,
-    object_id: int | None,
-) -> int:
-    """Return the internal doc id, resolving `--object-id` on the given
-    (already-open) client — docs directory cache first (when enabled),
-    then the cheap live head query on a miss. A miss in both exits 6.
-    A stale cache hit fails downstream identically to a live hit gone
-    stale, so cache-first is safe.
-    """
-    if doc_id is not None:
-        return doc_id
-    assert object_id is not None
-    resolved: int | None = None
-    if opts.resolve_cache_config().enabled:
-        resolved = resolve_doc_id_from_object_id(opts, client, object_id)
-    if resolved is None:
-        resolved = _resolve_object_id_live(client, object_id)
-    if resolved is None:
-        handle_mondo_error_or_exit(NotFoundError(f"doc object_id={object_id} not found."))
-    return resolved
-
-
-def _execute_doc_command(
-    opts: GlobalOpts,
-    query: str,
-    variables: dict[str, Any],
-    *,
-    doc_id: int | None,
-    object_id: int | None,
-) -> tuple[dict[str, Any], int]:
-    """Resolve `--doc` XOR `--object-id` and `execute()` on one shared client,
-    plus the object-id-vs-internal-id guardrail: when a `--doc`-addressed call
-    fails server-side and the id resolves as an object_id, append the targeted
-    retry hint to the error output (probed on the still-open client).
-
-    `variables` is the query payload minus `doc`; the resolved id is injected.
-    Returns `(data, resolved_doc_id)`. Resolution runs even under `--dry-run`
-    (read-side, same as codec preflights).
-    """
-    _require_one_doc_flag(doc_id, object_id)
-    if doc_id is not None and opts.dry_run:
-        dry_run_and_exit(opts, query, {"doc": doc_id, **variables})
-    client = client_or_exit(opts)
-    try:
-        with client:
-            resolved = _resolve_doc_in_client(opts, client, doc_id=doc_id, object_id=object_id)
-            full_variables = {"doc": resolved, **variables}
-            if opts.dry_run:
-                dry_run_and_exit(opts, query, full_variables)
-            try:
-                result = client.execute(query, variables=full_variables)
-            except MondoError as e:
-                suffix = None
-                if doc_id is not None and int(e.exit_code) in _OBJECT_ID_HINT_EXIT_CODES:
-                    suffix = object_id_hint_with_client(client, doc_id)
-                handle_mondo_error_or_exit(e, human_suffix=suffix)
-            return (result.get("data") or {}), resolved
-    except MondoError as e:
-        handle_mondo_error_or_exit(e)
-
-
-def _emit_server_markdown(
-    opts: GlobalOpts,
-    *,
-    doc_id: int | None,
-    object_id: int | None,
-    block_id: list[str] | None,
-    raw: bool,
-    out: Path | None,
-    no_images: bool,
-) -> None:
-    """Render a doc to markdown via monday's server-side `export_markdown_from_doc`
-    (`doc get --format markdown --engine server`). Always live; supports `--block`
-    subset export and `--raw` envelope passthrough.
-    """
-    data, _ = _execute_doc_command(
-        opts,
-        EXPORT_MARKDOWN_FROM_DOC,
-        {"blocks": block_id or None},
-        doc_id=doc_id,
-        object_id=object_id,
-    )
-    result = data.get("export_markdown_from_doc") or {}
-    if raw:
-        opts.emit(result)
-        return
-    if not result.get("success"):
-        _fail_with_object_id_hint(
-            opts, result.get("error") or "export_markdown_from_doc failed", doc_id
-        )
-    from mondo.docs import coalesce_markdown_emphasis
-
-    # Monday's exporter fragments contiguous bold runs into adjacent `**…**`
-    # spans; rejoin them so the markdown reads as one span (#62).
-    markdown = coalesce_markdown_emphasis(result.get("markdown") or "")
-    if out is not None:
-        from mondo.cli._doc_images import localize_markdown_images
-
-        images: list[str] = []
-        if not no_images:
-            markdown, images = localize_markdown_images(opts, markdown, out.parent)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(markdown)
-        opts.emit({"out": str(out), "images": images})
-        return
-    typer.echo(markdown)
 
 
 # ----- write commands -----
