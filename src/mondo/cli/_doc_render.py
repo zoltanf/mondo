@@ -69,7 +69,9 @@ def _sanitize_pdf_image_srcs(html_text: str) -> str:
     )
 
 
-def _render_html(opts: GlobalOpts, doc: dict[str, Any], *, out: Path | None, no_images: bool) -> None:
+def _render_html(
+    opts: GlobalOpts, doc: dict[str, Any], *, out: Path | None, no_images: bool
+) -> None:
     """Render the doc's blocks to self-contained HTML (images base64-embedded)
     and either write to `--out` or echo to stdout."""
     from mondo.docs import blocks_to_html

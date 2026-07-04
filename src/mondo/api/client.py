@@ -142,7 +142,9 @@ class MondayClient:
 
         response = self._post_with_retries(
             lambda: self._client.post(self._endpoint, json=body, headers=self._headers()),
-            classify=lambda r: _classify_response(r, suppress_graphql_errors=surface_partial_errors),
+            classify=lambda r: _classify_response(
+                r, suppress_graphql_errors=surface_partial_errors
+            ),
         )
         parsed: dict[str, Any] = response.json()
         logger.debug("GraphQL response: {}", parsed)

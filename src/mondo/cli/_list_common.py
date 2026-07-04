@@ -15,9 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def filter_by_state(
-    entries: list[dict[str, Any]], requested_state: str
-) -> list[dict[str, Any]]:
+def filter_by_state(entries: list[dict[str, Any]], requested_state: str) -> list[dict[str, Any]]:
     """Keep entries matching ``requested_state`` (already resolved by caller).
 
     ``requested_state == "all"`` is a no-op (returns every entry). Otherwise an
@@ -29,9 +27,7 @@ def filter_by_state(
     return [e for e in entries if (e.get("state") or "active") == requested_state]
 
 
-def filter_by_kind(
-    entries: list[dict[str, Any]], kind_value: str | None
-) -> list[dict[str, Any]]:
+def filter_by_kind(entries: list[dict[str, Any]], kind_value: str | None) -> list[dict[str, Any]]:
     """Keep entries whose ``kind`` equals ``kind_value``.
 
     ``kind_value is None`` is a no-op (no kind filter requested). A missing

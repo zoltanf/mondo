@@ -115,9 +115,7 @@ class GlobalOpts:
 
         return api_endpoint_from_config(self._load(), profile_name=self.profile_name)
 
-    def columns_cache_store(
-        self, board_id: int, *, no_cache: bool = False
-    ) -> CacheStore | None:
+    def columns_cache_store(self, board_id: int, *, no_cache: bool = False) -> CacheStore | None:
         """Per-board columns store for reads, or ``None`` when the cache is off.
 
         Returns ``None`` when caching is disabled (config) or suppressed for

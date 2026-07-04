@@ -133,7 +133,12 @@ def list_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            columns = fetch_board_columns(client, board_id, store=opts.columns_cache_store(board_id, no_cache=no_cache), refresh=refresh_cache)
+            columns = fetch_board_columns(
+                client,
+                board_id,
+                store=opts.columns_cache_store(board_id, no_cache=no_cache),
+                refresh=refresh_cache,
+            )
     except NotFoundError:
         handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
@@ -185,7 +190,12 @@ def get_meta_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            columns = fetch_board_columns(client, board_id, store=opts.columns_cache_store(board_id, no_cache=no_cache), refresh=refresh_cache)
+            columns = fetch_board_columns(
+                client,
+                board_id,
+                store=opts.columns_cache_store(board_id, no_cache=no_cache),
+                refresh=refresh_cache,
+            )
     except NotFoundError:
         handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
@@ -218,7 +228,9 @@ def labels_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            columns = fetch_board_columns(client, board_id, store=opts.columns_cache_store(board_id))
+            columns = fetch_board_columns(
+                client, board_id, store=opts.columns_cache_store(board_id)
+            )
     except NotFoundError:
         handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:

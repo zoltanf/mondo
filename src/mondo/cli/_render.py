@@ -67,9 +67,7 @@ def render_output(
     return stream is None and fmt != "none"
 
 
-def warn_unselected_projection_fields(
-    expression: str, selected_fields: frozenset[str]
-) -> None:
+def warn_unselected_projection_fields(expression: str, selected_fields: frozenset[str]) -> None:
     import typer
 
     from mondo.output.query import extract_query_leaf_fields

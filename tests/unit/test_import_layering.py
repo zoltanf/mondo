@@ -52,7 +52,7 @@ def _cli_imports(package: str) -> list[str]:
                     name = "." * node.level + mod
                     try:
                         mod = importlib.util.resolve_name(name, _package_of(path))
-                    except (ImportError, ValueError):
+                    except ImportError, ValueError:
                         continue
                 if _targets_cli(mod):
                     violations.append(f"{rel}:{node.lineno}")

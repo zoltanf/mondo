@@ -45,9 +45,7 @@ def build_client_from_config(
     from mondo.api.client import MondayClient
 
     profile = cfg.get_profile(profile_name)
-    resolved = resolve_token_from_config(
-        cfg, profile_name=profile_name, flag_token=flag_token
-    )
+    resolved = resolve_token_from_config(cfg, profile_name=profile_name, flag_token=flag_token)
     api_version = flag_api_version or profile.api_version or cfg.api_version
     return MondayClient(token=resolved.token, api_version=api_version)
 

@@ -20,29 +20,19 @@ from mondo.cli._render import render_output
 class TestRenderOutput:
     def test_json_output_to_stream(self) -> None:
         buf = io.StringIO()
-        wrote = render_output(
-            {"name": "X"}, output="json", query=None, fields=None, stream=buf
-        )
+        wrote = render_output({"name": "X"}, output="json", query=None, fields=None, stream=buf)
         assert json.loads(buf.getvalue()) == {"name": "X"}
         # A provided stream is never "real stdout".
         assert wrote is False
 
-    def test_returns_true_only_for_real_stdout(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_returns_true_only_for_real_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
         # stream=None → writes to sys.stdout, fmt != none → wrote True.
-        wrote = render_output(
-            {"name": "X"}, output="json", query=None, fields=None, stream=None
-        )
+        wrote = render_output({"name": "X"}, output="json", query=None, fields=None, stream=None)
         assert wrote is True
         assert json.loads(capsys.readouterr().out) == {"name": "X"}
 
-    def test_none_format_does_not_count_as_wrote(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        wrote = render_output(
-            {"name": "X"}, output="none", query=None, fields=None, stream=None
-        )
+    def test_none_format_does_not_count_as_wrote(self, capsys: pytest.CaptureFixture[str]) -> None:
+        wrote = render_output({"name": "X"}, output="none", query=None, fields=None, stream=None)
         assert wrote is False
         assert capsys.readouterr().out == ""
 
@@ -71,9 +61,7 @@ class TestRenderOutput:
             )
         assert exc_info.value.exit_code == 2
 
-    def test_projection_warning_emitted(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_projection_warning_emitted(self, capsys: pytest.CaptureFixture[str]) -> None:
         buf = io.StringIO()
         render_output(
             {"name": "X"},
@@ -102,9 +90,7 @@ class TestRenderOutput:
         )
         assert capsys.readouterr().err == ""
 
-    def test_no_warning_without_selected_fields(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_no_warning_without_selected_fields(self, capsys: pytest.CaptureFixture[str]) -> None:
         buf = io.StringIO()
         render_output(
             {"name": "X"},

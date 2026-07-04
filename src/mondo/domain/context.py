@@ -28,9 +28,7 @@ class ColumnsCacheOpts(ProjectionOpts, Protocol):
     """Projection flags plus the per-board columns cache-store factory the
     item service needs for codec preflight."""
 
-    def columns_cache_store(
-        self, board_id: int, *, no_cache: bool = ...
-    ) -> CacheStore | None: ...
+    def columns_cache_store(self, board_id: int, *, no_cache: bool = ...) -> CacheStore | None: ...
 
 
 class CacheStoreOpts(Protocol):

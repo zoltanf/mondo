@@ -447,9 +447,7 @@ class TestUploadFileRetries:
     """
 
     def _client(self, **kw: object) -> MondayClient:
-        return MondayClient(
-            token="t", api_version="2026-01", retry_sleep=lambda _s: None, **kw
-        )
+        return MondayClient(token="t", api_version="2026-01", retry_sleep=lambda _s: None, **kw)
 
     def test_upload_success(self, httpx_mock: HTTPXMock, tmp_path) -> None:
         f = tmp_path / "a.txt"
@@ -460,9 +458,7 @@ class TestUploadFileRetries:
         result = self._client(max_retries=3).upload_file(_UPLOAD_QUERY, {"file": None}, str(f))
         assert result["data"]["add_file_to_column"]["id"] == "9"
 
-    def test_upload_retries_on_timeout_then_succeeds(
-        self, httpx_mock: HTTPXMock, tmp_path
-    ) -> None:
+    def test_upload_retries_on_timeout_then_succeeds(self, httpx_mock: HTTPXMock, tmp_path) -> None:
         f = tmp_path / "a.txt"
         f.write_bytes(b"payload-bytes")
         httpx_mock.add_exception(httpx.ReadTimeout("slow"))
@@ -509,7 +505,9 @@ class TestUploadFileRetries:
         httpx_mock.add_response(
             url=FILE_ENDPOINT,
             method="POST",
-            json={"errors": [{"message": "nope", "extensions": {"code": "UserUnauthorizedException"}}]},
+            json={
+                "errors": [{"message": "nope", "extensions": {"code": "UserUnauthorizedException"}}]
+            },
         )
         with pytest.raises(AuthError):
             self._client(max_retries=5).upload_file(_UPLOAD_QUERY, {"file": None}, str(f))
