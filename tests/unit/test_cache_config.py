@@ -179,10 +179,16 @@ def test_ttl_default(entity: EntityType, default: int) -> None:
 
 
 @pytest.mark.parametrize(("entity", "default"), CACHE_TTL_CASES)
-def test_ttl_for_matches_attribute(entity: EntityType, default: int) -> None:
-    """`ttl_for(entity)` mirrors the resolved `ttls` mapping entry."""
+def test_ttls_mapping_holds_each_default(entity: EntityType, default: int) -> None:
+    """The underlying `ttls` mapping carries every entity's default TTL.
+
+    Checks the mapping against the independent `default` constant (not against
+    `ttl_for`, which reads the same mapping — that would be tautological) so a
+    bug in how `resolve_cache_config` populates `ttls` is caught here while
+    `test_ttl_default` independently guards the `ttl_for` accessor.
+    """
     resolved = resolve_cache_config(Config(), profile_name=None, env={})
-    assert resolved.ttl_for(entity) == resolved.ttls[entity]
+    assert resolved.ttls[entity] == default
 
 
 def test_ttl_for_rejects_unknown_entity() -> None:

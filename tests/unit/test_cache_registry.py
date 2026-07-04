@@ -74,13 +74,17 @@ def test_names_by_scope_agrees_with_registry() -> None:
 
 
 def test_refresh_dispatch_keys_are_single_file_entities() -> None:
+    keys = set(cli_cache._REFRESH_DISPATCH)
     single_file = set(names_by_scope("single_file"))
-    assert set(cli_cache._REFRESH_DISPATCH) <= single_file
+    assert keys, "dispatch table unexpectedly empty"  # a subset check alone passes vacuously
+    assert keys <= single_file
 
 
 def test_scoped_refresh_dispatch_keys_are_board_entities() -> None:
+    keys = set(cli_cache._SCOPED_REFRESH_DISPATCH)
     board = set(names_by_scope("board"))
-    assert set(cli_cache._SCOPED_REFRESH_DISPATCH) <= board
+    assert keys, "scoped dispatch table unexpectedly empty"
+    assert keys <= board
 
 
 def test_entity_by_name_covers_all() -> None:

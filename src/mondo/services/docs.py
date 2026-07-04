@@ -201,10 +201,10 @@ def object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
     try:
         result = client.execute(DOC_HEAD_BY_OBJECT_ID, {"objs": [doc_id]})
         docs = (result.get("data") or {}).get("docs") or []
-    except (MondoError, TypeError, ValueError):
-        # execute() raises MondoError (incl. NetworkError); a malformed payload
-        # would surface as Type/ValueError. The probe must never mask the
-        # caller's original error, so treat any of these as "no hint".
+    except Exception:
+        # Intentionally broad: this is a best-effort hint probe run *before*
+        # the caller's original error is rendered. Its contract is to never
+        # raise — masking the real failure would be worse than losing the hint.
         return None
     if not docs:
         return None
@@ -220,7 +220,8 @@ def object_id_hint(opts: ClientFactoryOpts, doc_id: int) -> str | None:
         client = opts.build_client()
         with client:
             return object_id_hint_with_client(client, doc_id)
-    except MondoError:
-        # build_client() can fail (e.g. auth); the hint is best-effort, so a
-        # failure to even build a client just means "no hint".
+    except Exception:
+        # Intentionally broad (see object_id_hint_with_client): build_client()
+        # or client setup failing must not mask the caller's original error —
+        # the hint is best-effort, so any failure just means "no hint".
         return None
