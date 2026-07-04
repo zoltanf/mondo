@@ -1,9 +1,13 @@
-"""CLI-layer helper for reading a board's column list with cache honoring.
+"""Helper for reading a board's column list with cache honoring.
 
-Sits between CLI commands and `cache.directory.get_columns`. Translates the
-`--no-cache` / `--refresh-cache` flags and the resolved cache config into a
-single call that returns the live or cached column list. Raises `NotFoundError`
-when the board isn't visible — callers render the error in their usual style.
+Sits between callers and `cache.directory.get_columns`. Given an optional
+per-board columns `CacheStore` (``None`` means "skip the cache"), returns the
+live or cached column list. Raises `NotFoundError` when the board isn't
+visible — callers render the error in their usual style.
+
+Callers decide whether caching applies (resolving `--no-cache` /
+`cache.enabled` / `--dry-run` off their own options) and pass the built store
+or ``None``; this keeps the module free of any CLI-options dependency.
 """
 
 from __future__ import annotations
@@ -13,43 +17,40 @@ from typing import TYPE_CHECKING, Any
 
 from mondo.api.errors import NotFoundError
 from mondo.api.queries import COLUMNS_ON_BOARD
-from mondo.cli.context import GlobalOpts
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
+    from mondo.cache import CacheStore
 
 
-def invalidate_columns_cache(opts: GlobalOpts, board_id: int) -> None:
+def invalidate_columns_cache(store: CacheStore | None) -> None:
     """Drop the per-board columns cache file after a successful mutation.
 
     Best-effort — cache is a perf optimization, never fail a mutation because
-    of it. Skipped on `--dry-run` since no state changed.
+    of it. Pass ``None`` (e.g. on `--dry-run`) to make this a no-op.
     """
-    if opts.dry_run:
+    if store is None:
         return
     with contextlib.suppress(Exception):
-        opts.build_cache_store("columns", scope=str(board_id)).invalidate()
+        store.invalidate()
 
 
 def fetch_board_columns(
-    opts: GlobalOpts,
     client: MondayClient,
     board_id: int,
     *,
-    no_cache: bool = False,
+    store: CacheStore | None = None,
     refresh: bool = False,
 ) -> list[dict[str, Any]]:
     """Return the full column list for `board_id`.
 
-    When cache is enabled and `no_cache` is False, reads (and writes) the
-    per-board column cache. Otherwise runs a live `COLUMNS_ON_BOARD` query and
-    skips the cache entirely.
+    When `store` is given, reads (and writes) the per-board column cache.
+    When `store` is ``None`` (cache disabled or `--no-cache`), runs a live
+    `COLUMNS_ON_BOARD` query and skips the cache entirely.
     """
-    cache_cfg = opts.resolve_cache_config()
-    if cache_cfg.enabled and not no_cache:
+    if store is not None:
         from mondo.cache.directory import get_columns as _cache_get_columns
 
-        store = opts.build_cache_store("columns", scope=str(board_id))
         cached = _cache_get_columns(client, store=store, board_id=board_id, refresh=refresh)
         return list(cached.entries)
 

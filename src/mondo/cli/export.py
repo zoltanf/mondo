@@ -34,13 +34,13 @@ from mondo.api.queries import (
     ITEMS_PAGE_INITIAL_WITH_SUBITEMS,
     ITEMS_PAGE_NEXT_WITH_SUBITEMS,
 )
-from mondo.cli._column_cache import fetch_board_columns
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli._pdf import render_pdf
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
 from mondo.docs import _HTML_STYLE
+from mondo.domain.column_cache import fetch_board_columns
+from mondo.domain.resolve import resolve_required_id
 from mondo.services.items import build_query_params, split_filter_expr
 
 if TYPE_CHECKING:
@@ -81,7 +81,7 @@ def _fetch_columns(opts: GlobalOpts, client: MondayClient, board_id: int) -> lis
     `--filter` labels; the renderers only read `id`/`title`.
     """
     try:
-        cols = fetch_board_columns(opts, client, board_id)
+        cols = fetch_board_columns(client, board_id, store=opts.columns_cache_store(board_id))
     except NotFoundError:
         raise typer.Exit(code=6) from None
     return [c for c in cols if not c.get("archived")]

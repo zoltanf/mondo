@@ -57,9 +57,9 @@ from mondo.cli._exec import (
     usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 from mondo.services.docs import (
     last_block_id,
     object_id_hint,
@@ -379,7 +379,7 @@ def list_cmd(
     """
     from mondo.api.errors import UsageError
     from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-    from mondo.cli._filters import compile_name_filter
+    from mondo.domain.filters import compile_name_filter
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -448,10 +448,10 @@ def list_cmd(
     fetch_cap = None if client_side_filter_active else max_items
 
     from mondo.api.pagination import fetch_pages_concurrent
-    from mondo.cli._filters import apply_fuzzy
-    from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
-    from mondo.cli._normalize import normalize_doc_entry
+    from mondo.domain.filters import apply_fuzzy
+    from mondo.domain.filters import name_matches as _name_matches
+    from mondo.domain.normalize import normalize_doc_entry
 
     client = client_or_exit(opts)
     try:
@@ -517,10 +517,10 @@ def _list_via_cache(
 ) -> None:
     from mondo.cache.directory import get_docs as cache_get_docs
     from mondo.cli._cache_flags import emit_cache_provenance
-    from mondo.cli._filters import apply_fuzzy
-    from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import enrich_workspaces_best_effort, strip_url_fields
-    from mondo.cli._normalize import normalize_doc_entry
+    from mondo.domain.filters import apply_fuzzy
+    from mondo.domain.filters import name_matches as _name_matches
+    from mondo.domain.normalize import normalize_doc_entry
 
     if opts.dry_run:
         opts.emit(
@@ -685,7 +685,7 @@ def get_cmd(
     supports `--block` subset export and `--raw` envelope passthrough).
     """
     from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
-    from mondo.cli._normalize import normalize_doc_entry
+    from mondo.domain.normalize import normalize_doc_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -1064,7 +1064,7 @@ def create_cmd(
     ),
 ) -> None:
     """Create a new doc inside a workspace (optionally inside a folder)."""
-    from mondo.cli._normalize import normalize_doc_entry
+    from mondo.domain.normalize import normalize_doc_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     del with_url  # docs always carry `url` from monday; flag kept for symmetry

@@ -16,14 +16,14 @@ from typing import TYPE_CHECKING, Any
 
 from mondo.api.errors import NotFoundError, UsageError
 from mondo.api.pagination import iter_items_page
-from mondo.cli._column_cache import fetch_board_columns
-from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
-from mondo.cli._resolve import resolve_by_filters
+from mondo.domain.column_cache import fetch_board_columns
+from mondo.domain.columns_resolve import parse_settings, resolve_tag_names_to_ids
+from mondo.domain.resolve import resolve_by_filters
 from mondo.util.kvparse import parse_column_kv
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
-    from mondo.cli.context import GlobalOpts
+    from mondo.domain.context import ColumnsCacheOpts
 
 
 class PositionRelative(StrEnum):
@@ -86,7 +86,7 @@ def parse_columns_csv(spec: str) -> list[str]:
     return col_ids
 
 
-def can_slim_column_values(opts: GlobalOpts) -> bool:
+def can_slim_column_values(opts: ColumnsCacheOpts) -> bool:
     """True when `--fields` provably never reads `column_values`, so the
     GraphQL query can drop it (~3x cheaper per page on big boards).
 
@@ -168,7 +168,7 @@ def parse_column_mapping(tokens: list[str]) -> list[dict[str, Any]]:
 
 
 def fetch_column_defs(
-    opts: GlobalOpts,
+    opts: ColumnsCacheOpts,
     client: MondayClient,
     board_id: int,
     *,
@@ -183,14 +183,15 @@ def fetch_column_defs(
     mirroring the previous behavior when the API returned no boards.
     """
     try:
-        columns = fetch_board_columns(opts, client, board_id, no_cache=no_cache, refresh=refresh)
+        store = opts.columns_cache_store(board_id, no_cache=no_cache)
+        columns = fetch_board_columns(client, board_id, store=store, refresh=refresh)
     except NotFoundError:
         return {}
     return {c["id"]: c for c in columns}
 
 
 def build_column_values(
-    opts: GlobalOpts,
+    opts: ColumnsCacheOpts,
     client: MondayClient,
     board_id: int,
     pairs: list[str],
@@ -244,7 +245,7 @@ def build_column_values(
 
 
 def build_create_variables_for_row(
-    opts: GlobalOpts,
+    opts: ColumnsCacheOpts,
     client: MondayClient | None,
     board_id: int,
     row: dict[str, Any],

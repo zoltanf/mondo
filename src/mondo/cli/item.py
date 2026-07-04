@@ -35,7 +35,6 @@ from mondo.api.queries import (
 )
 from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
-from mondo.cli._column_cache import invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -50,9 +49,10 @@ from mondo.cli._exec import (
     poll_or_exit,
     usage_error_or_exit,
 )
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.domain.column_cache import invalidate_columns_cache
+from mondo.domain.resolve import resolve_required_id
 from mondo.services.items import (
     PositionRelative,
     build_create_variables_for_row,
@@ -758,7 +758,7 @@ def create_cmd(
     if create_labels_if_missing:
         # May have minted a status/dropdown label in settings_str; drop the
         # cached column defs so the next read sees the new labels.
-        invalidate_columns_cache(opts, board_id)
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_board_items_cache(opts, board_id)
     payload = data.get("create_item") or {}
     if not with_url:
@@ -850,7 +850,7 @@ def _run_batch(
         handle_mondo_error_or_exit(e)
 
     if create_labels_default or any(row.get("create_labels") for row in rows):
-        invalidate_columns_cache(opts, board_id)
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_board_items_cache(opts, board_id)
 
     if not with_url:

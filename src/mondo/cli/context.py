@@ -165,6 +165,29 @@ class GlobalOpts:
         profile = cfg.get_profile(self.profile_name)
         return profile.api_url
 
+    def columns_cache_store(
+        self, board_id: int, *, no_cache: bool = False
+    ) -> CacheStore | None:
+        """Per-board columns store for reads, or ``None`` when the cache is off.
+
+        Returns ``None`` when caching is disabled (config) or suppressed for
+        this call (`--no-cache`), signalling callers/`fetch_board_columns` to
+        take the live path.
+        """
+        if no_cache or not self.resolve_cache_config().enabled:
+            return None
+        return self.build_cache_store("columns", scope=str(board_id))
+
+    def columns_cache_store_for_invalidation(self, board_id: int) -> CacheStore | None:
+        """Per-board columns store to invalidate after a mutation, or ``None``.
+
+        Returns ``None`` on `--dry-run` (no state changed) so callers pass it
+        straight to `invalidate_columns_cache` as a no-op.
+        """
+        if self.dry_run:
+            return None
+        return self.build_cache_store("columns", scope=str(board_id))
+
     def build_cache_store(self, entity_type: EntityType, *, scope: str | None = None) -> CacheStore:
         """Build a CacheStore for the given entity type, wired with the
         resolved TTL + endpoint + cache directory.

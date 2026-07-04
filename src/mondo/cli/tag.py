@@ -20,8 +20,8 @@ from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclus
 from mondo.cli._cache_invalidate import invalidate_entity
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, exec_or_exit, execute, handle_mondo_error_or_exit
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient

@@ -14,7 +14,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mondo.cli.context import GlobalOpts
+    from mondo.domain.context import ProjectionOpts
 
 
 class BoardTypeFilter(StrEnum):
@@ -64,7 +64,7 @@ def decode_json_string_payload(value: Any) -> Any:
         return value
 
 
-def projection_wants_items_count(opts: GlobalOpts) -> bool:
+def projection_wants_items_count(opts: ProjectionOpts) -> bool:
     """Skip the live `items_count` merge when the caller's projection won't
     surface it. Default behavior (no `-q`/`--fields`) returns True so the
     field stays in the emitted payload as it did pre-cache; with an explicit
@@ -88,9 +88,9 @@ def fetch_items_count(client: Any, board_id: int) -> int | None:
     a fresh count onto a `board_details` cache hit so the cache file stays
     invalidation-free of item writes. Returns None on any unexpected shape."""
     from mondo.api.queries import BOARD_ITEMS_COUNT
-    from mondo.cli._exec import exec_or_exit
 
-    data = exec_or_exit(client, BOARD_ITEMS_COUNT, {"ids": [board_id]})
+    result = client.execute(BOARD_ITEMS_COUNT, variables={"ids": [board_id]})
+    data = result.get("data") or {}
     boards = data.get("boards") or []
     if not boards:
         return None

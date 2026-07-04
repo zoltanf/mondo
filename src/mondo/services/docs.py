@@ -33,7 +33,7 @@ class PartialDocAddError(ValidationError):
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
-    from mondo.cli.context import GlobalOpts
+    from mondo.domain.context import CacheStoreOpts, ClientFactoryOpts
 
 
 def last_block_id(doc: dict[str, Any]) -> str | None:
@@ -168,7 +168,7 @@ def add_markdown_chunked(
 
 
 def resolve_doc_id_from_object_id(
-    opts: GlobalOpts, client: MondayClient, object_id: int
+    opts: CacheStoreOpts, client: MondayClient, object_id: int
 ) -> int | None:
     """Map a URL-visible `object_id` to its internal `doc_id` via the docs
     directory cache (auto-populated on miss). Returns None when the
@@ -211,7 +211,7 @@ def object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
     )
 
 
-def object_id_hint(opts: GlobalOpts, doc_id: int) -> str | None:
+def object_id_hint(opts: ClientFactoryOpts, doc_id: int) -> str | None:
     """`object_id_hint_with_client` with a fresh short-lived client."""
     try:
         client = opts.build_client()

@@ -1,4 +1,4 @@
-"""Unit tests for `mondo.cli._filters`."""
+"""Unit tests for `mondo.domain.filters`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 import pytest
 
 from mondo.api.errors import UsageError
-from mondo.cli._filters import apply_fuzzy, compile_name_filter, name_matches
+from mondo.domain.filters import apply_fuzzy, compile_name_filter, name_matches
 
 
 def test_apply_fuzzy_returns_score_desc_order() -> None:

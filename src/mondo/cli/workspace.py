@@ -32,8 +32,8 @@ from mondo.cli._exec import (
     handle_mondo_error_or_exit,
     usage_error_or_exit,
 )
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -154,7 +154,7 @@ def list_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     if name_fuzzy is not None:
-        from mondo.cli._filters import apply_fuzzy
+        from mondo.domain.filters import apply_fuzzy
 
         items = apply_fuzzy(
             items,
@@ -181,7 +181,7 @@ def _list_workspaces_via_cache(
 ) -> None:
     from mondo.cache.directory import get_workspaces as cache_get_workspaces
     from mondo.cli._cache_flags import emit_cache_provenance
-    from mondo.cli._filters import apply_fuzzy
+    from mondo.domain.filters import apply_fuzzy
 
     if opts.dry_run:
         opts.emit(

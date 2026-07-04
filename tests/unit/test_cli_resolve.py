@@ -1,4 +1,4 @@
-"""Unit tests for `mondo.cli._resolve.resolve_by_filters`."""
+"""Unit tests for `mondo.domain.resolve.resolve_by_filters`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 import typer
 
 from mondo.api.errors import NotFoundError, UsageError
-from mondo.cli._resolve import resolve_by_filters
+from mondo.domain.resolve import resolve_by_filters
 
 GROUPS = [
     {"id": "obj1", "title": "Objective 1: Launch"},

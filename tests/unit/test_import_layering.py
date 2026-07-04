@@ -8,19 +8,15 @@ so ``mondo.cache``, ``mondo.services`` and ``mondo.api`` must never import
 ``mondo.cli`` (that inverts the arrow and prevents reuse/testing of the lower
 layers outside the CLI).
 
-This test currently xfails: ``cache`` and ``services`` still reach up into
-``mondo.cli`` (review finding #1). Stage 1 of docs/refactor-plan.md removes
-those imports; when it lands this test passes and the ``xfail`` marker below
-must be deleted (``strict=True`` turns the unexpected pass into a failure to
-force that).
+Stage 1 of docs/refactor-plan.md moved the CLI-clean helpers into
+``mondo.domain`` so ``cache`` and ``services`` no longer reach up into
+``mondo.cli``. This test guards that direction stays intact.
 """
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
-
-import pytest
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "mondo"
 _LOWER_LAYERS = ("cache", "services", "api")
@@ -50,11 +46,6 @@ def _cli_imports(package: str) -> list[str]:
     return sorted(violations)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Stage 1 (docs/refactor-plan.md) removes cli imports from cache/services; "
-    "delete this marker when it lands.",
-)
 def test_lower_layers_do_not_import_cli() -> None:
     violations: list[str] = []
     for package in _LOWER_LAYERS:

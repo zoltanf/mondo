@@ -31,7 +31,6 @@ from mondo.api.queries import (
     SUBITEM_CREATE,
     SUBITEMS_LIST,
 )
-from mondo.cli._column_cache import invalidate_columns_cache
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -39,9 +38,10 @@ from mondo.cli._exec import (
     execute,
     handle_mondo_error_or_exit,
 )
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.domain.column_cache import invalidate_columns_cache
+from mondo.domain.resolve import resolve_required_id
 from mondo.services.items import build_column_values
 from mondo.util.kvparse import parse_column_kv
 
@@ -278,7 +278,7 @@ def create_cmd(
     data = execute(opts, SUBITEM_CREATE, variables)
     if create_labels_if_missing and subitems_board is not None:
         # May have minted a status/dropdown label on the subitems board.
-        invalidate_columns_cache(opts, subitems_board)
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(subitems_board))
     from mondo.cli._cache_invalidate import invalidate_entity
 
     invalidate_entity(opts, "subitems", scope=str(parent_id))

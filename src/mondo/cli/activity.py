@@ -17,8 +17,8 @@ from mondo.api.errors import MondoError, NotFoundError
 from mondo.api.queries import BOARD_ACTIVITY_LOGS
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, exec_or_exit, handle_mondo_error_or_exit
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 app = typer.Typer(
     no_args_is_help=True,

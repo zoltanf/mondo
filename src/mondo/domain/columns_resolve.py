@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from mondo.api.errors import MondoError
 from mondo.api.queries import CREATE_OR_GET_TAG
-from mondo.cli._exec import exec_or_exit
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -62,7 +61,8 @@ def resolve_tag_names_to_ids(
         if cache is not None and part in cache:
             resolved_ids.append(cache[part])
             continue
-        data = exec_or_exit(client, CREATE_OR_GET_TAG, {"name": part, "board": board_id})
+        result = client.execute(CREATE_OR_GET_TAG, variables={"name": part, "board": board_id})
+        data = result.get("data") or {}
         tag = data.get("create_or_get_tag") or {}
         tag_id = tag.get("id")
         if tag_id is None:

@@ -1,4 +1,4 @@
-"""Unit tests for `mondo.cli._normalize` — entry renaming that brings
+"""Unit tests for `mondo.domain.normalize` — entry renaming that brings
 board-list and doc-list entries onto a shared core shape.
 
 The rename happens at the data layer (before filtering / emitting) so that
@@ -7,7 +7,11 @@ the entry came from the live API or the cache."""
 
 from __future__ import annotations
 
-from mondo.cli._normalize import normalize_board_entry, normalize_doc_entry, normalize_folder_entry
+from mondo.domain.normalize import (
+    normalize_board_entry,
+    normalize_doc_entry,
+    normalize_folder_entry,
+)
 
 
 class TestNormalizeBoard:

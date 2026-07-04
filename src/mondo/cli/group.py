@@ -33,8 +33,8 @@ from mondo.cli._exec import (
     usage_error_or_exit,
 )
 from mondo.cli._group_cache import fetch_board_groups, invalidate_groups_cache
-from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_by_filters, resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
