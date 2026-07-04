@@ -27,8 +27,6 @@ from mondo.api.queries import (
 )
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
-from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
-from mondo.cli._columns import parse_settings, resolve_tag_names_to_ids
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -40,7 +38,6 @@ from mondo.cli._exec import (
     usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import resolve_by_filters, resolve_required_id
 from mondo.cli.column_doc import app as doc_app
 from mondo.cli.context import GlobalOpts
 from mondo.columns import (
@@ -51,6 +48,9 @@ from mondo.columns import (
 )
 from mondo.columns.dropdown import iter_dropdown_labels
 from mondo.columns.status import iter_status_labels
+from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.domain.columns_resolve import parse_settings, resolve_tag_names_to_ids
+from mondo.domain.resolve import resolve_by_filters, resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -134,7 +134,10 @@ def list_cmd(
     try:
         with client:
             columns = fetch_board_columns(
-                opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
+                client,
+                board_id,
+                store=opts.columns_cache_store(board_id, no_cache=no_cache),
+                refresh=refresh_cache,
             )
     except NotFoundError:
         handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
@@ -188,7 +191,10 @@ def get_meta_cmd(
     try:
         with client:
             columns = fetch_board_columns(
-                opts, client, board_id, no_cache=no_cache, refresh=refresh_cache
+                client,
+                board_id,
+                store=opts.columns_cache_store(board_id, no_cache=no_cache),
+                refresh=refresh_cache,
             )
     except NotFoundError:
         handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
@@ -222,7 +228,9 @@ def labels_cmd(
     client = client_or_exit(opts)
     try:
         with client:
-            columns = fetch_board_columns(opts, client, board_id)
+            columns = fetch_board_columns(
+                client, board_id, store=opts.columns_cache_store(board_id)
+            )
     except NotFoundError:
         handle_mondo_error_or_exit(NotFoundError(f"board {board_id} not found."))
     except MondoError as e:
@@ -397,7 +405,7 @@ def set_cmd(
     if create_labels_if_missing:
         # `create_labels_if_missing=True` may have minted a new status/dropdown
         # label inside the column's settings_str — drop the cached copy.
-        invalidate_columns_cache(opts, board_id)
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("change_column_value") or {})
@@ -461,7 +469,7 @@ def set_many_cmd(
 
     if create_labels_if_missing:
         # May have minted a label in a status/dropdown column's settings_str.
-        invalidate_columns_cache(opts, board_id)
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("change_multiple_column_values") or {})
@@ -638,7 +646,7 @@ def create_cmd(
         "after": after,
     }
     data = execute(opts, COLUMN_CREATE, variables)
-    invalidate_columns_cache(opts, board_id)
+    invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "board_details", scope=str(board_id))
     # A new column adds a column_values entry to every cached `item list` row.
     invalidate_board_items_cache(opts, board_id)
@@ -660,7 +668,7 @@ def _resolve_column_target(
     """Pick a single column id for the mutation. Mirrors the group helper."""
     if column_id is not None and not (name_contains or name_matches_re or name_fuzzy):
         return column_id
-    columns = fetch_board_columns(opts, client, board_id)
+    columns = fetch_board_columns(client, board_id, store=opts.columns_cache_store(board_id))
     chosen = resolve_by_filters(
         columns,
         explicit_id=column_id,
@@ -726,7 +734,7 @@ def rename_cmd(
             data = exec_or_exit(client, COLUMN_RENAME, variables)
     except MondoError as e:
         handle_mondo_error_or_exit(e)
-    invalidate_columns_cache(opts, board_id)
+    invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "board_details", scope=str(board_id))
     opts.emit(data.get("change_column_title") or {})
 
@@ -753,7 +761,7 @@ def change_metadata_cmd(
         "value": value,
     }
     data = execute(opts, COLUMN_CHANGE_METADATA, variables)
-    invalidate_columns_cache(opts, board_id)
+    invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "board_details", scope=str(board_id))
     opts.emit(data.get("change_column_metadata") or {})
 
@@ -769,7 +777,7 @@ def delete_cmd(
     _confirm(opts, f"PERMANENTLY delete column {column_id!r} on board {board_id}?")
     variables = {"board": board_id, "col": column_id}
     data = execute(opts, COLUMN_DELETE, variables)
-    invalidate_columns_cache(opts, board_id)
+    invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "board_details", scope=str(board_id))
     # Cached `item list` rows would keep serving the deleted column's values.
     invalidate_board_items_cache(opts, board_id)

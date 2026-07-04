@@ -90,11 +90,17 @@ class TestReorderArgv:
     def test_verbose_short_form(self) -> None:
         assert reorder_argv(["auth", "status", "-v"]) == ["-v", "auth", "status"]
 
-    def test_version_flag_ignored(self) -> None:
-        """--help and --version are not reordered — they should take effect
-        at whatever level the user typed them."""
+    def test_help_flag_not_reordered(self) -> None:
+        """--help is context-sensitive: it stays where the user typed it so it
+        prints help for that command level (not the global root)."""
         assert reorder_argv(["item", "--help"]) == ["item", "--help"]
         assert reorder_argv(["item", "get", "--help"]) == ["item", "get", "--help"]
+
+    def test_version_flag_reordered_to_global(self) -> None:
+        """--version / -V IS a global flag, so it hoists to the front and takes
+        effect at the root regardless of where it was typed."""
+        assert reorder_argv(["item", "--version"]) == ["--version", "item"]
+        assert reorder_argv(["item", "get", "-V"]) == ["-V", "item", "get"]
 
     def test_global_flag_before_its_value_not_separated(self) -> None:
         # If the user writes `--profile work`, the "work" must stay attached

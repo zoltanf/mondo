@@ -39,9 +39,9 @@ from mondo.cli._exec import (
     usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli._url import MondayIdParam
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 from mondo.services.boards import (
     BoardTypeFilter,
     decode_json_string_payload,
@@ -242,10 +242,10 @@ def list_cmd(
     from mondo.api.pagination import fetch_pages_concurrent
     from mondo.api.queries import build_boards_list_query
     from mondo.cli._cache_flags import reject_mutually_exclusive, resolve_cache_prefs
-    from mondo.cli._filters import apply_fuzzy, compile_name_filter
-    from mondo.cli._filters import name_matches as _name_matches
     from mondo.cli._list_decorate import apply_board_urls, enrich_workspaces_best_effort
-    from mondo.cli._normalize import normalize_board_entry
+    from mondo.domain.filters import apply_fuzzy, compile_name_filter
+    from mondo.domain.filters import name_matches as _name_matches
+    from mondo.domain.normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -384,10 +384,11 @@ def _list_via_cache(
     client-side against that list.
     """
     from mondo.cache.directory import get_boards as cache_get_boards
-    from mondo.cli._filters import apply_fuzzy
-    from mondo.cli._filters import name_matches as _name_matches
+    from mondo.cli._list_common import filter_by_kind, filter_by_state
     from mondo.cli._list_decorate import apply_board_urls, enrich_workspaces_best_effort
-    from mondo.cli._normalize import normalize_board_entry
+    from mondo.domain.filters import apply_fuzzy
+    from mondo.domain.filters import name_matches as _name_matches
+    from mondo.domain.normalize import normalize_board_entry
 
     if opts.dry_run:
         opts.emit(
@@ -427,11 +428,8 @@ def _list_via_cache(
     # Spec default for boards list is "active" when --state omitted. Preserve that
     # client-side since the cache holds all states.
     requested_state = state.value if state else "active"
-    entries = cached.entries
-    if requested_state != "all":
-        entries = [b for b in entries if (b.get("state") or "active") == requested_state]
-    if kind is not None:
-        entries = [b for b in entries if (b.get("kind") or "") == kind.value]
+    entries = filter_by_state(cached.entries, requested_state)
+    entries = filter_by_kind(entries, kind.value if kind else None)
     if type_filter is not BoardTypeFilter.all:
         entries = [b for b in entries if type_matches(b, type_filter)]
     if workspace:
@@ -526,8 +524,8 @@ def get_cmd(
     from mondo.cache.directory import get_board_details
     from mondo.cli._cache_flags import emit_cache_provenance, reject_mutually_exclusive
     from mondo.cli._field_sets import board_get_fields
-    from mondo.cli._normalize import normalize_board_entry
     from mondo.cli._url import board_url, get_tenant_slug, warn_cross_type
+    from mondo.domain.normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     reject_mutually_exclusive(no_cache, refresh_cache)
@@ -627,7 +625,7 @@ def create_cmd(
 ) -> None:
     """Create a new board."""
     from mondo.cli._cache_invalidate import invalidate_entity
-    from mondo.cli._normalize import normalize_board_entry
+    from mondo.domain.normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     variables: dict[str, Any] = {
@@ -838,7 +836,7 @@ def duplicate_cmd(
     scripts that depend on the copy being fully populated before the next step.
     """
     from mondo.cli._cache_invalidate import invalidate_entity
-    from mondo.cli._normalize import normalize_board_entry
+    from mondo.domain.normalize import normalize_board_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     board_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="board")

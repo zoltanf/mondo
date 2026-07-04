@@ -31,8 +31,8 @@ from mondo.cli._exec import (
     usage_error_or_exit,
 )
 from mondo.cli._json_flag import parse_json_flag
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -126,7 +126,7 @@ def list_cmd(
     # Live path
     from mondo.api.pagination import fetch_pages_concurrent
     from mondo.api.queries import build_folders_list_query
-    from mondo.cli._normalize import normalize_folder_entry
+    from mondo.domain.normalize import normalize_folder_entry
 
     query, variables = build_folders_list_query(workspace_ids=workspace or None)
     if opts.dry_run:
@@ -258,7 +258,7 @@ def tree_cmd(
         # Live path
         from mondo.api.pagination import fetch_pages_concurrent
         from mondo.api.queries import build_folders_list_query
-        from mondo.cli._normalize import normalize_folder_entry
+        from mondo.domain.normalize import normalize_folder_entry
 
         query, variables = build_folders_list_query(workspace_ids=workspace or None)
         if opts.dry_run:
@@ -385,7 +385,7 @@ def get_cmd(
     from mondo.cache.directory import get_folders as cache_get_folders
     from mondo.cli._dir_lookup import lookup_entity_in_directory
     from mondo.cli._field_sets import folder_get_fields
-    from mondo.cli._normalize import normalize_folder_entry
+    from mondo.domain.normalize import normalize_folder_entry
 
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     folder_id = resolve_required_id(id_pos, id_flag, flag_name="--id", resource="folder")

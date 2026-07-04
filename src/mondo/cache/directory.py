@@ -37,7 +37,7 @@ from mondo.api.queries import (
     build_folders_list_query,
 )
 from mondo.cache.store import CachedDirectory, CacheStore
-from mondo.cli._normalize import (
+from mondo.domain.normalize import (
     normalize_board_entry,
     normalize_doc_entry,
     normalize_folder_entry,

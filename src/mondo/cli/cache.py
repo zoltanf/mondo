@@ -25,6 +25,7 @@ from mondo.cache.directory import (
     get_webhooks,
     get_workspaces,
 )
+from mondo.cache.registry import names_by_scope
 from mondo.cache.store import CacheStore, EntityType
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import handle_mondo_error_or_exit, usage_error_or_exit
@@ -56,27 +57,16 @@ class CacheType(StrEnum):
     all = "all"
 
 
-_SINGLE_FILE_TYPES: tuple[str, ...] = (
-    "boards",
-    "workspaces",
-    "users",
-    "teams",
-    "docs",
-    "folders",
-    "tags",
-)
-# Per-board scoped types accept `--board` for explicit refresh/clear.
-_BOARD_SCOPED_TYPES: tuple[str, ...] = (
-    "columns",
-    "groups",
-    "webhooks",
-    "board_details",
-)
-# Per-item / per-doc scoped types: status and clear work over the cache
-# directory; refresh requires re-reading via the CLI command itself, since
-# only the calling site knows the right item / doc id.
-_ITEM_SCOPED_TYPES: tuple[str, ...] = ("items", "board_items", "subitems", "updates")
-_DOC_SCOPED_TYPES: tuple[str, ...] = ("docs_blocks",)
+# Scope tuples are derived from the cache entity registry (single source of
+# truth). single_file → default one-file caches; board → per-board scoped
+# types that accept `--board` for explicit refresh/clear; item/doc → per-item
+# / per-doc scoped types (status and clear work over the cache directory;
+# refresh requires re-reading via the CLI command itself, since only the
+# calling site knows the right item / doc id).
+_SINGLE_FILE_TYPES: tuple[str, ...] = names_by_scope("single_file")
+_BOARD_SCOPED_TYPES: tuple[str, ...] = names_by_scope("board")
+_ITEM_SCOPED_TYPES: tuple[str, ...] = names_by_scope("item")
+_DOC_SCOPED_TYPES: tuple[str, ...] = names_by_scope("doc")
 _SCOPED_TYPES: tuple[str, ...] = (
     *_BOARD_SCOPED_TYPES,
     *_ITEM_SCOPED_TYPES,

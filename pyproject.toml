@@ -45,6 +45,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
     "pytest-httpx>=0.35.0",
     "syrupy>=4.8.0",
     "ruff>=0.8.0",
@@ -110,3 +111,17 @@ markers = [
     "integration: integration tests requiring MONDAY_TEST_TOKEN (deselect with '-m \"not integration\"')",
     "eval: skill eval tests requiring ANTHROPIC_API_KEY + MONDO_TEST_BOARD_ID (deselect with '-m \"not eval\"')",
 ]
+
+# Coverage is not forced into addopts (that would fail subset test runs); run
+# it explicitly: `uv run pytest -m "not integration and not eval" --cov=mondo`.
+# fail_under only trips on `coverage report`, so full-suite CI runs enforce the
+# baseline while ad-hoc single-file runs stay unaffected.
+[tool.coverage.run]
+source = ["mondo"]
+branch = true
+
+[tool.coverage.report]
+# Baseline: unit suite reports ~88% with branch coverage on (2026-07-04).
+# Guard against meaningful regression while leaving headroom for refactors.
+fail_under = 86
+show_missing = false

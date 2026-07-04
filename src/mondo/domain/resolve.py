@@ -20,7 +20,7 @@ from typing import Any
 import typer
 
 from mondo.api.errors import NotFoundError, UsageError
-from mondo.cli._filters import apply_fuzzy, compile_name_filter, name_matches
+from mondo.domain.filters import apply_fuzzy, compile_name_filter, name_matches
 
 
 def resolve_required_id[T: (int, str)](

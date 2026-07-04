@@ -32,8 +32,8 @@ from mondo.cli._exec import (
     handle_mondo_error_or_exit,
     usage_error_or_exit,
 )
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -154,7 +154,7 @@ def list_cmd(
     except MondoError as e:
         handle_mondo_error_or_exit(e)
     if name_fuzzy is not None:
-        from mondo.cli._filters import apply_fuzzy
+        from mondo.domain.filters import apply_fuzzy
 
         items = apply_fuzzy(
             items,
@@ -181,7 +181,8 @@ def _list_workspaces_via_cache(
 ) -> None:
     from mondo.cache.directory import get_workspaces as cache_get_workspaces
     from mondo.cli._cache_flags import emit_cache_provenance
-    from mondo.cli._filters import apply_fuzzy
+    from mondo.cli._list_common import filter_by_kind, filter_by_state
+    from mondo.domain.filters import apply_fuzzy
 
     if opts.dry_run:
         opts.emit(
@@ -214,11 +215,8 @@ def _list_workspaces_via_cache(
     emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
 
     requested_state = state.value if state else "active"
-    entries = cached.entries
-    if requested_state != "all":
-        entries = [w for w in entries if (w.get("state") or "active") == requested_state]
-    if kind is not None:
-        entries = [w for w in entries if (w.get("kind") or "") == kind.value]
+    entries = filter_by_state(cached.entries, requested_state)
+    entries = filter_by_kind(entries, kind.value if kind else None)
 
     if name_fuzzy is not None:
         entries = apply_fuzzy(

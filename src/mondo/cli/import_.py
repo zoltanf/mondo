@@ -30,15 +30,15 @@ from mondo.api.queries import (
     CREATE_OR_GET_TAG,
     ITEM_CREATE,
 )
-from mondo.cli._column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
     client_or_exit,
     handle_mondo_error_or_exit,
     usage_error_or_exit,
 )
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -108,7 +108,7 @@ def _fetch_board_columns(
     opts: GlobalOpts, client: MondayClient, board_id: int
 ) -> list[dict[str, Any]]:
     try:
-        return fetch_board_columns(opts, client, board_id)
+        return fetch_board_columns(client, board_id, store=opts.columns_cache_store(board_id))
     except NotFoundError:
         raise typer.Exit(code=6) from None
 
@@ -317,7 +317,7 @@ def board_cmd(
         # Batch may have minted status/dropdown labels in settings_str; a
         # single post-run invalidation is enough since the next read will
         # re-fetch fresh defs for the whole board.
-        invalidate_columns_cache(opts, board_id)
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
 
     if created > 0:
         from mondo.cli._cache_invalidate import invalidate_board_items_cache

@@ -33,7 +33,7 @@ class PartialDocAddError(ValidationError):
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
-    from mondo.cli.context import GlobalOpts
+    from mondo.domain.context import CacheStoreOpts, ClientFactoryOpts
 
 
 def last_block_id(doc: dict[str, Any]) -> str | None:
@@ -168,7 +168,7 @@ def add_markdown_chunked(
 
 
 def resolve_doc_id_from_object_id(
-    opts: GlobalOpts, client: MondayClient, object_id: int
+    opts: CacheStoreOpts, client: MondayClient, object_id: int
 ) -> int | None:
     """Map a URL-visible `object_id` to its internal `doc_id` via the docs
     directory cache (auto-populated on miss). Returns None when the
@@ -202,6 +202,9 @@ def object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
         result = client.execute(DOC_HEAD_BY_OBJECT_ID, {"objs": [doc_id]})
         docs = (result.get("data") or {}).get("docs") or []
     except Exception:
+        # Intentionally broad: this is a best-effort hint probe run *before*
+        # the caller's original error is rendered. Its contract is to never
+        # raise — masking the real failure would be worse than losing the hint.
         return None
     if not docs:
         return None
@@ -211,11 +214,14 @@ def object_id_hint_with_client(client: MondayClient, doc_id: int) -> str | None:
     )
 
 
-def object_id_hint(opts: GlobalOpts, doc_id: int) -> str | None:
+def object_id_hint(opts: ClientFactoryOpts, doc_id: int) -> str | None:
     """`object_id_hint_with_client` with a fresh short-lived client."""
     try:
         client = opts.build_client()
         with client:
             return object_id_hint_with_client(client, doc_id)
     except Exception:
+        # Intentionally broad (see object_id_hint_with_client): build_client()
+        # or client setup failing must not mask the caller's original error —
+        # the hint is best-effort, so any failure just means "no hint".
         return None

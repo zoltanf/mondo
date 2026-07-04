@@ -132,8 +132,6 @@ class MondayClient:
         should_inject = self._inject_complexity and not raw
         sent_query = inject_complexity_field(query) if should_inject else query
         body = {"query": sent_query, "variables": variables or {}}
-        attempt = 0
-        last_exc: MondoError | None = None
 
         # `--debug` advertises "every GraphQL query and response to stderr".
         # Emit the request body up-front so it's logged even on transport
@@ -142,10 +140,44 @@ class MondayClient:
         # level is filtered out, so large payloads don't pay repr() cost.
         logger.debug("GraphQL request: query={} variables={}", sent_query, body["variables"])
 
+        response = self._post_with_retries(
+            lambda: self._client.post(self._endpoint, json=body, headers=self._headers()),
+            classify=lambda r: _classify_response(
+                r, suppress_graphql_errors=surface_partial_errors
+            ),
+        )
+        parsed: dict[str, Any] = response.json()
+        logger.debug("GraphQL response: {}", parsed)
+        sample = self.meter.record(parsed.get("data"))
+        if sample is not None:
+            logger.debug(
+                f"complexity drain: cost={sample.query_cost} "
+                f"budget={sample.budget_after}/{sample.budget_before} "
+                f"(resets in {sample.reset_in_seconds}s)"
+            )
+        return parsed
+
+    def _post_with_retries(
+        self,
+        post: Callable[[], httpx.Response],
+        *,
+        classify: Callable[[httpx.Response], MondoError | None],
+    ) -> httpx.Response:
+        """Run `post()` with the shared retry/backoff + network-error policy.
+
+        Wraps `httpx` timeout/transport failures as `NetworkError`, classifies
+        the response via `classify`, retries `RetryableError`/`NetworkError` up
+        to `max_retries` with backoff, and returns the first successful
+        response. Non-retryable errors raise immediately. `post` is re-invoked
+        on each attempt, so a caller that reads a file inside it (e.g.
+        `upload_file`) re-opens the handle per try.
+        """
+        attempt = 0
+        last_exc: MondoError | None = None
         while attempt < self._max_retries:
             attempt += 1
             try:
-                response = self._client.post(self._endpoint, json=body, headers=self._headers())
+                response = post()
             except httpx.TimeoutException as e:
                 last_exc = NetworkError(f"request timed out: {e}")
                 logger.warning(f"attempt {attempt}: timeout — {e}")
@@ -153,18 +185,9 @@ class MondayClient:
                 last_exc = NetworkError(f"transport error: {e}")
                 logger.warning(f"attempt {attempt}: transport error — {e}")
             else:
-                exc = _classify_response(response, suppress_graphql_errors=surface_partial_errors)
+                exc = classify(response)
                 if exc is None:
-                    parsed: dict[str, Any] = response.json()
-                    logger.debug("GraphQL response: {}", parsed)
-                    sample = self.meter.record(parsed.get("data"))
-                    if sample is not None:
-                        logger.debug(
-                            f"complexity drain: cost={sample.query_cost} "
-                            f"budget={sample.budget_after}/{sample.budget_before} "
-                            f"(resets in {sample.reset_in_seconds}s)"
-                        )
-                    return parsed
+                    return response
                 last_exc = exc
 
             if not isinstance(last_exc, RetryableError) and not isinstance(last_exc, NetworkError):
@@ -211,12 +234,17 @@ class MondayClient:
             "variables": _json_dumps(variables),
             "map": _json_dumps({file_field: "variables.file"}),
         }
-        with open(file_path, "rb") as fh:
-            files = {file_field: (filename or _basename(file_path), fh)}
-            response = self._client.post(endpoint, headers=headers, data=data, files=files)
-        exc = _classify_response(response)
-        if exc is not None:
-            raise exc
+        sent_name = filename or _basename(file_path)
+
+        def _post() -> httpx.Response:
+            # Re-open per attempt: a consumed file handle can't be re-posted on
+            # retry. Routing through `_post_with_retries` gives uploads the same
+            # timeout/transport wrapping + retry policy as `execute`.
+            with open(file_path, "rb") as fh:
+                files = {file_field: (sent_name, fh)}
+                return self._client.post(endpoint, headers=headers, data=data, files=files)
+
+        response = self._post_with_retries(_post, classify=_classify_response)
         parsed: dict[str, Any] = response.json()
         return parsed
 

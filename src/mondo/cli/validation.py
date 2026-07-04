@@ -15,8 +15,8 @@ import typer
 from mondo.api.queries import VALIDATIONS_LIST
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import execute, usage_error_or_exit
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 app = typer.Typer(
     no_args_is_help=True,

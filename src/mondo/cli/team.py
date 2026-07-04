@@ -33,8 +33,8 @@ from mondo.cli._exec import (
     execute,
     handle_mondo_error_or_exit,
 )
-from mondo.cli._resolve import resolve_required_id
 from mondo.cli.context import GlobalOpts
+from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -101,7 +101,7 @@ def list_cmd(
     data = execute(opts, TEAMS_LIST, variables)
     teams = data.get("teams") or []
     if name_fuzzy is not None:
-        from mondo.cli._filters import apply_fuzzy
+        from mondo.domain.filters import apply_fuzzy
 
         teams = apply_fuzzy(
             teams,
@@ -126,7 +126,7 @@ def _list_teams_via_cache(
 ) -> None:
     from mondo.cache.directory import get_teams as cache_get_teams
     from mondo.cli._cache_flags import emit_cache_provenance
-    from mondo.cli._filters import apply_fuzzy
+    from mondo.domain.filters import apply_fuzzy
 
     if opts.dry_run:
         opts.emit(

@@ -6,8 +6,6 @@ or uses the helper `build_client(opts)` to get a ready-to-use MondayClient.
 
 from __future__ import annotations
 
-import os
-import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TextIO
 
@@ -63,89 +61,41 @@ class GlobalOpts:
     ) -> None:
         """Render `data` to stdout (or `stream`) honoring --output and --query.
 
-        Applies `--query` before formatting. Auto-picks the format based on
-        whether stdout is a TTY if `--output` wasn't set.
-
-        When `selected_fields` is provided alongside `--query`, every JMESPath
-        leaf identifier missing from the set produces one stderr warning line
-        — this is how silent-null projections (a leaf the GraphQL query never
-        selected) become visible. Set `MONDO_NO_PROJECTION_WARNINGS=1` to
-        suppress.
+        Thin wrapper over `mondo.cli._render.render_output`; folds the returned
+        "wrote to real stdout" flag back into `self.stdout_emitted`.
         """
-        out = stream or sys.stdout
-        is_tty = (
-            default_tty_override
-            if default_tty_override is not None
-            else hasattr(out, "isatty") and out.isatty()
+        from mondo.cli._render import render_output
+
+        wrote = render_output(
+            data,
+            output=self.output,
+            query=self.query,
+            fields=self.fields,
+            stream=stream,
+            default_tty_override=default_tty_override,
+            selected_fields=selected_fields,
         )
-        from mondo.output import choose_default_format, format_output
-        from mondo.output.fields import apply_fields
-        from mondo.output.query import apply_query
-
-        fmt = self.output or choose_default_format(is_tty=is_tty)
-        try:
-            projected = apply_query(data, self.query)
-        except ValueError as e:
-            from mondo.cli._exec import usage_error_or_exit
-
-            usage_error_or_exit(str(e))
-        projected = apply_fields(projected, self.fields)
-        if (
-            self.query
-            and selected_fields is not None
-            and os.environ.get("MONDO_NO_PROJECTION_WARNINGS") != "1"
-        ):
-            self._warn_unselected_projection_fields(self.query, selected_fields)
-        format_output(projected, fmt=fmt, stream=out, tty=is_tty)
-        if stream is None and fmt != "none":
+        if wrote:
             self.stdout_emitted = True
-
-    @staticmethod
-    def _warn_unselected_projection_fields(
-        expression: str, selected_fields: frozenset[str]
-    ) -> None:
-        import typer
-
-        from mondo.output.query import extract_query_leaf_fields
-
-        leaves = extract_query_leaf_fields(expression)
-        for missing in sorted(leaves - selected_fields):
-            typer.secho(
-                f"warning: field '{missing}' is not in the GraphQL selection set",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
 
     def resolve_token(self) -> ResolvedToken:
         """Run the token resolution chain using this invocation's options."""
-        from mondo.api.auth import resolve_token
-        from mondo.config.loader import config_path
+        from mondo.cli._client_factory import resolve_token_from_config
 
-        cfg = self._load()
-        profile = cfg.get_profile(self.profile_name)
-        return resolve_token(
-            profile=profile,
-            flag_token=self.flag_token,
-            profile_name=self.profile_name or cfg.default_profile,
-            config_path=config_path(),
+        return resolve_token_from_config(
+            self._load(), profile_name=self.profile_name, flag_token=self.flag_token
         )
 
     def build_client(self) -> MondayClient:
         """Convenience: resolve the token, pick the API version, build the client."""
-        from mondo.api.auth import resolve_token
-        from mondo.api.client import MondayClient
-        from mondo.config.loader import config_path
+        from mondo.cli._client_factory import build_client_from_config
 
-        cfg = self._load()
-        profile = cfg.get_profile(self.profile_name)
-        resolved = resolve_token(
-            profile=profile,
+        return build_client_from_config(
+            self._load(),
+            profile_name=self.profile_name,
             flag_token=self.flag_token,
-            profile_name=self.profile_name or cfg.default_profile,
-            config_path=config_path(),
+            flag_api_version=self.flag_api_version,
         )
-        api_version = self.flag_api_version or profile.api_version or cfg.api_version
-        return MondayClient(token=resolved.token, api_version=api_version)
 
     def resolve_cache_config(self) -> ResolvedCacheConfig:
         """Resolve the fully-merged cache configuration for this invocation."""
@@ -161,9 +111,30 @@ class GlobalOpts:
         Used as the `api_endpoint` key for cache envelopes so switching profiles
         (e.g. to a different monday account) doesn't serve stale data.
         """
-        cfg = self._load()
-        profile = cfg.get_profile(self.profile_name)
-        return profile.api_url
+        from mondo.cli._client_factory import api_endpoint_from_config
+
+        return api_endpoint_from_config(self._load(), profile_name=self.profile_name)
+
+    def columns_cache_store(self, board_id: int, *, no_cache: bool = False) -> CacheStore | None:
+        """Per-board columns store for reads, or ``None`` when the cache is off.
+
+        Returns ``None`` when caching is disabled (config) or suppressed for
+        this call (`--no-cache`), signalling callers/`fetch_board_columns` to
+        take the live path.
+        """
+        if no_cache or not self.resolve_cache_config().enabled:
+            return None
+        return self.build_cache_store("columns", scope=str(board_id))
+
+    def columns_cache_store_for_invalidation(self, board_id: int) -> CacheStore | None:
+        """Per-board columns store to invalidate after a mutation, or ``None``.
+
+        Returns ``None`` on `--dry-run` (no state changed) so callers pass it
+        straight to `invalidate_columns_cache` as a no-op.
+        """
+        if self.dry_run:
+            return None
+        return self.build_cache_store("columns", scope=str(board_id))
 
     def build_cache_store(self, entity_type: EntityType, *, scope: str | None = None) -> CacheStore:
         """Build a CacheStore for the given entity type, wired with the
