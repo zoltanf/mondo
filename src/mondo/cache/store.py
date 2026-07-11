@@ -22,12 +22,15 @@ from loguru import logger
 
 from mondo.version import __version__
 
-# SCHEMA_VERSION = 5 since the v5 bump (boards directory gained nested
-# `workspace { id name }`). Adding new entity types — `tags`, `webhooks`,
-# and any future per-entity caches — does NOT bump the schema, since the
-# shape of existing envelopes is unchanged. Only bump when an existing
-# entity's serialized shape changes.
-SCHEMA_VERSION = 5
+# SCHEMA_VERSION = 6 since the v6 bump (items / board_items / subitems
+# column_values gained polymorphic `display_value` / `linked_item_ids`
+# fields (#88); users-directory entries switched to the normalized
+# kind/status shape (#89)). v5 was the boards-directory nested
+# `workspace { id name }` bump. Adding new entity types — `tags`,
+# `webhooks`, and any future per-entity caches — does NOT bump the schema,
+# since the shape of existing envelopes is unchanged. Only bump when an
+# existing entity's serialized shape changes.
+SCHEMA_VERSION = 6
 
 EntityType = Literal[
     "boards",

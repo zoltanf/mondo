@@ -959,7 +959,7 @@ Env-var expansion (`${VAR}`) is supported.
 
 ```yaml
 default_profile: personal
-api_version: "2026-01"
+api_version: "2026-07"
 
 profiles:
   personal:
@@ -1017,7 +1017,7 @@ directory is resident. Full contract: [`docs/caching.md`](docs/caching.md).
 # Global Options panel
 --profile NAME / MONDO_PROFILE              Select config profile
 --api-token TOKEN / MONDAY_API_TOKEN        Override API token (flag wins over env)
---api-version YYYY-MM / MONDAY_API_VERSION  Pin API version (default: 2026-01)
+--api-version YYYY-MM / MONDAY_API_VERSION  Pin API version (default: 2026-07)
 --verbose,-v                                INFO-level logging to stderr
 --debug                                     Full request/response to stderr (token redacted)
 --yes,-y                                    Skip confirmation prompts

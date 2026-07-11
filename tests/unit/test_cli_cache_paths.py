@@ -301,16 +301,13 @@ class TestWorkspaceListCache:
 
 class TestUserListCache:
     def test_cache_prime_and_warm(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
-        # Priming issues two queries (nonActive=false + nonActive=true).
+        # Priming issues a single query (status: [ACTIVE, INACTIVE]) on 2026-07.
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok({"users": [{"id": "1", "name": "Zoe", "email": "z@x", "enabled": True}]}),
-        )
-        httpx_mock.add_response(
-            url=ENDPOINT,
-            method="POST",
-            json=_ok({"users": []}),
+            json=_ok(
+                {"users": [{"id": "1", "name": "Zoe", "email": "z@x", "status": "ACTIVE"}]}
+            ),
         )
         r1 = runner.invoke(app, ["user", "list"])
         assert r1.exit_code == 0, r1.stdout

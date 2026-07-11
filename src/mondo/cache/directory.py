@@ -42,6 +42,7 @@ from mondo.domain.normalize import (
     normalize_doc_entry,
     normalize_folder_entry,
 )
+from mondo.domain.users import normalize_user
 
 # Block-fetch page size for `get_doc_blocks` — picked to match the existing
 # CLI default in `mondo/cli/doc.py`. Doc bodies can be hundreds of blocks;
@@ -208,24 +209,21 @@ def _fetch_all_workspaces(client: MondayClient) -> list[dict[str, Any]]:
 
 
 def _fetch_all_users(client: MondayClient) -> list[dict[str, Any]]:
-    # monday's `non_active` is either/or: true returns ONLY disabled users,
-    # false returns ONLY active. To cover both, we run both queries and merge
-    # (dedup by id — shouldn't collide, but be defensive).
-    active = fetch_pages_concurrent(
-        client,
-        query=USERS_LIST_PAGE,
-        variables={"nonActive": False},
-        collection_key="users",
-        limit=MAX_BOARDS_PAGE_SIZE,
-    )
-    disabled = fetch_pages_concurrent(
-        client,
-        query=USERS_LIST_PAGE,
-        variables={"nonActive": True},
-        collection_key="users",
-        limit=MAX_BOARDS_PAGE_SIZE,
-    )
-    return _dedup_by_id(active + disabled)
+    # On API 2026-07, `status: [ACTIVE, INACTIVE]` returns the full directory
+    # in one pass — the INACTIVE bucket also surfaces PENDING users — so the
+    # old two-fetch (active + non_active) merge is no longer needed. Entries
+    # are normalized so the cache carries the derived legacy booleans that the
+    # client-side filters in `user list` rely on.
+    return [
+        normalize_user(entry)
+        for entry in fetch_pages_concurrent(
+            client,
+            query=USERS_LIST_PAGE,
+            variables={"status": ["ACTIVE", "INACTIVE"]},
+            collection_key="users",
+            limit=MAX_BOARDS_PAGE_SIZE,
+        )
+    ]
 
 
 def _fetch_all_teams(client: MondayClient) -> list[dict[str, Any]]:

@@ -8,7 +8,7 @@ query {
     id
     name
     email
-    is_admin
+    kind
     account { id name slug tier }
   }
 }
@@ -45,15 +45,12 @@ query {
     id
     name
     email
-    is_admin
-    is_guest
-    is_view_only
-    is_pending
-    enabled
+    kind
+    status
     created_at
     last_activity
     title
-    photo_thumb
+    photo_url { thumb }
     teams { id name }
     account {
       id
