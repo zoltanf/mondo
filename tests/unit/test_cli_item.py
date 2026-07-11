@@ -962,6 +962,43 @@ class TestItemCreateBatch:
         # No HTTP calls were made.
         assert httpx_mock.get_requests() == []
 
+    def test_batch_dry_run_tag_names_issue_no_mutation(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        # A tags value given as names can't be resolved in --dry-run without a
+        # real create_or_get_tag mutation, so it errors instead of writing.
+        cols = [{"id": "tags", "type": "tags"}]
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_columns_response(cols))
+        batch_file = tmp_path / "items.json"
+        batch_file.write_text(json.dumps([{"name": "A", "columns": ["tags=urgent,blocked"]}]))
+        result = runner.invoke(
+            app,
+            ["--dry-run", "item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 5, result.output
+        assert "tag ids in --dry-run" in ((result.output or "") + (result.stderr or ""))
+        # Only the read-only defs fetch happened; create_or_get_tag never fired.
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
+    def test_batch_dry_run_tag_ids_pass_through(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        # Numeric tag ids need no resolution, so --dry-run works offline-ish
+        # (only the read-only defs fetch).
+        cols = [{"id": "tags", "type": "tags"}]
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_columns_response(cols))
+        batch_file = tmp_path / "items.json"
+        batch_file.write_text(json.dumps([{"name": "A", "columns": ["tags=1001,1002"]}]))
+        result = runner.invoke(
+            app,
+            ["--dry-run", "item", "create", "--board", "42", "--batch", str(batch_file)],
+        )
+        assert result.exit_code == 0, result.output
+        env = json.loads(result.stdout)
+        values = env["chunks"][0]["variables"]["values_0"]
+        assert json.loads(values) == {"tags": {"tag_ids": [1001, 1002]}}
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
     def test_batch_mutex_with_single_item_flags(
         self, httpx_mock: HTTPXMock, tmp_path: Path
     ) -> None:

@@ -33,6 +33,15 @@ def parse_settings(raw: str | None) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def tags_value_all_ids(raw: str) -> bool:
+    """True when every comma-separated part of a tags value is already a
+    numeric id, so no name→id resolution (a live `create_or_get_tag`
+    mutation) is needed. Mirrors the pass-through check in
+    `resolve_tag_names_to_ids`."""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return all(p.isdigit() or (p.startswith("-") and p[1:].isdigit()) for p in parts)
+
+
 def resolve_tag_names_to_ids(
     client: MondayClient,
     board_id: int,

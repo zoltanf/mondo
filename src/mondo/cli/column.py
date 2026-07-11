@@ -51,7 +51,11 @@ from mondo.columns import (
 from mondo.columns.dropdown import iter_dropdown_labels
 from mondo.columns.status import iter_status_labels
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
-from mondo.domain.columns_resolve import parse_settings, resolve_tag_names_to_ids
+from mondo.domain.columns_resolve import (
+    parse_settings,
+    resolve_tag_names_to_ids,
+    tags_value_all_ids,
+)
 from mondo.domain.resolve import resolve_by_filters, resolve_required_id
 from mondo.services.items import fetch_column_defs, read_batch_rows
 
@@ -504,15 +508,6 @@ def set_cmd(
     opts.emit(data.get("change_column_value") or {})
 
 
-def _tags_value_all_ids(raw: str) -> bool:
-    """True when every comma-separated part of a tags value is already a
-    numeric id, so no name→id resolution (a live `create_or_get_tag`
-    mutation) is needed. Mirrors the pass-through check in
-    `resolve_tag_names_to_ids`."""
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    return all(p.isdigit() or (p.startswith("-") and p[1:].isdigit()) for p in parts)
-
-
 def _build_column_set_row_vars(
     board_id: int,
     defs: dict[str, dict[str, Any]],
@@ -628,7 +623,7 @@ def _build_column_set_row_vars(
         else:
             # dry_run tags: resolve_tag_names_to_ids would write, so only
             # accept values that are already ids; names need a live call.
-            if col_type == "tags" and not _tags_value_all_ids(str_value):
+            if col_type == "tags" and not tags_value_all_ids(str_value):
                 raise ValidationError(
                     f"--batch row {index} (column {column_id}): resolving tag "
                     "names requires a live call; use tag ids in --dry-run."
