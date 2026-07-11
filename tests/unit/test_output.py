@@ -185,6 +185,37 @@ class TestTableFormatter:
         # Empty table is fine — should not crash
         assert buf.getvalue() is not None
 
+    def test_strips_control_chars_from_cells_and_headers(self) -> None:
+        buf = io.StringIO()
+        format_output(
+            [{"na\x1b]0;evil\x07me": "\x1b[31mred\x1b[0m", "id": "\x9bJunk"}],
+            fmt="table",
+            stream=buf,
+            tty=False,
+        )
+        out = buf.getvalue()
+        assert "\x1b" not in out and "\x07" not in out and "\x9b" not in out
+        assert "na]0;evilme" in out and "red" in out and "Junk" in out
+
+    def test_strips_control_chars_from_kv_object(self) -> None:
+        buf = io.StringIO()
+        format_output({"k\x1bey": "va\x1b[2Jlue"}, fmt="table", stream=buf, tty=False)
+        out = buf.getvalue()
+        assert "\x1b" not in out
+        assert "key" in out and "va[2Jlue" in out
+
+    def test_rich_markup_not_interpreted(self) -> None:
+        buf = io.StringIO()
+        format_output(
+            [{"name": "[link=http://evil]click[/link]"}],
+            fmt="table",
+            stream=buf,
+            tty=True,
+        )
+        # With markup off the tag text survives verbatim (Rich may wrap it,
+        # so check a short prefix) instead of becoming an OSC 8 hyperlink.
+        assert "[link=" in buf.getvalue()
+
 
 # ---------- Registry + auto-detect ----------
 

@@ -142,6 +142,67 @@ class TestCsvExport:
         assert "id,name,state,group,Status,Due" in content
 
 
+class TestFormulaGuard:
+    EVIL_COLS = _ok(
+        {
+            "boards": [
+                {
+                    "id": "42",
+                    "name": "B",
+                    "columns": [
+                        {"id": "t1", "title": "=Evil", "type": "text", "archived": False},
+                    ],
+                }
+            ]
+        }
+    )
+
+    def _mock(self, httpx_mock: HTTPXMock) -> None:
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self.EVIL_COLS)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_items_page(
+                [
+                    _item("1", "=2+2", {"t1": "+SUM(A1)"}),
+                    _item("2", "Safe", {"t1": "a=b"}),
+                ]
+            ),
+        )
+
+    def test_csv_guards_formula_cells_and_headers(self, httpx_mock: HTTPXMock) -> None:
+        self._mock(httpx_mock)
+        result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "csv"])
+        assert result.exit_code == 0, result.stdout
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        assert rows[0] == ["id", "name", "state", "group", "'=Evil"]
+        assert rows[1][1] == "'=2+2"
+        assert rows[1][4] == "'+SUM(A1)"
+        # Non-leading formula chars stay untouched.
+        assert rows[2][1] == "Safe"
+        assert rows[2][4] == "a=b"
+
+    def test_no_sanitize_formulas_flag(self, httpx_mock: HTTPXMock) -> None:
+        self._mock(httpx_mock)
+        result = runner.invoke(
+            app,
+            ["export", "board", "--board", "42", "-f", "csv", "--no-sanitize-formulas"],
+        )
+        assert result.exit_code == 0, result.stdout
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        assert rows[0][4] == "=Evil"
+        assert rows[1][1] == "=2+2"
+        assert rows[1][4] == "+SUM(A1)"
+
+    def test_json_export_is_not_guarded(self, httpx_mock: HTTPXMock) -> None:
+        self._mock(httpx_mock)
+        result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "json"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["items"][0]["name"] == "=2+2"
+        assert parsed["items"][0]["=Evil"] == "+SUM(A1)"
+
+
 class TestJsonExport:
     def test_shape(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)

@@ -4,7 +4,10 @@ Uses cursor pagination (reused from `item list`) plus a one-shot column-title
 fetch for readable headers. monday's API has no native board-export endpoint —
 every format is rendered client-side. Formats:
 
-- csv / tsv: RFC 4180, one row per item, columns = meta + one-per-board-column
+- csv / tsv: RFC 4180, one row per item, columns = meta + one-per-board-column.
+  Cells starting with = + - @ (or tab/CR) get a `'` prefix so spreadsheets
+  don't execute them as formulas; `--no-sanitize-formulas` disables the guard
+  and `mondo import board` strips it back off.
 - json: list of objects keyed by column id + metadata
 - xlsx: one styled sheet for items (+ one for subitems if --include-subitems)
 - md / html / pdf: human-readable; grouped per monday group by default
@@ -42,6 +45,7 @@ from mondo.docs import _HTML_STYLE
 from mondo.domain.column_cache import fetch_board_columns
 from mondo.domain.resolve import resolve_required_id
 from mondo.services.items import build_query_params, split_filter_expr
+from mondo.util.sanitize import guard_formula
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -203,7 +207,14 @@ def _subitem_row(
 # ----- format writers -----
 
 
-def _write_csv(rows: list[dict[str, Any]], headers: list[str], delimiter: str, stream: Any) -> None:
+def _write_csv(
+    rows: list[dict[str, Any]],
+    headers: list[str],
+    delimiter: str,
+    stream: Any,
+    *,
+    sanitize: bool,
+) -> None:
     writer = csv.DictWriter(
         stream,
         fieldnames=headers,
@@ -212,9 +223,16 @@ def _write_csv(rows: list[dict[str, Any]], headers: list[str], delimiter: str, s
         lineterminator="\n",
         extrasaction="ignore",
     )
-    writer.writeheader()
+
+    def cell(value: Any) -> Any:
+        # Board data (item names, column text, column titles) is controlled
+        # by anyone with board access — guard formula-looking cells so
+        # opening the export in a spreadsheet can't execute them.
+        return guard_formula(value) if sanitize else value
+
+    writer.writerow({h: cell(h) for h in headers})
     for row in rows:
-        writer.writerow({h: row.get(h, "") for h in headers})
+        writer.writerow({h: cell(row.get(h, "")) for h in headers})
 
 
 def _write_json(payload: Any, stream: Any) -> None:
@@ -412,6 +430,13 @@ def board_cmd(
     include_subitems: bool = typer.Option(
         False, "--include-subitems", help="Also export each item's subitems."
     ),
+    sanitize_formulas: bool = typer.Option(
+        True,
+        "--sanitize-formulas/--no-sanitize-formulas",
+        help="csv/tsv: prefix cells starting with = + - @ (or tab/CR) with a "
+        "single quote so spreadsheets don't execute them as formulas. "
+        "`mondo import board` strips the prefix back off on re-import.",
+    ),
     limit: int = typer.Option(MAX_PAGE_SIZE, "--limit", help=f"Page size (max {MAX_PAGE_SIZE})."),
     max_items: int | None = typer.Option(
         None, "--max-items", help="Stop after this many items total."
@@ -509,6 +534,7 @@ def board_cmd(
         board_name,
         flat,
         out,
+        sanitize_formulas,
     )
 
 
@@ -522,6 +548,7 @@ def _dispatch(
     board_name: str,
     flat: bool,
     out: Path | None,
+    sanitize_formulas: bool,
 ) -> None:
     item_headers = [*META_FIELDS, *col_labels]
     if fmt is ExportFormat.xlsx:
@@ -545,10 +572,10 @@ def _dispatch(
     try:
         if fmt in (ExportFormat.csv, ExportFormat.tsv):
             delim = "," if fmt is ExportFormat.csv else "\t"
-            _write_csv(item_rows, item_headers, delim, buf)
+            _write_csv(item_rows, item_headers, delim, buf, sanitize=sanitize_formulas)
             if subitem_rows is not None and subitem_headers is not None:
                 buf.write("\n")
-                _write_csv(subitem_rows, subitem_headers, delim, buf)
+                _write_csv(subitem_rows, subitem_headers, delim, buf, sanitize=sanitize_formulas)
         elif fmt is ExportFormat.json:
             payload: dict[str, Any] = {"items": item_rows}
             if subitem_rows is not None:

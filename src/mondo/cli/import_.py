@@ -12,6 +12,10 @@ Row flow per CSV line:
 4. Optional `--idempotency-name` pre-fetches existing item names on the
    board; rows whose name already exists are skipped without a mutation.
 
+Names, cell values, and header matching strip the `'` formula guard that
+`mondo export board` prefixes onto formula-looking cells (`'=x` → `=x`),
+keeping the export → import round-trip lossless.
+
 This command emits one result object per row, and a tailing summary.
 """
 
@@ -39,6 +43,7 @@ from mondo.cli._exec import (
 from mondo.cli.context import GlobalOpts
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.domain.resolve import resolve_required_id
+from mondo.util.sanitize import strip_formula_guard
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -98,7 +103,7 @@ def _build_header_to_column_id(
         if header in explicit:
             resolved[header] = str(explicit[header])
             continue
-        hit = by_title.get(header.casefold())
+        hit = by_title.get(strip_formula_guard(header).casefold())
         if hit:
             resolved[header] = hit
     return resolved
@@ -154,6 +159,7 @@ def _encode_row(
     for header, raw in row_values.items():
         if raw == "" or raw is None:
             continue
+        raw = strip_formula_guard(raw)
         col_id = header_to_col_id.get(header)
         if col_id is None:
             continue
@@ -256,7 +262,7 @@ def board_cmd(
                 existing_names = _fetch_existing_names(client, board_id)
 
             for row in reader:
-                name = (row.get(name_col) or "").strip()
+                name = strip_formula_guard((row.get(name_col) or "").strip())
                 if not name:
                     results.append({"status": "failed", "error": "empty name", "row": row})
                     failed += 1

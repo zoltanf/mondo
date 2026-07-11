@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any, TextIO
 
+from mondo.util.sanitize import strip_terminal_controls
+
 _SCALAR_TYPES = (str, int, float, bool, type(None))
 
 
@@ -20,7 +22,11 @@ def _render_cell(value: Any) -> str:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float, str)):
+    if isinstance(value, str):
+        # API-controlled strings can smuggle ANSI/control escape sequences
+        # into the terminal; strip C0/C1 controls (keeping \n and \t).
+        return strip_terminal_controls(value)
+    if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, list):
         return f"<list:{len(value)}>"
@@ -51,6 +57,9 @@ def render(data: Any, stream: TextIO, tty: bool) -> None:
         force_terminal=tty,
         no_color=not tty,
         highlight=False,
+        # Cell data is untrusted API output — never interpret it as Rich
+        # markup (e.g. [link=...] would emit terminal escape sequences).
+        markup=False,
         width=None if tty else 200,
     )
 
@@ -62,7 +71,7 @@ def render(data: Any, stream: TextIO, tty: bool) -> None:
             columns = _ordered_columns(data)
             table = Table(show_header=True, header_style="bold cyan")
             for col in columns:
-                table.add_column(col)
+                table.add_column(strip_terminal_controls(col))
             for row in data:
                 table.add_row(*(_render_cell(row.get(col)) for col in columns))
             console.print(table)
@@ -80,7 +89,7 @@ def render(data: Any, stream: TextIO, tty: bool) -> None:
         table.add_column(style="cyan")
         table.add_column()
         for k, v in data.items():
-            table.add_row(str(k), _render_cell(v))
+            table.add_row(strip_terminal_controls(str(k)), _render_cell(v))
         console.print(table)
         return
 

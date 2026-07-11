@@ -122,6 +122,43 @@ class TestBasicImport:
         assert len(httpx_mock.get_requests()) == 1
 
 
+class TestFormulaGuardStrip:
+    def test_export_guard_prefix_is_stripped(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        """Round-trip: guarded name, cell, and header land unguarded on monday."""
+        cols = _ok(
+            {
+                "boards": [
+                    {
+                        "id": "42",
+                        "name": "B",
+                        "columns": [
+                            {
+                                "id": "t1",
+                                "title": "=Evil",
+                                "type": "text",
+                                "settings_str": "{}",
+                                "archived": False,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,'=Evil", "'=EvilName,'+SUM(A1)"])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "=EvilName"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        assert body["variables"]["name"] == "=EvilName"
+        assert json.loads(body["variables"]["values"]) == {"t1": "+SUM(A1)"}
+
+
 class TestMapping:
     def test_explicit_mapping(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         src = tmp_path / "i.csv"
