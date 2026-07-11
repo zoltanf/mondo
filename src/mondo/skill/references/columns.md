@@ -125,6 +125,25 @@ mondo column set --item 9876543210 --column e2e_status --value Done --dry-run
 
 *Gotcha:* the `name` "column" (the item's title in monday's UI) is **not settable** via `change_column_value` — the mutation `column set` sends (including `--raw`). Rename items with `mondo item rename <item-id> --board <board-id> --name "<new name>"` instead (the error message points there too).
 
+*Gotcha:* quote any `--value` (or `--column k=v`) containing shell metacharacters — `&`, spaces, parentheses. An unquoted `--column status=Accounts_&_Rights` makes zsh fork at the `&` and fail with `command not found`.
+
+## Clear a column value
+
+Don't guess empty payloads through `column set` (`--value ""` or `'{"labels":[]}'` fails codec validation, e.g. "unknown dropdown label"). `column clear` sends the correct empty payload for the column's type:
+
+```bash
+mondo column clear --item 9876543210 --column e2e_dropdown -y
+```
+
+## Read-only columns: mirror, formula, and friends
+
+`mirror`, `formula`, `auto_number`, `creation_log`, `time_tracking`, … cannot be written, and monday returns `text: null` for mirrors — so typed reads (`item list`/`item get`/`column get`) render them **empty**. Until mondo surfaces `display_value` natively, the one legitimate graphql escape for reads is the inline fragment:
+
+```bash
+mondo graphql 'query { items(ids: [9876543210]) { column_values(ids: ["mirror__1"]) {
+  id ... on MirrorValue { display_value } ... on BoardRelationValue { display_value linked_item_ids } } } }'
+```
+
 ## Multi-column writes on `item create`
 
 Repeat `--column k=v` to set multiple columns at item creation time:

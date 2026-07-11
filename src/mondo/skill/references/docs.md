@@ -65,6 +65,8 @@ markdown/mdx/html print to stdout by default; **pdf always requires `--out`**.
 
 *Note:* `--engine server` is always live (it never consults the per-doc cache), so `--no-cache` / `--refresh-cache` have no effect there.
 
+*Gotcha:* in `--format json` output, each block's `content` is a **JSON-encoded string** (monday stores it that way), not a nested object — decode before addressing keys: `jq '.blocks[].content | fromjson'`, or `json.loads(block["content"])` in Python. Treating it as a dict is a recurring `AttributeError` in agent scripts.
+
 ### Write to a file (and handle embedded images)
 
 Add `--out FILE` to write the rendered doc to a file (valid for `markdown`, `mdx`, `html`, and `pdf`; required for `pdf`; rejected with exit 2 for `json`).
