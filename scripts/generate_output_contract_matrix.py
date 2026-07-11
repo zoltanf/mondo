@@ -21,7 +21,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLI_DIR = REPO_ROOT / "src" / "mondo" / "cli"
-QUERIES_FILE = REPO_ROOT / "src" / "mondo" / "api" / "queries.py"
+QUERIES_DIR = REPO_ROOT / "src" / "mondo" / "api" / "queries"
 OUT_JSON = REPO_ROOT / "docs" / "output-contract-matrix.json"
 OUT_MD = REPO_ROOT / "docs" / "output-contract-matrix.md"
 
@@ -772,6 +772,8 @@ MANUAL_ROWS: dict[str, Row] = {
             "id",
             "name",
             "email",
+            "kind",
+            "status",
             "enabled",
             "is_admin",
             "is_guest",
@@ -823,30 +825,22 @@ AUTO_NOTES: dict[str, str] = {
 
 
 def load_query_constants() -> dict[str, str]:
-    src = QUERIES_FILE.read_text()
-    tree = ast.parse(src)
+    # Import each query module and read its resolved module-level string
+    # constants. The queries package interpolates shared fragments (e.g.
+    # COLUMN_VALUES_SELECTION) via f-strings, so static ast.literal_eval
+    # can't recover them — importing yields the fully-expanded query text.
+    import importlib
+
     out: dict[str, str] = {}
-    for node in tree.body:
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+    for path in sorted(QUERIES_DIR.glob("*.py")):
+        if path.name == "__init__.py":
             continue
-        target = node.targets[0]
-        if not isinstance(target, ast.Name):
-            continue
-        value: Any = None
-        try:
-            value = ast.literal_eval(node.value)
-        except Exception:
-            if (
-                isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Attribute)
-                and node.value.func.attr == "strip"
-            ):
-                try:
-                    value = ast.literal_eval(node.value.func.value)
-                except Exception:
-                    value = None
-        if isinstance(value, str) and ("query " in value or "mutation " in value):
-            out[target.id] = value.strip()
+        module = importlib.import_module(f"mondo.api.queries.{path.stem}")
+        for name, value in vars(module).items():
+            if name.startswith("__"):
+                continue
+            if isinstance(value, str) and ("query " in value or "mutation " in value):
+                out[name] = value.strip()
     return out
 
 
@@ -1006,12 +1000,39 @@ def extract_emits(src: str, fn: ast.FunctionDef) -> list[tuple[int, str]]:
     return sorted(emits)
 
 
+def append_normalize_user_derived(fields: list[str]) -> list[str]:
+    """Append the legacy booleans `normalize_user` derives (see
+    src/mondo/domain/users.py). Derivation keys off source-field presence:
+    `kind` -> is_admin/is_guest/is_view_only, `status` -> enabled/is_pending,
+    `photo_url` -> photo_thumb. Appended after the raw query fields, matching
+    the runtime dict order."""
+    top = {f.split("{", 1)[0] for f in fields}
+    out = list(fields)
+    if "kind" in top:
+        out += ["is_admin", "is_guest", "is_view_only"]
+    if "status" in top:
+        out += ["enabled", "is_pending"]
+    if "photo_url" in top:
+        out.append("photo_thumb")
+    return out
+
+
 def infer_auto_row(
     command: str,
     query_names: list[str],
     emit_expr: str,
     query_trees: dict[str, list[tuple[str, Any]]],
 ) -> Row | None:
+    # #89 wraps several user/me emits in `normalize_user(...)`, which derives
+    # legacy boolean fields in Python (invisible to query-text inference).
+    # Unwrap to infer the raw shape, then re-append the derived fields.
+    wrapped = re.fullmatch(r"normalize_user\((.*)\)", emit_expr)
+    if wrapped:
+        row = infer_auto_row(command, query_names, wrapped.group(1).strip(), query_trees)
+        if row is not None:
+            row.fields = append_normalize_user_derived(row.fields)
+        return row
+
     if not query_names:
         return None
     query_name = query_names[0]

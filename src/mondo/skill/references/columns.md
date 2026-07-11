@@ -127,6 +127,37 @@ mondo column set --item 9876543210 --column e2e_status --value Done --dry-run
 
 *Gotcha:* quote any `--value` (or `--column k=v`) containing shell metacharacters — `&`, spaces, parentheses. An unquoted `--column status=Accounts_&_Rights` makes zsh fork at the `&` and fail with `command not found`.
 
+## Bulk-set a column across many items (`--batch`)
+
+`column set --batch <path|->` sets values on many items in one shot, fanning each chunk into a single aliased GraphQL document (N rows = one HTTP call). It **requires `--board`** (board columns are fetched once instead of one context lookup per item) and is mutually exclusive with `--item`/`--value`/`--from-file`/`--from-stdin`.
+
+Rows are `{item, value}` or `{item, column, value}`; a top-level `--column` supplies the default column for rows that omit one:
+
+```bash
+# Rows via stdin ('-'), default column supplied on the flag.
+echo '[
+  {"item": 9876543210, "value": "Done"},
+  {"item": 9876543211, "value": "Working on it"},
+  {"item": 9876543212, "column": "e2e_numbers", "value": 42}
+]' | mondo column set --board 5094861043 --column e2e_status --batch - --chunk-size 10 -o json
+```
+
+```json
+{
+  "summary": {"requested": 3, "updated": 2, "failed": 1},
+  "results": [
+    {"ok": true,  "row_index": 0, "item": 9876543210, "column": "e2e_status"},
+    {"ok": true,  "row_index": 1, "item": 9876543211, "column": "e2e_status"},
+    {"ok": false, "row_index": 2, "item": 9876543212, "column": "e2e_numbers", "error": "..."}
+  ]
+}
+```
+
+- **Exit 1 on any per-row failure** (the envelope is still emitted — inspect `results[].ok` and retry the failures). A mid-batch HTTP error marks the failing + not-yet-attempted rows failed and still returns the partial envelope.
+- `--dry-run` prints the resolved GraphQL document per chunk without sending. Tags-by-name can't be minted in `--dry-run` — pass tag **ids** there.
+- The `name` column is rejected (rename items with `mondo item rename`), same as single-item mode.
+- Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail codec validation and the error points you at `mondo column clear`.
+
 ## Clear a column value
 
 Don't guess empty payloads through `column set` (`--value ""` or `'{"labels":[]}'` fails codec validation, e.g. "unknown dropdown label"). `column clear` sends the correct empty payload for the column's type:
@@ -137,12 +168,13 @@ mondo column clear --item 9876543210 --column e2e_dropdown -y
 
 ## Read-only columns: mirror, formula, and friends
 
-`mirror`, `formula`, `auto_number`, `creation_log`, `time_tracking`, … cannot be written, and monday returns `text: null` for mirrors — so typed reads (`item list`/`item get`/`column get`) render them **empty**. Until mondo surfaces `display_value` natively, the one legitimate graphql escape for reads is the inline fragment:
+`mirror`, `formula`, `auto_number`, `creation_log`, `time_tracking`, … cannot be **written** (a `column set` attempt exits 5). But they now **read** correctly: typed reads render the computed `display_value` natively, so no graphql escape is needed.
 
-```bash
-mondo graphql 'query { items(ids: [9876543210]) { column_values(ids: ["mirror__1"]) {
-  id ... on MirrorValue { display_value } ... on BoardRelationValue { display_value linked_item_ids } } } }'
-```
+- `column get --item <id> --column <mirror|formula|board_relation|dependency>` renders the `display_value`.
+- `item list`/`item get -o json` carry `display_value` on those column values (and `linked_item_ids` for `board_relation`/`dependency`).
+- Exports (`export board`) fall back to `display_value` when `text` is null.
+
+So the old inline-fragment escape (`... on MirrorValue { display_value }` via `mondo graphql`) is **no longer necessary** for these reads — reach for it only if you need a raw field the typed selection doesn't expose.
 
 ## Multi-column writes on `item create`
 

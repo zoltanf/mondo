@@ -56,6 +56,33 @@ exit 1
 
 *Gotcha:* the envelope is on **stdout**, not stderr — the JSON error envelope is only used for command-level failures (auth, validation, not-found). Per-row failures are part of the normal data response. Re-run only failed rows by filtering `results[?ok==false]`.
 
+## Bulk-set a column across items from JSON
+
+`column set --batch` mirrors the item-create batch mechanics (aliased fan-out, one HTTP call per chunk, `--chunk-size`, `{summary, results}` envelope, exit 1 on any per-row failure). It **requires `--board`** and is mutually exclusive with the single-item flags. Rows are `{item, value}` or `{item, column, value}`; a top-level `--column` is the default column:
+
+```json
+[
+  {"item": 9876543210, "value": "Done"},
+  {"item": 9876543211, "column": "e2e_numbers", "value": 42}
+]
+```
+
+```bash
+mondo column set --board 5094861043 --column e2e_status --batch ./col_batch.json -o json
+```
+
+```json
+{
+  "summary": {"requested": 2, "updated": 2, "failed": 0},
+  "results": [
+    {"ok": true, "row_index": 0, "item": 9876543210, "column": "e2e_status"},
+    {"ok": true, "row_index": 1, "item": 9876543211, "column": "e2e_numbers"}
+  ]
+}
+```
+
+*Gotcha:* in `--dry-run` pass tag **ids**, not names (name-minting is deferred until the whole batch validates). Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail codec validation — use `mondo column clear` instead (the error says so). Full walkthrough: `mondo help batch-operations`.
+
 ## Export a board
 
 Formats: `csv | tsv | json | xlsx | md | html | pdf`. Stdout for csv/tsv/json/md/html; `--out` **required** for xlsx and pdf (exit 2 otherwise).
