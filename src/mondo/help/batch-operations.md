@@ -113,6 +113,59 @@ is still emitted, so the caller can pick winners and retry the rest).
 (`--name`, `--group`, `--column`, `--position-*`, `--relative-to`). Move
 those settings into the JSON rows.
 
+## `mondo column set --batch`
+
+Set a column value across many items in one shot, reusing the same
+aliased fan-out (N rows = one HTTP call, `--chunk-size` to tune). Unlike
+item create, this one needs `--board` (board columns are fetched once
+instead of a context lookup per item), and it's mutually exclusive with
+the single-item flags (`--item`, `--value`, `--from-file`,
+`--from-stdin`).
+
+Per-row schema — `{item, value}` or `{item, column, value}`. A top-level
+`--column` supplies the default column for rows that omit one:
+
+```json
+[
+  {"item": 9876543210, "value": "Done"},
+  {"item": 9876543211, "value": "Working on it"},
+  {"item": 9876543212, "column": "numbers", "value": 42}
+]
+```
+
+```bash
+# Default column on the flag, rows from a file
+mondo column set --board $BOARD --column status --batch rows.json
+
+# From stdin, smaller chunks
+cat rows.json | mondo column set --board $BOARD --column status --batch - --chunk-size 5
+
+# Dry-run prints each chunk's GraphQL document without sending
+mondo --dry-run column set --board $BOARD --column status --batch rows.json
+```
+
+The result envelope matches item create, with an `updated` count:
+
+```json
+{
+  "summary": {"requested": 3, "updated": 2, "failed": 1},
+  "results": [
+    {"ok": true,  "row_index": 0, "item": 9876543210, "column": "status"},
+    {"ok": false, "row_index": 2, "item": 9876543212, "column": "numbers", "error": "..."}
+  ]
+}
+```
+
+Exit 0 when every row succeeds, exit 1 when any row failed (the envelope
+is still emitted; a mid-batch HTTP error marks the failing + not-attempted
+rows failed rather than discarding everything). Notes:
+
+- In `--dry-run`, pass tag **ids** (name-minting is deferred until the
+  whole batch validates, so it can't run offline).
+- The `name` column is rejected — rename items with `mondo item rename`.
+- Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail
+  codec validation; the error points you at `mondo column clear`.
+
 ## When to reach for what
 
 - One known id, one mutation: pass `--id`. No filter, no batch.

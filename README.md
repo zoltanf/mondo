@@ -489,7 +489,7 @@ block, JSON gets a `subitems` array, the human formats append a trailing
 
 ```bash
 mondo user list   [--kind all|non_guests|guests|non_pending] [--email a@x.com] \
-                  [--name "Alice"] [--non-active] [--newest-first] [--limit 100]
+                  [--name "Alice"] [--include-deactivated] [--newest-first] [--limit 100]
 mondo user get    --id 42
 
 mondo user deactivate      --user 1 [--user 2] --yes
@@ -823,6 +823,7 @@ mondo column get      --item 987 --column status --raw   # {id, type, value, tex
 mondo column set      --item 987 --column status --value Done
 mondo column set      --item 987 --column tags   --value urgent,blocked   # names auto-resolve
 mondo column set      --item 987 --column related --value '{"item_ids":[12345,67890]}'  # board_relation: JSON-native shape OK
+mondo column set      --board 1234567890 --column status --batch rows.json   # bulk-set one column across items ({item,value} / {item,column,value} rows; exit 1 on any per-row failure)
 mondo column set-many --item 987 --values '{"text":"Hi","due":{"date":"2026-04-25"}}'
 mondo column clear    --item 987 --column status
 

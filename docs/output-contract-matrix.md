@@ -453,7 +453,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
 
 - `me`
   type: `object`
-  fields: `id`, `name`, `email`, `is_admin`, `is_guest`, `is_view_only`, `is_pending`, `enabled`, `created_at`, `last_activity`, `title`, `photo_thumb`, `teams{id,name}`, `account{id,name,slug,tier,country_code,first_day_of_the_week,active_members_count,logo,plan{max_users,tier,period,version},products{id,kind}}`
+  fields: `id`, `name`, `email`, `kind`, `status`, `created_at`, `last_activity`, `title`, `photo_url{thumb}`, `teams{id,name}`, `account{id,name,slug,tier,country_code,first_day_of_the_week,active_members_count,logo,plan{max_users,tier,period,version},products{id,kind}}`, `is_admin`, `is_guest`, `is_view_only`, `enabled`, `is_pending`, `photo_thumb`
   source: `ME_FULL.me`
 
 ## notify
@@ -607,7 +607,7 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
 
 - `user activate`
   type: `object`
-  fields: `activated_users{id,name,enabled}`, `errors{message,code,user_id}`
+  fields: `activated_users{id,name,status}`, `errors{message,code,user_id}`
   source: `USERS_ACTIVATE.activate_users`
 - `user add-to-team`
   type: `object`
@@ -615,15 +615,15 @@ Nested object/list fields are shown inline as `field{sub1,sub2}`.
   source: `ADD_USERS_TO_TEAM.add_users_to_team`
 - `user deactivate`
   type: `object`
-  fields: `deactivated_users{id,name,enabled}`, `errors{message,code,user_id}`
+  fields: `deactivated_users{id,name,status}`, `errors{message,code,user_id}`
   source: `USERS_DEACTIVATE.deactivate_users`
 - `user get`
   type: `object`
-  fields: `id`, `name`, `email`, `enabled`, `is_admin`, `is_guest`, `is_pending`, `is_view_only`, `created_at`, `last_activity`, `title`, `photo_thumb`, `teams{id,name}`, `account{id,name,slug,tier}`
+  fields: `id`, `name`, `email`, `kind`, `status`, `created_at`, `last_activity`, `title`, `photo_url{thumb}`, `teams{id,name}`, `account{id,name,slug,tier}`, `is_admin`, `is_guest`, `is_view_only`, `enabled`, `is_pending`, `photo_thumb`
   source: `USER_GET.users[0]`
 - `user list`
   type: `list[object]`
-  fields: `id`, `name`, `email`, `enabled`, `is_admin`, `is_guest`, `is_pending`, `is_view_only`, `created_at`, `last_activity`, `title`, `photo_thumb`, `teams{id,name}`, `account{id,name,slug,tier}`, `_fuzzy_score?`
+  fields: `id`, `name`, `email`, `kind`, `status`, `enabled`, `is_admin`, `is_guest`, `is_pending`, `is_view_only`, `created_at`, `last_activity`, `title`, `photo_thumb`, `teams{id,name}`, `account{id,name,slug,tier}`, `_fuzzy_score?`
   source: `USERS_LIST_PAGE.users[]`
   notes: When --fuzzy-score is used, _fuzzy_score is appended last.
 - `user remove-from-team`
