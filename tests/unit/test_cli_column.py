@@ -974,6 +974,58 @@ class TestColumnSetBatch:
         combined = (result.output or "") + (result.stderr or "")
         assert "mondo item rename" in combined
 
+    def test_single_dry_run_tag_names_issue_no_mutation(self, httpx_mock: HTTPXMock) -> None:
+        # Single-item `column set --dry-run` with tags-by-name must error
+        # instead of minting via create_or_get_tag (same invariant as --batch).
+        cols = [{"id": "tags", "title": "Tags", "type": "tags", "settings_str": "{}"}]
+        values = [{"id": "tags", "type": "tags", "text": "", "value": None}]
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_context_response(42, cols, values)
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "column",
+                "set",
+                "--item",
+                "1",
+                "--column",
+                "tags",
+                "--value",
+                "urgent,blocked",
+            ],
+        )
+        assert result.exit_code == 5, result.output
+        assert "tag ids in --dry-run" in ((result.output or "") + (result.stderr or ""))
+        # Only the read-only context fetch happened; create_or_get_tag never fired.
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
+    def test_single_dry_run_tag_ids_pass_through(self, httpx_mock: HTTPXMock) -> None:
+        cols = [{"id": "tags", "title": "Tags", "type": "tags", "settings_str": "{}"}]
+        values = [{"id": "tags", "type": "tags", "text": "", "value": None}]
+        httpx_mock.add_response(
+            url=ENDPOINT, method="POST", json=_context_response(42, cols, values)
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "column",
+                "set",
+                "--item",
+                "1",
+                "--column",
+                "tags",
+                "--value",
+                "1001,1002",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        env = json.loads(result.stdout)
+        assert env["variables"]["value"] == json.dumps({"tag_ids": [1001, 1002]})
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
     def test_dry_run_tag_names_issue_no_mutation(self, httpx_mock: HTTPXMock) -> None:
         # A tags value given as names can't be resolved in --dry-run without a
         # real create_or_get_tag mutation, so it errors instead of writing.

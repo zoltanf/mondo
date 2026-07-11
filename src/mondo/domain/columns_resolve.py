@@ -72,3 +72,12 @@ def resolve_tag_names_to_ids(
             cache[part] = tag_id_int
         resolved_ids.append(tag_id_int)
     return ",".join(str(i) for i in resolved_ids)
+
+
+def tags_value_all_ids(raw: str) -> bool:
+    """True when every comma-separated part of a tags value is already a
+    numeric id, so no name→id resolution (a live `create_or_get_tag`
+    mutation) is needed. Mirrors the pass-through check in
+    `resolve_tag_names_to_ids`."""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return all(p.isdigit() or (p.startswith("-") and p[1:].isdigit()) for p in parts)
