@@ -137,10 +137,8 @@ def _flatten_entry_value(value: dict[str, Any] | None) -> Any:
     # AggregateBasicAggregationResult
     if "result" in value and value.get("__typename") == "AggregateBasicAggregationResult":
         return value.get("result")
-    # AggregateGroupByResult — prefer the typed variant, fall back to generic `value`.
-    for k in ("value_string", "value_int", "value_float", "value_boolean"):
-        if value.get(k) is not None:
-            return value[k]
+    # AggregateGroupByResult — 2026-07 removed the typed `value_*` variants;
+    # the generic `value: JSON` already carries the native scalar.
     return value.get("value")
 
 

@@ -239,10 +239,6 @@ class TestAggregate:
                                         "alias": "status",
                                         "value": {
                                             "__typename": "AggregateGroupByResult",
-                                            "value_string": "Done",
-                                            "value_int": None,
-                                            "value_float": None,
-                                            "value_boolean": None,
                                             "value": "Done",
                                         },
                                     },

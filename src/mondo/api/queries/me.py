@@ -90,6 +90,8 @@ query {
 
 
 # Aggregation API (2026-01+). Returns [AggregateGroupByResult { ... }].
+# 2026-07 removed the typed `value_*` variants from AggregateGroupByResult;
+# only the generic `value: JSON` remains.
 AGGREGATE_BOARD = """
 query ($q: AggregateQueryInput!) {
   aggregate(query: $q) {
@@ -99,13 +101,7 @@ query ($q: AggregateQueryInput!) {
         value {
           __typename
           ... on AggregateBasicAggregationResult { result }
-          ... on AggregateGroupByResult {
-            value_string
-            value_int
-            value_float
-            value_boolean
-            value
-          }
+          ... on AggregateGroupByResult { value }
         }
       }
     }
