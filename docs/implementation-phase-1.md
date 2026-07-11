@@ -304,7 +304,7 @@ file uploads, aggregation API, multi-level boards, and full workspace docs.
 | Week column is double-nested | Week codec builds `{"week": {"startDate": "...", "endDate": "..."}}` |
 | Root `items(ids:)` with >100 IDs or no IDs is throttled to 1/2min | We paginate via `items_page` everywhere — never hit the rate-limited form |
 | `items_page` cursor lifetime is 60 minutes | `iter_items_page` catches `CursorExpiredError` and restarts |
-| API versions shift quarterly | Always pinned via `API-Version` header; defaults to `2026-01` (current as of April 2026) |
+| API versions shift quarterly | Always pinned via `API-Version` header; defaults to `2026-07` (current as of July 2026) |
 | Errors carry `extensions.request_id` (since 2025-05) | Every `MondoError` surfaces it in `str(exc)` |
 | Idempotency keys not supported | Every mutation has `--dry-run`; `item archive` (reversible) is preferred over `delete` |
 

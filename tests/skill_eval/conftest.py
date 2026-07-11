@@ -18,6 +18,7 @@ import pytest
 from dotenv import load_dotenv
 
 from tests.integration._helpers import (
+    API_VERSION,
     MONDO_TEST_BOARD_ID_ENV,
     CleanupPlan,
     invoke_json,
@@ -97,7 +98,7 @@ def eval_extra_env() -> dict[str, str]:
     token = os.environ.get("MONDAY_TEST_TOKEN")
     if token:
         env["MONDAY_API_TOKEN"] = token
-    env["MONDAY_API_VERSION"] = "2026-01"
+    env["MONDAY_API_VERSION"] = API_VERSION
     env["MONDO_NO_CACHE_NOTICE"] = "1"
     env["MONDO_NO_PROJECTION_WARNINGS"] = "1"
     return env
@@ -110,7 +111,7 @@ def _eval_env_shim(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     if not token:
         return
     monkeypatch.setenv("MONDAY_API_TOKEN", token)
-    monkeypatch.setenv("MONDAY_API_VERSION", "2026-01")
+    monkeypatch.setenv("MONDAY_API_VERSION", API_VERSION)
     monkeypatch.setenv("MONDO_NO_CACHE_NOTICE", "1")
     monkeypatch.setenv("MONDO_NO_PROJECTION_WARNINGS", "1")
     monkeypatch.setenv("MONDO_HOME", str(tmp_path / "mondo_home"))

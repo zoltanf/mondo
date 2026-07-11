@@ -91,7 +91,7 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     default_profile: str = "default"
-    api_version: str = "2026-01"
+    api_version: str = "2026-07"
     profiles: dict[str, Profile] = Field(default_factory=dict)
     cache: CacheConfig | None = None
 

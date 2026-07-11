@@ -2,36 +2,36 @@
 
 from __future__ import annotations
 
-# monday-api.md §14. UserKind: all|non_guests|guests|non_pending.
+# monday-api.md §14. Migrated to API 2026-07: `kind`/`non_active`/`newest_first`
+# args were removed; use `user_kind`/`status`/`sort`. The deprecated boolean
+# User fields (is_admin/is_guest/is_view_only/enabled/is_pending) are replaced
+# by `kind`/`status`; mondo derives the legacy booleans in `normalize_user`.
 USERS_LIST_PAGE = """
 query (
   $limit: Int!
   $page: Int!
   $ids: [ID!]
-  $kind: UserKind
+  $userKind: UserKindFilterInput
   $emails: [String!]
   $name: String
-  $nonActive: Boolean
-  $newestFirst: Boolean
+  $status: [UserStatus!]
+  $sort: [UsersSortInput!]
 ) {
   users(
     limit: $limit
     page: $page
     ids: $ids
-    kind: $kind
+    user_kind: $userKind
     emails: $emails
     name: $name
-    non_active: $nonActive
-    newest_first: $newestFirst
+    status: $status
+    sort: $sort
   ) {
     id
     name
     email
-    enabled
-    is_admin
-    is_guest
-    is_pending
-    is_view_only
+    kind
+    status
     created_at
     last_activity
     title
@@ -46,15 +46,12 @@ query ($ids: [ID!]!) {
     id
     name
     email
-    enabled
-    is_admin
-    is_guest
-    is_pending
-    is_view_only
+    kind
+    status
     created_at
     last_activity
     title
-    photo_thumb
+    photo_url { thumb }
     teams { id name }
     account { id name slug tier }
   }
@@ -65,7 +62,7 @@ query ($ids: [ID!]!) {
 USERS_DEACTIVATE = """
 mutation ($ids: [ID!]!) {
   deactivate_users(user_ids: $ids) {
-    deactivated_users { id name enabled }
+    deactivated_users { id name status }
     errors { message code user_id }
   }
 }
@@ -75,7 +72,7 @@ mutation ($ids: [ID!]!) {
 USERS_ACTIVATE = """
 mutation ($ids: [ID!]!) {
   activate_users(user_ids: $ids) {
-    activated_users { id name enabled }
+    activated_users { id name status }
     errors { message code user_id }
   }
 }
@@ -87,7 +84,7 @@ mutation ($ids: [ID!]!) {
 USERS_UPDATE_AS_ADMINS = """
 mutation ($ids: [ID!]!) {
   update_multiple_users_as_admins(user_ids: $ids) {
-    updated_users { id name is_admin }
+    updated_users { id name kind }
     errors { message code user_id }
   }
 }
@@ -97,7 +94,7 @@ mutation ($ids: [ID!]!) {
 USERS_UPDATE_AS_MEMBERS = """
 mutation ($ids: [ID!]!) {
   update_multiple_users_as_members(user_ids: $ids) {
-    updated_users { id name is_admin }
+    updated_users { id name kind }
     errors { message code user_id }
   }
 }
@@ -107,7 +104,7 @@ mutation ($ids: [ID!]!) {
 USERS_UPDATE_AS_GUESTS = """
 mutation ($ids: [ID!]!) {
   update_multiple_users_as_guests(user_ids: $ids) {
-    updated_users { id name is_guest }
+    updated_users { id name kind }
     errors { message code user_id }
   }
 }
@@ -117,7 +114,7 @@ mutation ($ids: [ID!]!) {
 USERS_UPDATE_AS_VIEWERS = """
 mutation ($ids: [ID!]!) {
   update_multiple_users_as_viewers(user_ids: $ids) {
-    updated_users { id name is_view_only }
+    updated_users { id name kind }
     errors { message code user_id }
   }
 }

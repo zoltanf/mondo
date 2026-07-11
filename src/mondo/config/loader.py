@@ -17,7 +17,7 @@ from typing import Any
 from mondo.config.schema import Config
 
 DEFAULT_API_URL = "https://api.monday.com/v2"
-DEFAULT_API_VERSION = "2026-01"
+DEFAULT_API_VERSION = "2026-07"
 
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 

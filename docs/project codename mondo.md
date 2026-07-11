@@ -126,7 +126,7 @@ mondo/
 Exposed on every command via a Typer callback:
 - `--profile NAME` / `MONDO_PROFILE` — select profile from config.yaml
 - `--api-token TOKEN` / `MONDAY_API_TOKEN` — override token
-- `--api-version YYYY-MM` / `MONDAY_API_VERSION` — pin API version (default: `2026-01`, the Current version as of April 2026)
+- `--api-version YYYY-MM` / `MONDAY_API_VERSION` — pin API version (default: `2026-07`, the Current version as of July 2026)
 - `--output,-o {table,json,jsonc,yaml,tsv,csv,none}` (default `table` when stdout is a TTY, `json` otherwise — az-style auto-detection)
 - `--query,-q <jmespath>` — JMESPath projection applied before rendering
 - `--jq <expr>` — courtesy shortcut, shells out to `jq` if present (else errors)

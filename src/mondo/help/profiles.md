@@ -7,7 +7,7 @@ team — `mondo` handles these through named profiles in
 ## Minimal config
 
     default_profile: personal
-    api_version: "2026-01"
+    api_version: "2026-07"
 
     profiles:
       personal:
@@ -62,6 +62,6 @@ setting came from:
 
     mondo --debug auth status
     # token source: keyring (profile=personal)
-    # api_version: 2026-01 (source=profile.work)
+    # api_version: 2026-07 (source=profile.work)
 
 See also: `mondo help auth`, `mondo help output`.

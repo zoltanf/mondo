@@ -17,6 +17,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mondo.cli.main import app
+from mondo.config import DEFAULT_API_VERSION
 
 MONDAY_TEST_TOKEN_ENV = "MONDAY_TEST_TOKEN"
 MONDAY_TEST_WORKSPACE_ID_ENV = "MONDAY_TEST_WORKSPACE_ID"
@@ -24,7 +25,9 @@ MONDO_TEST_WORKSPACE_ID_ENV = "MONDO_TEST_WORKSPACE_ID"
 MONDO_TEST_BOARD_ID_ENV = "MONDO_TEST_BOARD_ID"
 MONDO_TEST_DOC_ID_ENV = "MONDO_TEST_DOC_ID"
 DEFAULT_PLAYGROUND_WORKSPACE_ID = 592446
-API_VERSION = "2026-01"
+# Pin the live suite to the CLI's own default so query migrations (e.g. the
+# 2026-07 user/me migration) can't drift apart from the version tests run on.
+API_VERSION = DEFAULT_API_VERSION
 
 runner = CliRunner()
 

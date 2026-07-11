@@ -13,6 +13,7 @@ from mondo.api.queries import ME_QUERY
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import handle_mondo_error_or_exit, usage_error_or_exit
 from mondo.cli.context import GlobalOpts
+from mondo.domain.users import normalize_user
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -35,7 +36,7 @@ def whoami(ctx: typer.Context) -> None:
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    me = (result.get("data") or {}).get("me") or {}
+    me = normalize_user((result.get("data") or {}).get("me") or {})
     opts.emit(me)
 
 
@@ -61,7 +62,7 @@ def status(ctx: typer.Context) -> None:
     except MondoError as e:
         handle_mondo_error_or_exit(e)
 
-    me = (result.get("data") or {}).get("me") or {}
+    me = normalize_user((result.get("data") or {}).get("me") or {})
     account = me.get("account") or {}
 
     payload = {

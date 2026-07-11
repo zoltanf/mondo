@@ -35,6 +35,7 @@ from mondo.cli._examples import epilog_for
 from mondo.cli._exec import client_or_exit, execute, handle_mondo_error_or_exit
 from mondo.cli.context import GlobalOpts
 from mondo.domain.resolve import resolve_required_id
+from mondo.domain.users import normalize_user
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -62,6 +63,46 @@ _ROLE_TO_MUTATION = {
     UserRole.guest: (USERS_UPDATE_AS_GUESTS, "update_multiple_users_as_guests"),
     UserRole.viewer: (USERS_UPDATE_AS_VIEWERS, "update_multiple_users_as_viewers"),
 }
+
+
+def _user_kind_arg(kind: UserKind | None) -> dict[str, list[str]] | None:
+    """Map `--kind guests` to the server `user_kind` filter. Only `guests`
+    goes server-side; `non_guests`/`non_pending` are handled client-side."""
+    if kind is UserKind.guests:
+        return {"in": ["GUEST"]}
+    return None
+
+
+def _status_arg(non_active: bool) -> list[str]:
+    """Map `--include-deactivated` to the `status` arg. Default returns only
+    ACTIVE users; the flag truly *includes* deactivated users by fetching
+    ACTIVE + INACTIVE (monday's INACTIVE bucket also surfaces PENDING). This
+    matches the directory cache's `_fetch_all_users` arg exactly, so the
+    live and cache paths return the same set. Verified live on API 2026-07:
+    `["ACTIVE"]` and `["ACTIVE", "INACTIVE"]` returned 159 and 271 users
+    respectively, the latter identical to the cache path's result set."""
+    return ["ACTIVE", "INACTIVE"] if non_active else ["ACTIVE"]
+
+
+def _sort_arg(newest_first: bool) -> list[dict[str, str]] | None:
+    if newest_first:
+        return [{"field": "CREATED_AT", "direction": "DESC"}]
+    return None
+
+
+# Keys in the activate/deactivate/update-role payloads that hold user records
+# selecting the new `kind`/`status` scalars — normalized so the derived legacy
+# booleans (`enabled`, `is_admin`, ...) stay in the emitted envelope.
+_ENVELOPE_USER_KEYS = ("deactivated_users", "activated_users", "updated_users")
+
+
+def _normalize_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
+    out = dict(envelope)
+    for key in _ENVELOPE_USER_KEYS:
+        users = out.get(key)
+        if isinstance(users, list):
+            out[key] = [normalize_user(u) for u in users]
+    return out
 
 
 # ----- read commands -----
@@ -95,7 +136,7 @@ def list_cmd(
         False,
         "--include-deactivated",
         "--non-active",
-        help="Include deactivated users.",
+        help="Include deactivated (and pending) users alongside active ones.",
     ),
     newest_first: bool = typer.Option(
         False, "--newest-first", help="Sort by most recently created."
@@ -146,12 +187,20 @@ def list_cmd(
 
     variables: dict[str, Any] = {
         "ids": None,
-        "kind": kind.value if kind else None,
+        "userKind": _user_kind_arg(kind),
         "emails": email or None,
         "name": name,
-        "nonActive": True if non_active else None,
-        "newestFirst": True if newest_first else None,
+        "status": _status_arg(non_active),
+        "sort": _sort_arg(newest_first),
     }
+
+    # `non_guests`/`non_pending` are applied client-side: monday's `not_in`
+    # filter is a no-op server-side (verified live on 2026-07), and there's no
+    # server-side way to drop PENDING (the INACTIVE bucket always includes it).
+    # `guests` is also re-filtered client-side (belt-and-suspenders), so it
+    # must fetch fully too — otherwise --max-items could truncate on rows the
+    # client-side filter would drop.
+    client_kind_filter = kind in (UserKind.non_guests, UserKind.guests, UserKind.non_pending)
 
     if opts.dry_run:
         opts.emit(
@@ -173,10 +222,21 @@ def list_cmd(
                 variables=variables,
                 collection_key="users",
                 limit=limit,
-                max_items=None if name_fuzzy else max_items,
+                max_items=None if (name_fuzzy or client_kind_filter) else max_items,
             )
     except MondoError as e:
         handle_mondo_error_or_exit(e)
+    items = [normalize_user(u) for u in items]
+    if kind is UserKind.non_guests:
+        items = [u for u in items if not u.get("is_guest")]
+    elif kind is UserKind.guests:
+        # Belt-and-suspenders: the server `user_kind {in: [GUEST]}` filter is
+        # kept as an optimization, but guests are re-filtered client-side so
+        # the live and cache paths agree even if the server filter regresses
+        # (its `not_in` sibling is already a server-side no-op).
+        items = [u for u in items if u.get("is_guest")]
+    elif kind is UserKind.non_pending:
+        items = [u for u in items if not u.get("is_pending")]
     if name_fuzzy is not None:
         from mondo.domain.filters import apply_fuzzy
 
@@ -186,8 +246,8 @@ def list_cmd(
             threshold=prefs.fuzzy_threshold,
             include_score=fuzzy_score_flag,
         )
-        if max_items is not None:
-            items = items[:max_items]
+    if max_items is not None:
+        items = items[:max_items]
     opts.emit(items)
 
 
@@ -291,7 +351,7 @@ def get_cmd(
     users = data.get("users") or []
     if not users:
         handle_mondo_error_or_exit(NotFoundError(f"user {user_id} not found."))
-    opts.emit(users[0])
+    opts.emit(normalize_user(users[0]))
 
 
 # ----- write commands -----
@@ -311,7 +371,7 @@ def deactivate_cmd(
     variables = {"ids": user}
     data = execute(opts, USERS_DEACTIVATE, variables)
     invalidate_entity(opts, "users")
-    opts.emit(data.get("deactivate_users") or {})
+    opts.emit(_normalize_envelope(data.get("deactivate_users") or {}))
 
 
 @app.command("activate", epilog=epilog_for("user activate"))
@@ -326,7 +386,7 @@ def activate_cmd(
     variables = {"ids": user}
     data = execute(opts, USERS_ACTIVATE, variables)
     invalidate_entity(opts, "users")
-    opts.emit(data.get("activate_users") or {})
+    opts.emit(_normalize_envelope(data.get("activate_users") or {}))
 
 
 @app.command("update-role", epilog=epilog_for("user update-role"))
@@ -351,7 +411,7 @@ def update_role_cmd(
     variables = {"ids": user}
     data = execute(opts, query, variables)
     invalidate_entity(opts, "users")
-    opts.emit(data.get(response_key) or {})
+    opts.emit(_normalize_envelope(data.get(response_key) or {}))
 
 
 @app.command("add-to-team", epilog=epilog_for("user add-to-team"))

@@ -12,13 +12,14 @@ import typer
 from mondo.api.queries import ACCOUNT_ONLY, ME_FULL
 from mondo.cli._exec import execute
 from mondo.cli.context import GlobalOpts
+from mondo.domain.users import normalize_user
 
 
 def me_command(ctx: typer.Context) -> None:
     """Print the authenticated user (id, name, teams, account)."""
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
     data = execute(opts, ME_FULL, {})
-    opts.emit(data.get("me") or {})
+    opts.emit(normalize_user(data.get("me") or {}))
 
 
 def account_command(ctx: typer.Context) -> None:

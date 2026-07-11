@@ -154,37 +154,32 @@ def test_get_workspaces_cold_then_warm(tmp_path: Path) -> None:
 # -- users -------------------------------------------------------------------
 
 
-def test_get_users_covers_both_active_and_disabled(tmp_path: Path) -> None:
+def test_get_users_single_fetch_all_statuses(tmp_path: Path) -> None:
     store = _store(tmp_path, "users")
     client = FakeClient(
         [
-            {"data": {"users": [{"id": "1", "name": "Active Ann", "enabled": True}]}},
-            {"data": {"users": [{"id": "2", "name": "Disabled Dan", "enabled": False}]}},
+            {
+                "data": {
+                    "users": [
+                        {"id": "1", "name": "Active Ann", "kind": "member", "status": "ACTIVE"},
+                        {"id": "2", "name": "Disabled Dan", "kind": "member", "status": "INACTIVE"},
+                    ]
+                }
+            },
         ]
     )
 
     result = get_users(client, store=store)
 
-    # Two API calls: one with nonActive=False, one with nonActive=True
-    assert len(client.calls) == 2
-    seen_flags = {call[1].get("nonActive") for call in client.calls if call[1]}
-    assert seen_flags == {True, False}
-    # Both users merged into the cache
+    # One API call on 2026-07: status: [ACTIVE, INACTIVE] returns the full
+    # directory (the INACTIVE bucket also surfaces PENDING).
+    assert len(client.calls) == 1
+    assert client.calls[0][1].get("status") == ["ACTIVE", "INACTIVE"]
     assert {e["id"] for e in result.entries} == {"1", "2"}
-
-
-def test_get_users_dedupes_when_apis_overlap(tmp_path: Path) -> None:
-    store = _store(tmp_path, "users")
-    duplicate = {"id": "1", "name": "Maybe Both"}
-    client = FakeClient(
-        [
-            {"data": {"users": [duplicate]}},
-            {"data": {"users": [duplicate]}},
-        ]
-    )
-
-    result = get_users(client, store=store)
-    assert len(result.entries) == 1
+    # Entries are normalized so the derived legacy booleans are cached.
+    by_id = {e["id"]: e for e in result.entries}
+    assert by_id["1"]["enabled"] is True
+    assert by_id["2"]["enabled"] is False
 
 
 # -- teams -------------------------------------------------------------------
