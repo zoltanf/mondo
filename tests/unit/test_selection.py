@@ -64,7 +64,7 @@ class TestExtractSelectedFields:
         assert "AggregateBasicAggregationResult" not in fields
         assert "AggregateGroupByResult" not in fields
         assert "result" in fields
-        assert "value_string" in fields
+        assert "value" in fields
         assert "__typename" in fields
 
     def test_line_comments_stripped(self) -> None:
