@@ -495,6 +495,69 @@ class TestColumnSet:
         body = json.loads(httpx_mock.get_requests()[-1].content)
         assert body["variables"]["value"] == json.dumps({"tag_ids": [1001, 1002]})
 
+    def test_dry_run_tag_names_issue_no_mutation(self, httpx_mock: HTTPXMock) -> None:
+        # A tags value given as names can't be resolved in --dry-run without a
+        # real create_or_get_tag mutation, so it errors instead of writing.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "tags", "title": "T", "type": "tags", "settings_str": "{}"}],
+                values=[{"id": "tags", "type": "tags", "text": "", "value": None}],
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "column",
+                "set",
+                "--item",
+                "1",
+                "--column",
+                "tags",
+                "--value",
+                "urgent,blocked",
+            ],
+        )
+        assert result.exit_code == 5, result.output
+        assert "tag ids in --dry-run" in ((result.output or "") + (result.stderr or ""))
+        # Only the read-only context fetch happened; create_or_get_tag never fired.
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
+    def test_dry_run_tag_ids_pass_through(self, httpx_mock: HTTPXMock) -> None:
+        # Numeric tag ids need no resolution, so --dry-run works offline-ish
+        # (only the read-only context fetch).
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "tags", "title": "T", "type": "tags", "settings_str": "{}"}],
+                values=[{"id": "tags", "type": "tags", "text": "", "value": None}],
+            ),
+        )
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "column",
+                "set",
+                "--item",
+                "1",
+                "--column",
+                "tags",
+                "--value",
+                "1001,1002",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        parsed = json.loads(result.stdout)
+        assert parsed["variables"]["value"] == json.dumps({"tag_ids": [1001, 1002]})
+        assert len(httpx_mock.get_requests()) == 1
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
     def test_clear_shaped_value_hints_column_clear(self, httpx_mock: HTTPXMock) -> None:
         """#91: an "empty" payload against a dropdown fails the codec and the
         error points at `column clear`."""
