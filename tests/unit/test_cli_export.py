@@ -804,3 +804,102 @@ class TestDuplicateNames:
         result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "md"])
         assert result.exit_code == 0, result.stdout
         assert result.stdout.count("## Sprint") == 2
+
+
+class TestDisplayValue:
+    """mirror / board_relation cells export display_value, not their null text."""
+
+    def test_board_relation_exports_display_value(self, httpx_mock: HTTPXMock) -> None:
+        cols = _ok(
+            {
+                "boards": [
+                    {
+                        "id": "42",
+                        "name": "B",
+                        "columns": [
+                            {
+                                "id": "link",
+                                "title": "Linked",
+                                "type": "board_relation",
+                                "archived": False,
+                            },
+                            {
+                                "id": "mir",
+                                "title": "Mirrored",
+                                "type": "mirror",
+                                "archived": False,
+                            },
+                        ],
+                    }
+                ]
+            }
+        )
+        # monday returns null `text` for both types; the readable value lives in
+        # display_value (board_relation also carries linked_item_ids).
+        item = {
+            "id": "1",
+            "name": "A",
+            "state": "active",
+            "group": {"id": "topics", "title": "Topics"},
+            "column_values": [
+                {
+                    "id": "link",
+                    "type": "board_relation",
+                    "text": None,
+                    "value": None,
+                    "display_value": "Item X, Item Y",
+                    "linked_item_ids": ["101", "102"],
+                },
+                {
+                    "id": "mir",
+                    "type": "mirror",
+                    "text": None,
+                    "value": None,
+                    "display_value": "42",
+                },
+            ],
+        }
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_items_page([item]))
+        result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "csv"])
+        assert result.exit_code == 0, result.stdout
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        assert rows[0] == ["id", "name", "state", "group", "Linked", "Mirrored"]
+        assert rows[1][4] == "Item X, Item Y"
+        assert rows[1][5] == "42"
+
+    def test_export_stays_text_first_for_round_trip(self, httpx_mock: HTTPXMock) -> None:
+        # Round-trip guard: rating/checkbox cells must export monday's raw
+        # `text` ("3" / "v"), NOT codec glyphs ("★★★" / "✓") — the CSV
+        # export→import cycle re-parses these strings via parse_value.
+        cols = _ok(
+            {
+                "boards": [
+                    {
+                        "id": "42",
+                        "name": "B",
+                        "columns": [
+                            {"id": "rate", "title": "Rating", "type": "rating", "archived": False},
+                            {"id": "done", "title": "Done", "type": "checkbox", "archived": False},
+                        ],
+                    }
+                ]
+            }
+        )
+        item = {
+            "id": "1",
+            "name": "A",
+            "state": "active",
+            "group": {"id": "topics", "title": "Topics"},
+            "column_values": [
+                {"id": "rate", "type": "rating", "text": "3", "value": '{"rating":3}'},
+                {"id": "done", "type": "checkbox", "text": "v", "value": '{"checked":"true"}'},
+            ],
+        }
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_items_page([item]))
+        result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "csv"])
+        assert result.exit_code == 0, result.stdout
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        assert rows[1][4] == "3"
+        assert rows[1][5] == "v"

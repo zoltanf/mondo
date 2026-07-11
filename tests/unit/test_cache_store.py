@@ -104,6 +104,28 @@ def test_envelope_with_wrong_schema_version_is_dropped(tmp_path: Path) -> None:
     assert not store.path.exists()
 
 
+def test_stale_v5_envelope_is_dropped(tmp_path: Path) -> None:
+    # v6 added display_value/linked_item_ids to items/board_items/subitems
+    # column_values; a v5-stamped entry lacks them and must be refetched even
+    # while still within its TTL.
+    store = _store(tmp_path, entity="items")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        json.dumps(
+            {
+                "schema_version": 5,
+                "fetched_at": _format_utc(datetime.now(UTC)),
+                "ttl_seconds": 60,
+                "api_endpoint": ENDPOINT,
+                "entries": [{"id": 1}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert store.read() is None
+    assert not store.path.exists()
+
+
 def test_endpoint_mismatch_returns_none_without_deleting(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.path.parent.mkdir(parents=True, exist_ok=True)

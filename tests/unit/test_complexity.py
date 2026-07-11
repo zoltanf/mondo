@@ -45,6 +45,24 @@ class TestInjector:
         q = "not-a-query"
         assert inject_complexity_field(q) == q
 
+    def test_preserves_inline_fragments(self) -> None:
+        # #88: column_values now carries polymorphic inline fragments. The
+        # injector walks braces to find the root close; balanced fragment
+        # braces must not confuse it or get dropped.
+        q = (
+            "query { items { column_values { "
+            "id type text value "
+            "... on MirrorValue { display_value } "
+            "... on BoardRelationValue { display_value linked_item_ids } "
+            "} } }"
+        )
+        out = inject_complexity_field(q)
+        assert "reset_in_x_seconds" in out
+        assert "... on MirrorValue { display_value }" in out
+        assert "... on BoardRelationValue { display_value linked_item_ids }" in out
+        # complexity field is appended at root level, after the items block.
+        assert out.rindex("complexity") > out.rindex("linked_item_ids")
+
 
 # --- ComplexityMeter ---
 

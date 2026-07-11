@@ -27,6 +27,7 @@ from mondo.columns.base import (
     parse_value,
     register,
     registered_types,
+    render_entry,
     render_value,
 )
 
@@ -39,5 +40,6 @@ __all__ = [
     "parse_value",
     "register",
     "registered_types",
+    "render_entry",
     "render_value",
 ]

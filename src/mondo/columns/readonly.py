@@ -30,9 +30,25 @@ class _ReadOnly(ColumnCodec):
 class MirrorCodec(_ReadOnly):
     type_name: ClassVar[str] = "mirror"
 
+    def render_entry(self, entry: dict[str, Any]) -> str:
+        # monday returns a null `text` for mirror columns; the computed value
+        # lives in `display_value` (MirrorValue inline fragment).
+        display = entry.get("display_value")
+        if display:
+            return display
+        return entry.get("text") or ""
+
 
 class FormulaCodec(_ReadOnly):
     type_name: ClassVar[str] = "formula"
+
+    def render_entry(self, entry: dict[str, Any]) -> str:
+        # monday returns a null `text` for formula columns; the computed value
+        # lives in `display_value` (FormulaValue inline fragment).
+        display = entry.get("display_value")
+        if display:
+            return display
+        return entry.get("text") or ""
 
 
 class AutoNumberCodec(_ReadOnly):

@@ -67,6 +67,21 @@ class BoardRelationCodec(ColumnCodec):
     def render(self, value: Any, text: str | None) -> str:
         return text or ""
 
+    def render_entry(self, entry: dict[str, Any]) -> str:
+        # monday returns a null `text` for board_relation; prefer the linked
+        # item names in `display_value`, then `text`, then bare linked ids
+        # (all from the BoardRelationValue inline fragment).
+        display = entry.get("display_value")
+        if display:
+            return display
+        text = entry.get("text")
+        if text:
+            return text
+        linked = entry.get("linked_item_ids")
+        if linked:
+            return ", ".join(str(i) for i in linked)
+        return ""
+
 
 class DependencyCodec(ColumnCodec):
     type_name: ClassVar[str] = "dependency"
@@ -79,6 +94,21 @@ class DependencyCodec(ColumnCodec):
 
     def render(self, value: Any, text: str | None) -> str:
         return text or ""
+
+    def render_entry(self, entry: dict[str, Any]) -> str:
+        # monday returns a null `text` for dependency; prefer the linked item
+        # names in `display_value`, then `text`, then bare linked ids (all from
+        # the DependencyValue inline fragment). Mirrors BoardRelationCodec.
+        display = entry.get("display_value")
+        if display:
+            return display
+        text = entry.get("text")
+        if text:
+            return text
+        linked = entry.get("linked_item_ids")
+        if linked:
+            return ", ".join(str(i) for i in linked)
+        return ""
 
 
 class WorldClockCodec(ColumnCodec):

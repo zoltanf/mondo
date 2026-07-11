@@ -9,6 +9,7 @@ Each codec owns:
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any, ClassVar
@@ -34,6 +35,25 @@ class ColumnCodec(ABC):
     @abstractmethod
     def render(self, value: Any, text: str | None) -> str:
         """Convert a column_values entry into a human-friendly display."""
+
+    def render_entry(self, entry: dict[str, Any]) -> str:
+        """Render a full ``column_values`` entry dict (id/type/text/value + any
+        polymorphic fields like ``display_value``/``linked_item_ids``).
+
+        Default: parse the JSON ``value`` and delegate to
+        ``render(value, text)``. Codecs whose read payload only surfaces via an
+        inline fragment (mirror, board_relation) override this to read those
+        fields straight off the entry.
+        """
+        text = entry.get("text")
+        raw = entry.get("value")
+        value: Any = None
+        if raw:
+            try:
+                value = json.loads(raw)
+            except ValueError:
+                value = raw
+        return self.render(value, text)
 
     def clear_payload(self) -> Any:
         """Override when the column doesn't clear with `{}` (checkbox, file, ...)."""
@@ -147,6 +167,16 @@ def parse_filter_value(
 
 def render_value(type_name: str, value: Any, text: str | None) -> str:
     return get_codec(type_name).render(value, text)
+
+
+def render_entry(type_name: str, entry: dict[str, Any]) -> str:
+    """Render a full ``column_values`` entry via its codec's ``render_entry``.
+
+    Prefer this over ``render_value`` at read sites: it lets mirror, formula,
+    board_relation & dependency codecs surface ``display_value`` from the
+    polymorphic inline fragments.
+    """
+    return get_codec(type_name).render_entry(entry)
 
 
 def clear_payload_for(type_name: str) -> Any:

@@ -157,10 +157,13 @@ def _group_key(item: dict[str, Any]) -> tuple[str | None, str]:
     return (group.get("id"), group.get("title") or "")
 
 
-def _column_text(item: dict[str, Any], col_id: str) -> str:
+def _column_text(item: dict[str, Any], col: dict[str, Any]) -> str:
     for cv in item.get("column_values") or []:
-        if cv.get("id") == col_id:
-            return cv.get("text") or ""
+        if cv.get("id") == col["id"]:
+            # Text-first so the CSV round-trip stays stable (rating/checkbox
+            # export their raw `text`, not glyphs). mirror/board_relation
+            # return a null `text`, so fall back to their `display_value`.
+            return cv.get("text") or cv.get("display_value") or ""
     return ""
 
 
@@ -175,7 +178,7 @@ def _item_row(
         "group": (item.get("group") or {}).get("title"),
     }
     for col, label in zip(columns, labels, strict=True):
-        row[label] = _column_text(item, col["id"])
+        row[label] = _column_text(item, col)
     return row
 
 
@@ -193,7 +196,7 @@ def _subitem_row(
         "state": subitem.get("state"),
     }
     for col, label in zip(columns, labels, strict=True):
-        row[label] = _column_text(subitem, col["id"])
+        row[label] = _column_text(subitem, col)
     return row
 
 
