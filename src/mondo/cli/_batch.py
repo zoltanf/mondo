@@ -13,12 +13,22 @@ Two pure helpers — no I/O, fully unit-testable:
 `var_names` is the ordered list of variables declared by the original
 template (without leading `$`). Callers iterate the chunk and build the
 flattened variables dict by setting `out[f"{name}_{i}"] = value_for_row_i`.
+
+On top of those, `run_aliased_batch` / `build_batch_chunks_repr` drive the
+whole chunk fan-out shared by `item create --batch` and `column set --batch`,
+so the callers only supply the template plus their per-row variables.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+from mondo.api.errors import MondoError
+
+if TYPE_CHECKING:
+    from mondo.api.client import MondayClient
 
 # `mutation ( $a: T! $b: T ) { body }` — DOTALL so the body can span lines.
 # Greedy `.*` for body so the closing `}` matches the outermost brace.
@@ -148,3 +158,117 @@ def chunk_inputs[T](items: list[T], size: int) -> list[list[T]]:
     if size < 1:
         raise ValueError("size must be >= 1")
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+# ----- shared batch driver -----
+#
+# `item create --batch` and `column set --batch` fan an aliased mutation the
+# same way: chunk the rows, compile one document per chunk, flatten each row's
+# variables with a `_i` suffix, execute with `surface_partial_errors=True`, and
+# map the response back per row. The three functions below are that shared
+# machinery — the callers only differ in the template and how they build
+# `per_row_vars` / `result_rows`.
+
+
+def _chunk_builder(template: str) -> Callable[[int], tuple[str, list[str]]]:
+    """Return a memoized `build_aliased_mutation(template, count)`.
+
+    Every full-size chunk in a batch has the same length, so compiling the
+    aliased document once and reusing it avoids re-running the regex rewrite
+    for each chunk (only the shorter trailing chunk, if any, compiles anew).
+    """
+    cache: dict[int, tuple[str, list[str]]] = {}
+
+    def build(count: int) -> tuple[str, list[str]]:
+        got = cache.get(count)
+        if got is None:
+            got = build_aliased_mutation(template, count)
+            cache[count] = got
+        return got
+
+    return build
+
+
+def _flatten_chunk_vars(var_names: list[str], vars_chunk: list[dict[str, Any]]) -> dict[str, Any]:
+    """Flatten a chunk of per-row variable dicts into one `{name_i: value}` map."""
+    flat: dict[str, Any] = {}
+    for i, vars_row in enumerate(vars_chunk):
+        for name in var_names:
+            flat[f"{name}_{i}"] = vars_row[name]
+    return flat
+
+
+def _failed_rows(rows: list[dict[str, Any]], base_index: int, error: str) -> list[dict[str, Any]]:
+    """Build failure envelopes for `rows`, matching `parse_aliased_response`."""
+    return [
+        {
+            "ok": False,
+            "row_index": base_index + i,
+            "name": row.get("name", ""),
+            "error": error,
+        }
+        for i, row in enumerate(rows)
+    ]
+
+
+def build_batch_chunks_repr(
+    template: str, per_row_vars: list[dict[str, Any]], chunk_size: int
+) -> list[dict[str, Any]]:
+    """Return the `--dry-run` representation of a batch: one entry per HTTP call
+    that would be made, each with the aliased `query`, the flattened
+    `variables`, and the absolute `row_indices` the chunk covers."""
+    build = _chunk_builder(template)
+    chunks_repr: list[dict[str, Any]] = []
+    for chunk_idx, vars_chunk in enumerate(chunk_inputs(per_row_vars, chunk_size)):
+        query, var_names = build(len(vars_chunk))
+        base = chunk_idx * chunk_size
+        chunks_repr.append(
+            {
+                "query": query,
+                "variables": _flatten_chunk_vars(var_names, vars_chunk),
+                "row_indices": list(range(base, base + len(vars_chunk))),
+            }
+        )
+    return chunks_repr
+
+
+def run_aliased_batch(
+    client: MondayClient,
+    template: str,
+    per_row_vars: list[dict[str, Any]],
+    result_rows: list[dict[str, Any]],
+    *,
+    chunk_size: int,
+) -> list[dict[str, Any]]:
+    """Execute an aliased multi-mutation batch and return per-row result
+    envelopes (see `parse_aliased_response` for their shape).
+
+    `per_row_vars` supplies each row's mutation variables; `result_rows`
+    supplies each row's `name` for the envelope (the two are index-aligned).
+    Each chunk becomes one `build_aliased_mutation` document (memoized by chunk
+    length) executed with `surface_partial_errors=True`, so GraphQL-layer
+    per-row failures land in the envelope.
+
+    An HTTP-layer `MondoError` (rate-limit/complexity/network) raised mid-batch
+    is caught here rather than propagated: the failing chunk's rows are marked
+    failed with the error message, every not-yet-attempted row is marked
+    `aborted: <error>`, and the driver stops. The caller still gets a complete
+    envelope for every requested row and can invalidate caches for the chunks
+    that did run."""
+    build = _chunk_builder(template)
+    vars_chunks = chunk_inputs(per_row_vars, chunk_size)
+    row_chunks = chunk_inputs(result_rows, chunk_size)
+    results: list[dict[str, Any]] = []
+    for chunk_idx, (vars_chunk, row_chunk) in enumerate(zip(vars_chunks, row_chunks, strict=True)):
+        base = chunk_idx * chunk_size
+        query, var_names = build(len(vars_chunk))
+        flat = _flatten_chunk_vars(var_names, vars_chunk)
+        try:
+            response = client.execute(query, variables=flat, surface_partial_errors=True)
+        except MondoError as e:
+            results.extend(_failed_rows(row_chunk, base, str(e)))
+            attempted = base + len(row_chunk)
+            results.extend(_failed_rows(result_rows[attempted:], attempted, f"aborted: {e}"))
+            break
+        results.extend(parse_aliased_response(response, row_chunk, base_index=base))
+    return results

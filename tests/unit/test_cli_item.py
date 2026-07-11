@@ -893,6 +893,46 @@ class TestItemCreateBatch:
         assert env["results"][1]["ok"] is False
         assert env["results"][1]["error"] == "Group not found"
 
+    def test_batch_mid_batch_http_error_emits_partial_envelope_exits_1(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        """A mid-batch HTTP-layer failure keeps earlier successes: the failing
+        + not-attempted rows are marked failed and the command still emits the
+        envelope and exits 1 (rather than aborting with the raw error)."""
+        rows = [{"name": chr(ord("A") + i)} for i in range(3)]
+        batch_file = tmp_path / "rows.json"
+        batch_file.write_text(json.dumps(rows))
+        # Chunk 0 succeeds; chunk 1 fails at HTTP layer (400 -> non-retryable);
+        # chunk 2 is never attempted.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json={"data": {"m_0": {"id": "11", "name": "A"}}, "extensions": {"request_id": "r"}},
+        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", status_code=400, json={})
+        result = runner.invoke(
+            app,
+            [
+                "item",
+                "create",
+                "--board",
+                "42",
+                "--batch",
+                str(batch_file),
+                "--chunk-size",
+                "1",
+            ],
+        )
+        assert result.exit_code == 1, result.stdout
+        env = json.loads(result.stdout)
+        assert env["summary"] == {"requested": 3, "created": 1, "failed": 2}
+        assert env["results"][0]["ok"] is True
+        assert env["results"][1]["ok"] is False
+        assert "HTTP 400" in env["results"][1]["error"]
+        assert env["results"][2]["error"].startswith("aborted:")
+        # chunk 0 + chunk 1 = 2 calls; chunk 2 never went out.
+        assert len(httpx_mock.get_requests()) == 2
+
     def test_batch_dry_run_emits_chunks_without_calling_api(
         self, httpx_mock: HTTPXMock, tmp_path: Path
     ) -> None:

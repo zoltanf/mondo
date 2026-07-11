@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import nullcontext
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import typer
 
-from mondo.api.errors import MondoError, NotFoundError, ValidationError
+from mondo.api.errors import MondoError, NotFoundError, UsageError, ValidationError
 from mondo.api.queries import (
     CHANGE_COLUMN_VALUE,
     CHANGE_MULTIPLE_COLUMN_VALUES,
@@ -25,6 +26,7 @@ from mondo.api.queries import (
     COLUMN_DELETE,
     COLUMN_RENAME,
 )
+from mondo.cli._batch import build_batch_chunks_repr, run_aliased_batch
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
@@ -51,8 +53,11 @@ from mondo.columns.status import iter_status_labels
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.domain.columns_resolve import parse_settings, resolve_tag_names_to_ids
 from mondo.domain.resolve import resolve_by_filters, resolve_required_id
+from mondo.services.items import fetch_column_defs, read_batch_rows
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mondo.api.client import MondayClient
 
 app = typer.Typer(
@@ -101,6 +106,32 @@ def _load_value(value: str | None, from_file: Path | None, from_stdin: bool) -> 
         return sys.stdin.read()
     assert value is not None
     return value
+
+
+_CLEAR_SHAPED_JSON: tuple[Any, ...] = ({}, [], None, {"labels": []}, {"labels": None})
+
+
+def _clear_hint(raw_input: str, item_id: int, column_id: str) -> str:
+    """Return a `column clear` hint (#91) when `raw_input` looks like an
+    attempt to empty a column, else an empty string.
+
+    Clear-shaped inputs are the empty/whitespace string, the literals
+    `{}` / `null` / `[]`, or JSON that parses to `{}`, `[]`, `null`, or
+    `{"labels": []}` / `{"labels": null}`. Appended to a codec's
+    ValueError so agents blindly passing an "empty" payload get pointed
+    at the command that actually clears a column.
+    """
+    stripped = raw_input.strip()
+    clear_shaped = stripped in ("", "{}", "null", "[]")
+    if not clear_shaped:
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            return ""
+        clear_shaped = any(parsed == candidate for candidate in _CLEAR_SHAPED_JSON)
+    if not clear_shaped:
+        return ""
+    return f" To empty a column, use: mondo column clear --item {item_id} --column {column_id}"
 
 
 # ----- commands -----
@@ -300,11 +331,36 @@ def get_cmd(
 @app.command("set", epilog=epilog_for("column set"))
 def set_cmd(
     ctx: typer.Context,
-    item_id: int = typer.Option(..., "--item", help="Item ID."),
-    column_id: str = typer.Option(..., "--column", help="Column ID."),
+    item_id: int | None = typer.Option(
+        None, "--item", help="Item ID (single-item mode; omit when using --batch)."
+    ),
+    column_id: str | None = typer.Option(
+        None,
+        "--column",
+        help="Column ID (single-item mode; default column for --batch rows omitting one).",
+    ),
     value: str | None = typer.Option(None, "--value", help="Value (codec-parsed)."),
     from_file: Path | None = typer.Option(None, "--from-file", help="Read value from a file."),
     from_stdin: bool = typer.Option(False, "--from-stdin", help="Read value from stdin."),
+    board_flag: int | None = typer.Option(
+        None,
+        "--board",
+        help="Board ID. Required with (and only valid with) --batch.",
+    ),
+    batch: Path | None = typer.Option(
+        None,
+        "--batch",
+        help=(
+            "Bulk-set from a JSON array (use '-' for stdin) of {item, value} or "
+            "{item, column, value} rows. Requires --board. Mutually exclusive "
+            "with --item / --value / --from-file / --from-stdin."
+        ),
+    ),
+    chunk_size: int = typer.Option(
+        10,
+        "--chunk-size",
+        help="Rows per HTTP call when --batch is used (default 10).",
+    ),
     create_labels_if_missing: bool = typer.Option(
         False,
         "--create-labels-if-missing",
@@ -316,8 +372,49 @@ def set_cmd(
         help="Treat --value as pre-parsed raw JSON; skip the codec.",
     ),
 ) -> None:
-    """Set a single column value, using the registered codec for the column's type."""
+    """Set a single column value, using the registered codec for the column's type.
+
+    Two modes:
+    - Single (default): pass --item and --column (+ --value/--from-file/--from-stdin).
+    - Bulk: pass --board and --batch <path|-> with a JSON array of {item, value}
+      or {item, column, value} rows. --column supplies the default column for
+      rows omitting one. The chunk is fanned into one GraphQL document per
+      chunk via aliasing, so N rows = one HTTP call (with --chunk-size 10).
+    """
     opts: GlobalOpts = ctx.ensure_object(GlobalOpts)
+
+    if batch is not None:
+        if item_id is not None or value is not None or from_file is not None or from_stdin:
+            usage_error_or_exit(
+                "--batch is mutually exclusive with --item / --value / "
+                "--from-file / --from-stdin. Express per-row settings in the "
+                "JSON array."
+            )
+        if board_flag is None:
+            usage_error_or_exit("--board is required with --batch.")
+        if chunk_size < 1:
+            usage_error_or_exit("--chunk-size must be >= 1.")
+        try:
+            rows = read_batch_rows(batch)
+        except UsageError as e:
+            usage_error_or_exit(str(e))
+        _run_column_set_batch(
+            opts,
+            board_flag,
+            rows,
+            default_column=column_id,
+            raw=column_raw,
+            create_labels=create_labels_if_missing,
+            chunk_size=chunk_size,
+        )
+        return
+
+    if board_flag is not None:
+        usage_error_or_exit("--board is only valid with --batch.")
+    if item_id is None:
+        usage_error_or_exit("--item is required (or pass --board --batch <path|-> for bulk).")
+    if column_id is None:
+        usage_error_or_exit("--column is required.")
     raw_input = _load_value(value, from_file, from_stdin)
 
     client = client_or_exit(opts)
@@ -347,7 +444,8 @@ def set_cmd(
                         col_type, raw_input, settings, create_labels=create_labels_if_missing
                     )
                 except ValueError as e:
-                    handle_mondo_error_or_exit(ValidationError(str(e)))
+                    hint = _clear_hint(raw_input, item_id, column_id)
+                    handle_mondo_error_or_exit(ValidationError(f"{e}{hint}"))
                 except UnknownColumnTypeError as e:
                     if col_type == "name":
                         # The item title masquerades as a `name` column in
@@ -404,6 +502,245 @@ def set_cmd(
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("change_column_value") or {})
+
+
+def _tags_value_all_ids(raw: str) -> bool:
+    """True when every comma-separated part of a tags value is already a
+    numeric id, so no name→id resolution (a live `create_or_get_tag`
+    mutation) is needed. Mirrors the pass-through check in
+    `resolve_tag_names_to_ids`."""
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return all(p.isdigit() or (p.startswith("-") and p[1:].isdigit()) for p in parts)
+
+
+def _build_column_set_row_vars(
+    board_id: int,
+    defs: dict[str, dict[str, Any]],
+    row: dict[str, Any],
+    index: int,
+    *,
+    default_column: str | None,
+    raw: bool,
+    create_labels: bool,
+    dry_run: bool,
+) -> tuple[dict[str, Any], int, str, Callable[[MondayClient, dict[str, int]], str] | None]:
+    """Render one `column set --batch` row into CHANGE_COLUMN_VALUE variables.
+
+    This is the batch's phase-1 validation: it parses/validates the row fully
+    but never mints anything. Returns `(variables, item_id, column_id,
+    finalizer)`. `finalizer` is `None` unless the row targets a `tags` column
+    in a live (non-`--raw`, non-`--dry-run`) run: resolving tag names goes
+    through `create_or_get_tag` (a real mutation), so it's deferred until every
+    row has validated — the caller runs the finalizer in phase 2 to fill in the
+    `value`, keeping a bad row from leaving half-minted tags behind.
+
+    Raises `UsageError` (exit 2) for structural problems (missing/invalid item,
+    no column, missing value) and `ValidationError` (exit 5) for codec parse
+    failures and non-codec-able values (structured payloads / JSON null) — all
+    naming the row index.
+    """
+    item_raw = row.get("item")
+    if item_raw is None or (isinstance(item_raw, str) and not item_raw.strip()):
+        raise UsageError(f"--batch row {index}: missing required 'item' field.")
+    # Accept only genuine integer ids or digit-only strings. `int()` would
+    # silently truncate 1.9 → 1 and coerce True → 1, which is dangerous for a
+    # bulk writer (bool is an int subclass, so it must be rejected first).
+    if isinstance(item_raw, bool):
+        raise UsageError(f"--batch row {index}: 'item' must be an integer id, got {item_raw!r}.")
+    if isinstance(item_raw, int):
+        item_id = item_raw
+    elif isinstance(item_raw, str) and item_raw.strip().isdigit():
+        item_id = int(item_raw.strip())
+    else:
+        raise UsageError(f"--batch row {index}: 'item' must be an integer id, got {item_raw!r}.")
+
+    column_id = row.get("column") or default_column
+    if not column_id:
+        raise UsageError(f"--batch row {index}: no 'column' in the row and no --column default.")
+    if column_id == "name":
+        # The item title masquerades as a `name` column but isn't settable via
+        # change_column_value — including --raw. Guard both modes up front.
+        raise ValidationError(
+            f"--batch row {index}: 'name' is the item's title, not a settable "
+            f'column. Use: mondo item rename {item_id} --board {board_id} --name "<new name>"'
+        )
+
+    if "value" not in row:
+        raise UsageError(f"--batch row {index}: missing required 'value' field.")
+    value = row["value"]
+
+    finalizer: Callable[[MondayClient, dict[str, int]], str] | None = None
+    if raw:
+        json_value: str | None = json.dumps(value)
+    else:
+        definition = defs.get(column_id)
+        if definition is None:
+            raise ValidationError(
+                f"--batch row {index}: column {column_id!r} not found on board {board_id}."
+            )
+        col_type = definition["type"]
+        settings = parse_settings(definition.get("settings_str"))
+        # Normalize the row value for codec input. Strings pass through; bare
+        # scalars (int/float/bool) are codec shorthand and get stringified,
+        # mirroring services.items.build_column_values. Structured payloads
+        # (dict/list) and JSON null can't feed a codec — point at --raw (and,
+        # when the value looks like an attempt to empty a column, at
+        # `column clear` via the #91 hint).
+        if isinstance(value, (dict, list)) or value is None:
+            hint = _clear_hint(json.dumps(value), item_id, column_id)
+            if isinstance(value, dict):
+                detail = "a JSON object; pass --raw to send a literal JSON payload"
+            elif isinstance(value, list):
+                detail = "a JSON array; pass --raw to send a literal JSON payload"
+            else:
+                detail = "JSON null"
+            raise ValidationError(
+                f"--batch row {index}: value for column {column_id!r} is {detail}.{hint}"
+            )
+        str_value = value if isinstance(value, str) else json.dumps(value)
+        if col_type == "tags" and not dry_run:
+            # resolve_tag_names_to_ids mints tags via create_or_get_tag — a
+            # real mutation. Defer it (and the codec) to phase 2 so it only
+            # runs once the whole batch has validated.
+            def _finalize_tags(
+                cl: MondayClient,
+                cache: dict[str, int],
+                _str_value: str = str_value,
+                _settings: dict[str, Any] = settings,
+                _create_labels: bool = create_labels,
+                _column_id: str = column_id,
+                _index: int = index,
+            ) -> str:
+                resolved = resolve_tag_names_to_ids(cl, board_id, _str_value, cache=cache)
+                try:
+                    parsed_tags = parse_value(
+                        "tags", resolved, _settings, create_labels=_create_labels
+                    )
+                except ValueError as e:
+                    hint = _clear_hint(resolved, item_id, _column_id)
+                    raise ValidationError(
+                        f"--batch row {_index} (column {_column_id}): {e}{hint}"
+                    ) from e
+                return json.dumps(parsed_tags)
+
+            finalizer = _finalize_tags
+            json_value = None  # phase 2 fills this in
+        else:
+            # dry_run tags: resolve_tag_names_to_ids would write, so only
+            # accept values that are already ids; names need a live call.
+            if col_type == "tags" and not _tags_value_all_ids(str_value):
+                raise ValidationError(
+                    f"--batch row {index} (column {column_id}): resolving tag "
+                    "names requires a live call; use tag ids in --dry-run."
+                )
+            try:
+                parsed = parse_value(col_type, str_value, settings, create_labels=create_labels)
+            except ValueError as e:
+                hint = _clear_hint(str_value, item_id, column_id)
+                raise ValidationError(f"--batch row {index} (column {column_id}): {e}{hint}") from e
+            except UnknownColumnTypeError as e:
+                raise ValidationError(
+                    f"--batch row {index}: no codec for column type {col_type!r}. "
+                    f"Use --raw to send a literal JSON payload. Details: {e}"
+                ) from e
+            json_value = json.dumps(parsed)
+
+    variables = {
+        "item": item_id,
+        "board": board_id,
+        "col": column_id,
+        "value": json_value,
+        "create_labels": create_labels or None,
+    }
+    return variables, item_id, column_id, finalizer
+
+
+def _run_column_set_batch(
+    opts: GlobalOpts,
+    board_id: int,
+    rows: list[dict[str, Any]],
+    *,
+    default_column: str | None,
+    raw: bool,
+    create_labels: bool,
+    chunk_size: int,
+) -> None:
+    """Execute a batched `column set`. Column defs are fetched once for the
+    whole board (the point of the batch), each chunk is fanned into a single
+    multi-mutation document via aliasing, and per-row success/failure is
+    aggregated into one envelope."""
+    # Codec dispatch needs the board's column defs + a client for tag
+    # resolution; --raw skips both, so `--dry-run --raw` is fully offline.
+    needs_preflight = not raw
+    client: MondayClient | None = None
+    if needs_preflight or not opts.dry_run:
+        client = client_or_exit(opts)
+
+    results: list[dict[str, Any]] = []
+    try:
+        defs: dict[str, dict[str, Any]] = {}
+        tag_cache: dict[str, int] = {}
+        ctx_mgr: Any = client if client is not None else nullcontext()
+        with ctx_mgr:
+            if needs_preflight and client is not None:
+                # Strict fetch: an inaccessible/missing board must surface as
+                # a board-not-found (exit 6), not empty defs that make every
+                # column look "not found" (a misleading exit 5).
+                try:
+                    defs = fetch_column_defs(opts, client, board_id, strict=True)
+                except NotFoundError as e:
+                    raise NotFoundError(f"board {board_id} not found.") from e
+            # Phase 1: validate/parse every row without minting anything.
+            per_row = [
+                _build_column_set_row_vars(
+                    board_id,
+                    defs,
+                    row,
+                    i,
+                    default_column=default_column,
+                    raw=raw,
+                    create_labels=create_labels,
+                    dry_run=opts.dry_run,
+                )
+                for i, row in enumerate(rows)
+            ]
+            # Phase 2: now that the whole batch validated, run the deferred
+            # tag-resolution finalizers (create_or_get_tag) and fill in values.
+            for variables, _item, _col, finalizer in per_row:
+                if finalizer is not None:
+                    assert client is not None
+                    variables["value"] = finalizer(client, tag_cache)
+            per_row_vars = [v for v, _item, _col, _f in per_row]
+            name_rows = [{"name": f"{item}:{col}"} for _v, item, col, _f in per_row]
+
+            if opts.dry_run:
+                opts.emit(
+                    {
+                        "chunks": build_batch_chunks_repr(
+                            CHANGE_COLUMN_VALUE, per_row_vars, chunk_size
+                        )
+                    }
+                )
+                raise typer.Exit(0)
+
+            assert client is not None
+            results = run_aliased_batch(
+                client, CHANGE_COLUMN_VALUE, per_row_vars, name_rows, chunk_size=chunk_size
+            )
+    except MondoError as e:
+        handle_mondo_error_or_exit(e)
+
+    if create_labels:
+        invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
+    invalidate_board_items_cache(opts, board_id)
+    for item_id in {item for _v, item, _col, _f in per_row}:
+        invalidate_entity(opts, "items", scope=str(item_id))
+
+    failed = sum(1 for r in results if not r["ok"])
+    summary = {"requested": len(rows), "updated": len(results) - failed, "failed": failed}
+    opts.emit({"summary": summary, "results": results})
+    if failed:
+        raise typer.Exit(code=1)
 
 
 @app.command("set-many", epilog=epilog_for("column set-many"))
