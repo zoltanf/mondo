@@ -120,9 +120,11 @@ def build_query_params(
     return qp or None
 
 
-def read_batch_input(source: Path) -> list[dict[str, Any]]:
-    """Read the `--batch` source and validate it's a JSON array of objects
-    each carrying a `name`. Use `Path("-")` for stdin."""
+def read_batch_rows(source: Path) -> list[dict[str, Any]]:
+    """Read a `--batch` source and validate it parses to a non-empty JSON array
+    of objects. Use `Path("-")` for stdin. Per-command field validation (e.g.
+    `name` for item create, `item`/`value` for column set) is layered on top by
+    the caller so its errors can name the target column/field."""
     text = sys.stdin.read() if str(source) == "-" else source.read_text(encoding="utf-8")
     try:
         parsed = json.loads(text)
@@ -135,9 +137,17 @@ def read_batch_input(source: Path) -> list[dict[str, Any]]:
     for i, row in enumerate(parsed):
         if not isinstance(row, dict):
             raise UsageError(f"--batch row {i}: expected object, got {type(row).__name__}.")
+    return parsed
+
+
+def read_batch_input(source: Path) -> list[dict[str, Any]]:
+    """Read the `item create --batch` source: a non-empty JSON array of objects
+    each carrying a `name`. Use `Path("-")` for stdin."""
+    rows = read_batch_rows(source)
+    for i, row in enumerate(rows):
         if not row.get("name"):
             raise UsageError(f"--batch row {i}: missing required 'name' field.")
-    return parsed
+    return rows
 
 
 def parse_column_mapping(tokens: list[str]) -> list[dict[str, Any]]:
@@ -174,6 +184,7 @@ def fetch_column_defs(
     *,
     no_cache: bool = False,
     refresh: bool = False,
+    strict: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """One-shot fetch of `{col_id: {type, settings_str, ...}}` for a board.
 
@@ -181,11 +192,18 @@ def fetch_column_defs(
     query otherwise. Silently returns `{}` when the board isn't visible — the
     caller's codec dispatch will treat unknown columns as raw passthroughs,
     mirroring the previous behavior when the API returned no boards.
+
+    Pass `strict=True` to re-raise `NotFoundError` instead of swallowing it:
+    a bulk caller needs to tell a bad/inaccessible board apart from a
+    genuinely unknown column, otherwise the empty defs make every column
+    look "not found".
     """
     try:
         store = opts.columns_cache_store(board_id, no_cache=no_cache)
         columns = fetch_board_columns(client, board_id, store=store, refresh=refresh)
     except NotFoundError:
+        if strict:
+            raise
         return {}
     return {c["id"]: c for c in columns}
 

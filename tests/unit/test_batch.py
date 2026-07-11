@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mondo.api.queries import ITEM_CREATE
+from mondo.api.queries import CHANGE_COLUMN_VALUE, ITEM_CREATE
 from mondo.cli._batch import (
     build_aliased_mutation,
     chunk_inputs,
@@ -46,6 +46,23 @@ def test_build_multiple_aliases() -> None:
     # The variable schema returned matches the template, not a per-row copy.
     assert len(var_names) == 7
     assert var_names == ["board", "name", "group", "values", "create_labels", "prm", "relto"]
+
+
+def test_build_change_column_value_aliases() -> None:
+    """`column set --batch` fans CHANGE_COLUMN_VALUE the same way (#90)."""
+    query, var_names = build_aliased_mutation(CHANGE_COLUMN_VALUE, 2)
+    assert "m_0: change_column_value(" in query
+    assert "m_1: change_column_value(" in query
+    # Per-row scopes for every declared variable.
+    for i in range(2):
+        assert f"$item_{i}: ID!" in query
+        assert f"$board_{i}: ID!" in query
+        assert f"$col_{i}: String!" in query
+        assert f"$value_{i}: JSON!" in query
+        assert f"$create_labels_{i}: Boolean" in query
+    # Un-suffixed declarations must be gone.
+    assert "$item: ID!" not in query
+    assert var_names == ["item", "board", "col", "value", "create_labels"]
 
 
 def test_build_count_zero_raises() -> None:

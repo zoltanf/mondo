@@ -33,7 +33,7 @@ from mondo.api.queries import (
     SUBITEMS_LIST,
     build_items_page_queries,
 )
-from mondo.cli._batch import build_aliased_mutation, chunk_inputs, parse_aliased_response
+from mondo.cli._batch import build_batch_chunks_repr, run_aliased_batch
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
@@ -795,6 +795,7 @@ def _run_batch(
 
         ctx_mgr: Any = client if client is not None else nullcontext()
         per_row_vars: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         try:
             with ctx_mgr:
                 for row in rows:
@@ -811,39 +812,15 @@ def _run_batch(
                         )
                     )
                 if opts.dry_run:
-                    chunks_repr: list[dict[str, Any]] = []
-                    for chunk_idx, vars_chunk in enumerate(chunk_inputs(per_row_vars, chunk_size)):
-                        query, var_names = build_aliased_mutation(ITEM_CREATE, len(vars_chunk))
-                        flat: dict[str, Any] = {}
-                        base = chunk_idx * chunk_size
-                        for i, vars_row in enumerate(vars_chunk):
-                            for name_ in var_names:
-                                flat[f"{name_}_{i}"] = vars_row[name_]
-                        chunks_repr.append(
-                            {
-                                "query": query,
-                                "variables": flat,
-                                "row_indices": list(range(base, base + len(vars_chunk))),
-                            }
-                        )
-                    opts.emit({"chunks": chunks_repr})
+                    opts.emit(
+                        {"chunks": build_batch_chunks_repr(ITEM_CREATE, per_row_vars, chunk_size)}
+                    )
                     raise typer.Exit(0)
 
-                results: list[dict[str, Any]] = []
                 assert client is not None
-                row_chunks = chunk_inputs(rows, chunk_size)
-                vars_chunks = chunk_inputs(per_row_vars, chunk_size)
-                for chunk_idx, (row_chunk, vars_chunk) in enumerate(
-                    zip(row_chunks, vars_chunks, strict=True)
-                ):
-                    query, var_names = build_aliased_mutation(ITEM_CREATE, len(vars_chunk))
-                    flat = {}
-                    for i, vars_row in enumerate(vars_chunk):
-                        for name_ in var_names:
-                            flat[f"{name_}_{i}"] = vars_row[name_]
-                    response = client.execute(query, variables=flat, surface_partial_errors=True)
-                    base = chunk_idx * chunk_size
-                    results.extend(parse_aliased_response(response, row_chunk, base_index=base))
+                results = run_aliased_batch(
+                    client, ITEM_CREATE, per_row_vars, rows, chunk_size=chunk_size
+                )
         except ValueError as e:
             handle_mondo_error_or_exit(ValidationError(str(e)))
     except MondoError as e:
