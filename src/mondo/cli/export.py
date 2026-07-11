@@ -9,7 +9,9 @@ every format is rendered client-side. Formats:
   don't execute them as formulas; `--no-sanitize-formulas` disables the guard
   and `mondo import board` strips it back off.
 - json: list of objects keyed by column id + metadata
-- xlsx: one styled sheet for items (+ one for subitems if --include-subitems)
+- xlsx: one styled sheet for items (+ one for subitems if --include-subitems).
+  "="-leading cells are written as text (not live formulas) unless
+  `--no-sanitize-formulas`; the value itself is unchanged.
 - md / html / pdf: human-readable; grouped per monday group by default
   (one section per group), or a single flat table with `--flat`. html reuses
   the doc stylesheet; pdf renders that HTML through WeasyPrint.
@@ -347,15 +349,27 @@ def _write_xlsx(
     subitems_rows: list[dict[str, Any]] | None,
     subitems_headers: list[str] | None,
     out_path: Path,
+    *,
+    sanitize: bool,
 ) -> None:
     from openpyxl import Workbook  # type: ignore[import-untyped]
     from openpyxl.styles import Font  # type: ignore[import-untyped]
     from openpyxl.utils import get_column_letter  # type: ignore[import-untyped]
 
+    def append_row(ws: Any, values: list[Any]) -> None:
+        ws.append(values)
+        if sanitize:
+            # openpyxl stores "="-leading strings as live formulas; board
+            # data must stay text, so downgrade those cells back to strings
+            # (value is unchanged — Excel just shows it verbatim).
+            for cell in ws[ws.max_row]:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
+
     def fill_sheet(ws: Any, headers: list[str], rows: list[dict[str, Any]]) -> None:
-        ws.append(headers)
+        append_row(ws, headers)
         for row in rows:
-            ws.append([row.get(h, "") for h in headers])
+            append_row(ws, [row.get(h, "") for h in headers])
         for cell in ws[1]:
             cell.font = Font(bold=True)
         ws.freeze_panes = "A2"
@@ -434,8 +448,9 @@ def board_cmd(
         True,
         "--sanitize-formulas/--no-sanitize-formulas",
         help="csv/tsv: prefix cells starting with = + - @ (or tab/CR) with a "
-        "single quote so spreadsheets don't execute them as formulas. "
-        "`mondo import board` strips the prefix back off on re-import.",
+        "single quote so spreadsheets don't execute them as formulas "
+        "(`mondo import board` strips the prefix back off on re-import). "
+        'xlsx: store "="-leading cells as text instead of live formulas.',
     ),
     limit: int = typer.Option(MAX_PAGE_SIZE, "--limit", help=f"Page size (max {MAX_PAGE_SIZE})."),
     max_items: int | None = typer.Option(
@@ -553,7 +568,14 @@ def _dispatch(
     item_headers = [*META_FIELDS, *col_labels]
     if fmt is ExportFormat.xlsx:
         assert out is not None
-        _write_xlsx(item_rows, item_headers, subitem_rows, subitem_headers, out)
+        _write_xlsx(
+            item_rows,
+            item_headers,
+            subitem_rows,
+            subitem_headers,
+            out,
+            sanitize=sanitize_formulas,
+        )
         return
 
     if fmt is ExportFormat.pdf:

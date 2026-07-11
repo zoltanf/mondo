@@ -194,6 +194,48 @@ class TestFormulaGuard:
         assert rows[1][1] == "=2+2"
         assert rows[1][4] == "+SUM(A1)"
 
+    def test_xlsx_stores_formula_cells_as_text(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        self._mock(httpx_mock)
+        out = tmp_path / "board.xlsx"
+        result = runner.invoke(
+            app,
+            ["export", "board", "--board", "42", "-f", "xlsx", "--out", str(out)],
+        )
+        assert result.exit_code == 0, result.stdout
+        ws = load_workbook(out)["items"]
+        # "="-leading cells keep their exact value but are plain text, not
+        # live formulas (no apostrophe prefix — that's the csv guard).
+        assert ws["B2"].value == "=2+2"
+        assert ws["B2"].data_type != "f"
+        assert ws["E1"].value == "=Evil"
+        assert ws["E1"].data_type != "f"
+        # "+"-leading strings were never formulas in xlsx; untouched.
+        assert ws["E2"].value == "+SUM(A1)"
+        assert ws["E2"].data_type != "f"
+
+    def test_xlsx_no_sanitize_keeps_live_formula(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        self._mock(httpx_mock)
+        out = tmp_path / "board.xlsx"
+        result = runner.invoke(
+            app,
+            [
+                "export",
+                "board",
+                "--board",
+                "42",
+                "-f",
+                "xlsx",
+                "--out",
+                str(out),
+                "--no-sanitize-formulas",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        ws = load_workbook(out)["items"]
+        assert ws["B2"].data_type == "f"
+
     def test_json_export_is_not_guarded(self, httpx_mock: HTTPXMock) -> None:
         self._mock(httpx_mock)
         result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "json"])
