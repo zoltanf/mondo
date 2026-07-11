@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
+from ._fragments import COLUMN_VALUES_SELECTION
+
 # --- items: single item by id ---
 
-ITEM_GET = """
-query ($id: ID!) {
-  items(ids: [$id]) {
+ITEM_GET = f"""
+query ($id: ID!) {{
+  items(ids: [$id]) {{
     id
     name
     state
     created_at
     updated_at
     url
-    creator { id name }
-    group { id title }
-    board { id name }
-    column_values { id type text value }
-  }
-}
+    creator {{ id name }}
+    group {{ id title }}
+    board {{ id name }}
+    column_values {{ {COLUMN_VALUES_SELECTION} }}
+  }}
+}}
 """.strip()
 
 
@@ -33,52 +35,52 @@ query ($id: ID!) {
 """.strip()
 
 
-ITEM_GET_WITH_UPDATES = """
-query ($id: ID!) {
-  items(ids: [$id]) {
+ITEM_GET_WITH_UPDATES = f"""
+query ($id: ID!) {{
+  items(ids: [$id]) {{
     id
     name
     state
     created_at
     updated_at
     url
-    creator { id name }
-    group { id title }
-    board { id name }
-    column_values { id type text value }
-    updates(limit: 100) {
+    creator {{ id name }}
+    group {{ id title }}
+    board {{ id name }}
+    column_values {{ {COLUMN_VALUES_SELECTION} }}
+    updates(limit: 100) {{
       id
       body
       text_body
-      creator { id name }
+      creator {{ id name }}
       created_at
-    }
-  }
-}
+    }}
+  }}
+}}
 """.strip()
 
 
-ITEM_GET_WITH_SUBITEMS = """
-query ($id: ID!) {
-  items(ids: [$id]) {
+ITEM_GET_WITH_SUBITEMS = f"""
+query ($id: ID!) {{
+  items(ids: [$id]) {{
     id
     name
     state
     created_at
     updated_at
     url
-    creator { id name }
-    group { id title }
-    board { id name }
-    column_values { id type text value }
-    subitems {
+    creator {{ id name }}
+    group {{ id title }}
+    board {{ id name }}
+    column_values {{ {COLUMN_VALUES_SELECTION} }}
+    subitems {{
       id
       name
       state
-      column_values { id type text value }
-    }
-  }
-}
+      column_values {{ {COLUMN_VALUES_SELECTION} }}
+    }}
+  }}
+}}
 """.strip()
 
 
@@ -107,10 +109,10 @@ def build_items_page_queries(
     cols_decl = ""
     fields = ["id", "name", "state", "group { id title }"]
     if column_values == "full":
-        fields.append("column_values { id type text value }")
+        fields.append(f"column_values {{ {COLUMN_VALUES_SELECTION} }}")
     elif column_values == "ids":
         cols_decl = ", $cols: [String!]!"
-        fields.append("column_values(ids: $cols) { id type text value }")
+        fields.append(f"column_values(ids: $cols) {{ {COLUMN_VALUES_SELECTION} }}")
     elif column_values != "none":
         raise ValueError(f"unknown column_values mode: {column_values!r}")
     initial = f"""
@@ -142,69 +144,69 @@ ITEMS_PAGE_INITIAL, ITEMS_PAGE_NEXT = build_items_page_queries()
 
 
 # Single-item variant of the server-side column narrowing above.
-ITEM_GET_WITH_COLUMNS = """
-query ($id: ID!, $cols: [String!]!) {
-  items(ids: [$id]) {
+ITEM_GET_WITH_COLUMNS = f"""
+query ($id: ID!, $cols: [String!]!) {{
+  items(ids: [$id]) {{
     id
     name
     state
     created_at
     updated_at
     url
-    creator { id name }
-    group { id title }
-    board { id name }
-    column_values(ids: $cols) { id type text value }
-  }
-}
+    creator {{ id name }}
+    group {{ id title }}
+    board {{ id name }}
+    column_values(ids: $cols) {{ {COLUMN_VALUES_SELECTION} }}
+  }}
+}}
 """.strip()
 
 
 # Export-oriented variants that also pull subitems (field selection costs
 # extra complexity; only use when --include-subitems is on).
-ITEMS_PAGE_INITIAL_WITH_SUBITEMS = """
-query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery) {
-  boards(ids: $boards) {
-    items_page(limit: $limit, query_params: $qp) {
+ITEMS_PAGE_INITIAL_WITH_SUBITEMS = f"""
+query ($boards: [ID!]!, $limit: Int!, $qp: ItemsQuery) {{
+  boards(ids: $boards) {{
+    items_page(limit: $limit, query_params: $qp) {{
       cursor
-      items {
+      items {{
         id
         name
         state
-        group { id title }
-        column_values { id type text value }
-        subitems {
+        group {{ id title }}
+        column_values {{ {COLUMN_VALUES_SELECTION} }}
+        subitems {{
           id
           name
           state
-          column_values { id type text value }
-        }
-      }
-    }
-  }
-}
+          column_values {{ {COLUMN_VALUES_SELECTION} }}
+        }}
+      }}
+    }}
+  }}
+}}
 """.strip()
 
 
-ITEMS_PAGE_NEXT_WITH_SUBITEMS = """
-query ($cursor: String!, $limit: Int!) {
-  next_items_page(cursor: $cursor, limit: $limit) {
+ITEMS_PAGE_NEXT_WITH_SUBITEMS = f"""
+query ($cursor: String!, $limit: Int!) {{
+  next_items_page(cursor: $cursor, limit: $limit) {{
     cursor
-    items {
+    items {{
       id
       name
       state
-      group { id title }
-      column_values { id type text value }
-      subitems {
+      group {{ id title }}
+      column_values {{ {COLUMN_VALUES_SELECTION} }}
+      subitems {{
         id
         name
         state
-        column_values { id type text value }
-      }
-    }
-  }
-}
+        column_values {{ {COLUMN_VALUES_SELECTION} }}
+      }}
+    }}
+  }}
+}}
 """.strip()
 
 

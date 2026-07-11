@@ -44,7 +44,7 @@ from mondo.columns import (
     UnknownColumnTypeError,
     clear_payload_for,
     parse_value,
-    render_value,
+    render_entry,
 )
 from mondo.columns.dropdown import iter_dropdown_labels
 from mondo.columns.status import iter_status_labels
@@ -262,7 +262,9 @@ def get_cmd(
     raw: bool = typer.Option(
         False,
         "--raw",
-        help="Return {id, type, value (JSON string), text} instead of human-rendered text.",
+        help="Return the full column_values entry (id, type, value (JSON string), "
+        "text, plus polymorphic fields like display_value/linked_item_ids on "
+        "mirror & board_relation) instead of human-rendered text.",
     ),
 ) -> None:
     """Read a single column value from an item."""
@@ -288,15 +290,8 @@ def get_cmd(
         return
 
     col_type = current.get("type") or "text"
-    value_payload: Any = None
-    raw_value = current.get("value")
-    if raw_value:
-        try:
-            value_payload = json.loads(raw_value)
-        except ValueError:
-            value_payload = raw_value
     try:
-        rendered = render_value(col_type, value_payload, current.get("text"))
+        rendered = render_entry(col_type, current)
     except UnknownColumnTypeError:
         rendered = current.get("text") or ""
     opts.emit(rendered)

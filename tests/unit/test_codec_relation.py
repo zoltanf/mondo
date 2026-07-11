@@ -7,6 +7,7 @@ import pytest
 from mondo.columns import (
     parse_value,
     relation,  # noqa: F401
+    render_entry,
     render_value,
 )
 
@@ -57,6 +58,45 @@ class TestBoardRelation:
             parse_value("board_relation", '{"item_ids": ["a", "b"]}', {})
 
 
+class TestBoardRelationRenderEntry:
+    """#88: board_relation returns a null `text`; linked item names come back
+    in the `display_value` inline-fragment field (with `linked_item_ids`)."""
+
+    def test_prefers_display_value(self) -> None:
+        entry = {
+            "id": "rel",
+            "type": "board_relation",
+            "text": None,
+            "display_value": "Alpha, Beta",
+            "linked_item_ids": ["111", "222"],
+        }
+        assert render_entry("board_relation", entry) == "Alpha, Beta"
+
+    def test_falls_back_to_text(self) -> None:
+        entry = {
+            "id": "rel",
+            "type": "board_relation",
+            "text": "Alpha",
+            "display_value": None,
+            "linked_item_ids": ["111"],
+        }
+        assert render_entry("board_relation", entry) == "Alpha"
+
+    def test_falls_back_to_linked_ids(self) -> None:
+        entry = {
+            "id": "rel",
+            "type": "board_relation",
+            "text": None,
+            "display_value": None,
+            "linked_item_ids": ["111", "222"],
+        }
+        assert render_entry("board_relation", entry) == "111, 222"
+
+    def test_empty_when_nothing_linked(self) -> None:
+        entry = {"id": "rel", "type": "board_relation", "display_value": "", "linked_item_ids": []}
+        assert render_entry("board_relation", entry) == ""
+
+
 class TestDependency:
     def test_multiple(self) -> None:
         assert parse_value("dependency", "111,222", {}) == {"item_ids": [111, 222]}
@@ -66,6 +106,37 @@ class TestDependency:
 
     def test_json_object_shape_accepted(self) -> None:
         assert parse_value("dependency", '{"item_ids":[7,8]}', {}) == {"item_ids": [7, 8]}
+
+
+class TestDependencyRenderEntry:
+    """#88: dependency returns a null `text`; linked item names come back in
+    the `display_value` inline-fragment field (with `linked_item_ids`)."""
+
+    def test_prefers_display_value(self) -> None:
+        entry = {
+            "id": "dep",
+            "type": "dependency",
+            "text": None,
+            "display_value": "Task A, Task B",
+            "linked_item_ids": ["111", "222"],
+        }
+        assert render_entry("dependency", entry) == "Task A, Task B"
+
+    def test_falls_back_to_text_then_linked_ids(self) -> None:
+        entry = {"id": "dep", "type": "dependency", "text": "Task A", "display_value": None}
+        assert render_entry("dependency", entry) == "Task A"
+        entry = {
+            "id": "dep",
+            "type": "dependency",
+            "text": None,
+            "display_value": None,
+            "linked_item_ids": ["111", "222"],
+        }
+        assert render_entry("dependency", entry) == "111, 222"
+
+    def test_empty_when_nothing_linked(self) -> None:
+        entry = {"id": "dep", "type": "dependency", "display_value": "", "linked_item_ids": []}
+        assert render_entry("dependency", entry) == ""
 
 
 class TestWorldClock:

@@ -19,10 +19,15 @@ import pytest
 from pytest_httpx import HTTPXMock
 from typer.testing import CliRunner
 
+from mondo.api.queries._fragments import COLUMN_VALUES_SELECTION
 from mondo.cli.main import app
 
 ENDPOINT = "https://api.monday.com/v2"
 runner = CliRunner()
+
+# Full `column_values` selection as emitted into the query (#88 added the
+# polymorphic mirror/board_relation inline fragments).
+FULL_COLUMN_VALUES = f"column_values {{ {COLUMN_VALUES_SELECTION} }}"
 
 
 @pytest.fixture(autouse=True)
@@ -132,7 +137,7 @@ class TestItemListColumns:
         result = runner.invoke(app, ["item", "list", "--board", "42"])
         assert result.exit_code == 0
         body = _bodies(httpx_mock)[-1]
-        assert "column_values { id type text value }" in body["query"]
+        assert FULL_COLUMN_VALUES in body["query"]
 
 
 class TestItemListAutoSlim:
@@ -186,7 +191,7 @@ class TestItemListAutoSlim:
         )
         result = runner.invoke(app, ["-q", expression, "item", "list", "--board", "42"])
         assert result.exit_code == 0, result.output
-        assert "column_values { id type text value }" in _bodies(httpx_mock)[-1]["query"]
+        assert FULL_COLUMN_VALUES in _bodies(httpx_mock)[-1]["query"]
 
     def test_no_projection_keeps_full_shape(self, httpx_mock: HTTPXMock) -> None:
         httpx_mock.add_response(url=ENDPOINT, method="POST", json=_ok(_items_page([{"id": "1"}])))
@@ -232,7 +237,7 @@ class TestItemListAutoSlim:
             ],
         )
         assert result.exit_code == 0, result.output
-        assert "column_values { id type text value }" in _bodies(httpx_mock)[-1]["query"]
+        assert FULL_COLUMN_VALUES in _bodies(httpx_mock)[-1]["query"]
 
     def test_dry_run_shows_cols_variable(self, httpx_mock: HTTPXMock) -> None:
         result = runner.invoke(

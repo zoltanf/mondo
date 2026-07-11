@@ -226,6 +226,81 @@ class TestColumnGet:
         assert parsed["text"] == "Hello"
         assert parsed["type"] == "text"
 
+    def test_raw_mirror_includes_display_value(self, httpx_mock: HTTPXMock) -> None:
+        # #88: --raw passes the full column_values entry through untouched, so
+        # the polymorphic display_value surfaces alongside id/type/value/text.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "mir", "title": "M", "type": "mirror", "settings_str": "{}"}],
+                values=[
+                    {
+                        "id": "mir",
+                        "type": "mirror",
+                        "text": None,
+                        "value": None,
+                        "display_value": "In progress",
+                    }
+                ],
+            ),
+        )
+        result = runner.invoke(app, ["column", "get", "--item", "1", "--column", "mir", "--raw"])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["type"] == "mirror"
+        assert parsed["display_value"] == "In progress"
+
+    def test_mirror_renders_display_value_when_text_null(self, httpx_mock: HTTPXMock) -> None:
+        # #88: monday returns null `text` for mirror columns; the value comes
+        # back via the MirrorValue inline fragment's `display_value`.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "mir", "title": "M", "type": "mirror", "settings_str": "{}"}],
+                values=[
+                    {
+                        "id": "mir",
+                        "type": "mirror",
+                        "text": None,
+                        "value": None,
+                        "display_value": "In progress",
+                    }
+                ],
+            ),
+        )
+        result = runner.invoke(app, ["column", "get", "--item", "1", "--column", "mir"])
+        assert result.exit_code == 0, result.stdout
+        assert result.stdout.strip() == '"In progress"'
+
+    def test_board_relation_renders_display_value(self, httpx_mock: HTTPXMock) -> None:
+        # #88: board_relation also returns null `text`; linked item names come
+        # back via the BoardRelationValue inline fragment.
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_context_response(
+                board_id=42,
+                cols=[{"id": "rel", "title": "R", "type": "board_relation", "settings_str": "{}"}],
+                values=[
+                    {
+                        "id": "rel",
+                        "type": "board_relation",
+                        "text": None,
+                        "value": '{"linkedPulseIds":[{"linkedPulseId":111}]}',
+                        "display_value": "Linked Item A",
+                        "linked_item_ids": ["111"],
+                    }
+                ],
+            ),
+        )
+        result = runner.invoke(app, ["column", "get", "--item", "1", "--column", "rel"])
+        assert result.exit_code == 0, result.stdout
+        assert result.stdout.strip() == '"Linked Item A"'
+
 
 class TestColumnSet:
     def test_codec_parsed_status(self, httpx_mock: HTTPXMock) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ._fragments import COLUMN_VALUES_SELECTION
+
 # --- columns: list / get / context ---
 
 COLUMNS_ON_BOARD = """
@@ -24,72 +26,67 @@ query ($board: ID!) {
 
 # Single-round-trip fetch for `column get/set/clear`:
 # item.board.id + column definition (from board.columns) + current value.
-COLUMN_CONTEXT = """
-query ($id: ID!, $cols: [String!]!) {
-  items(ids: [$id]) {
+COLUMN_CONTEXT = f"""
+query ($id: ID!, $cols: [String!]!) {{
+  items(ids: [$id]) {{
     id
     name
-    board {
+    board {{
       id
-      columns(ids: $cols) {
+      columns(ids: $cols) {{
         id
         title
         type
         settings_str
-      }
-    }
-    column_values(ids: $cols) {
-      id
-      type
-      text
-      value
-    }
-  }
-}
+      }}
+    }}
+    column_values(ids: $cols) {{ {COLUMN_VALUES_SELECTION} }}
+  }}
+}}
 """.strip()
 
 
-CHANGE_COLUMN_VALUE = """
+CHANGE_COLUMN_VALUE = f"""
 mutation (
   $item: ID!
   $board: ID!
   $col: String!
   $value: JSON!
   $create_labels: Boolean
-) {
+) {{
   change_column_value(
     item_id: $item
     board_id: $board
     column_id: $col
     value: $value
     create_labels_if_missing: $create_labels
-  ) {
+  ) {{
     id
     name
-    column_values(ids: [$col]) { id type text value }
-  }
-}
+    column_values(ids: [$col]) {{ {COLUMN_VALUES_SELECTION} }}
+  }}
+}}
 """.strip()
 
 
-CHANGE_MULTIPLE_COLUMN_VALUES = """
+CHANGE_MULTIPLE_COLUMN_VALUES = f"""
 mutation (
   $item: ID!
   $board: ID!
   $values: JSON!
   $create_labels: Boolean
-) {
+) {{
   change_multiple_column_values(
     item_id: $item
     board_id: $board
     column_values: $values
     create_labels_if_missing: $create_labels
-  ) {
+  ) {{
     id
     name
-    column_values { id type text value }
-  }
-}
+    column_values {{ {COLUMN_VALUES_SELECTION} }}
+  }}
+}}
 """.strip()
 
 
