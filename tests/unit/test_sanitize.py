@@ -31,6 +31,20 @@ class TestGuardFormula:
     def test_leaves_plain_numbers(self, raw: str) -> None:
         assert guard_formula(raw) == raw
 
+    @pytest.mark.parametrize(
+        "raw",
+        # Adjacent/trailing separators are not plain numbers — guarded.
+        ["-1,,2", "+5.", "-1.", "+.5"],
+    )
+    def test_guards_malformed_numbers(self, raw: str) -> None:
+        assert guard_formula(raw) == "'" + raw
+
+    def test_guards_past_leading_bom(self) -> None:
+        # At file start the BOM is eaten as the encoding signature, leaving
+        # the cell to start with "=" — so BOM-prefixed leads must be guarded.
+        assert guard_formula("\ufeff=SUM(A1)") == "'\ufeff=SUM(A1)"
+        assert guard_formula("\ufeff-1250") == "\ufeff-1250"  # still a plain number
+
     def test_leaves_non_strings(self) -> None:
         assert guard_formula(None) is None
         assert guard_formula(5) == 5
@@ -39,7 +53,7 @@ class TestGuardFormula:
 class TestStripFormulaGuard:
     @pytest.mark.parametrize(
         "raw",
-        ["=SUM(A1:A9)", "+491234", "-5", "@cmd", "\tx", "\rx", "hello", ""],
+        ["=SUM(A1:A9)", "+491234", "-5", "@cmd", "\tx", "\rx", "hello", "", "\ufeff=x"],
     )
     def test_round_trips_guard(self, raw: str) -> None:
         assert strip_formula_guard(guard_formula(raw)) == raw
