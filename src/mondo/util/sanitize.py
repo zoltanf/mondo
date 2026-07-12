@@ -40,7 +40,7 @@ is controlled by anyone with board access. Two output surfaces guard it:
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, overload
 
 # Leading characters Excel & friends interpret as the start of a formula.
 _FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
@@ -61,6 +61,10 @@ _CONTROL_CHARS: dict[int, None] = {
 }
 
 
+@overload
+def guard_formula(value: str) -> str: ...
+@overload
+def guard_formula(value: Any) -> Any: ...
 def guard_formula(value: Any) -> Any:
     """Prefix formula-looking strings with ``'`` (spreadsheet text guard).
 
