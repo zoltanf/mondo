@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 
@@ -113,6 +114,15 @@ class TestCsvFormatter:
         body = buf.getvalue().splitlines()[1]
         assert '"[""a"", ""b""]"' in body or '"[\\"a\\", \\"b\\"]"' in body or "[" in body
 
+    def test_guards_formula_cells_and_headers(self) -> None:
+        # Untrusted board data must not become live formulas when the CSV is
+        # opened in a spreadsheet — guard cells and headers (unconditional).
+        buf = io.StringIO()
+        format_output([{"=Evil": "=2+2", "n": "-5"}], fmt="csv", stream=buf)
+        rows = list(csv.reader(io.StringIO(buf.getvalue())))
+        assert rows[0] == ["'=Evil", "n"]
+        assert rows[1] == ["'=2+2", "-5"]  # plain number stays unguarded
+
 
 class TestTsvFormatter:
     def test_tab_separated(self) -> None:
@@ -121,6 +131,13 @@ class TestTsvFormatter:
         lines = buf.getvalue().splitlines()
         assert "\t" in lines[0]
         assert "," not in lines[0]
+
+    def test_guards_formula_cells_and_headers(self) -> None:
+        buf = io.StringIO()
+        format_output([{"@cmd": "+SUM(A1)", "n": "-5"}], fmt="tsv", stream=buf)
+        rows = list(csv.reader(io.StringIO(buf.getvalue()), delimiter="\t"))
+        assert rows[0] == ["'@cmd", "n"]
+        assert rows[1] == ["'+SUM(A1)", "-5"]
 
 
 # ---------- None ----------
@@ -184,6 +201,37 @@ class TestTableFormatter:
         format_output([], fmt="table", stream=buf, tty=True)
         # Empty table is fine — should not crash
         assert buf.getvalue() is not None
+
+    def test_strips_control_chars_from_cells_and_headers(self) -> None:
+        buf = io.StringIO()
+        format_output(
+            [{"na\x1b]0;evil\x07me": "\x1b[31mred\x1b[0m", "id": "\x9bJunk"}],
+            fmt="table",
+            stream=buf,
+            tty=False,
+        )
+        out = buf.getvalue()
+        assert "\x1b" not in out and "\x07" not in out and "\x9b" not in out
+        assert "na]0;evilme" in out and "red" in out and "Junk" in out
+
+    def test_strips_control_chars_from_kv_object(self) -> None:
+        buf = io.StringIO()
+        format_output({"k\x1bey": "va\x1b[2Jlue"}, fmt="table", stream=buf, tty=False)
+        out = buf.getvalue()
+        assert "\x1b" not in out
+        assert "key" in out and "va[2Jlue" in out
+
+    def test_rich_markup_not_interpreted(self) -> None:
+        buf = io.StringIO()
+        format_output(
+            [{"name": "[link=http://evil]click[/link]"}],
+            fmt="table",
+            stream=buf,
+            tty=True,
+        )
+        # With markup off the tag text survives verbatim (Rich may wrap it,
+        # so check a short prefix) instead of becoming an OSC 8 hyperlink.
+        assert "[link=" in buf.getvalue()
 
 
 # ---------- Registry + auto-detect ----------
