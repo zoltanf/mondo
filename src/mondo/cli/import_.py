@@ -89,9 +89,12 @@ def _build_header_to_column_id(
 
     Priority per header:
     1. Explicit entry in mapping['columns'] (raw header, then guard-stripped)
-    2. Case-insensitive title match against the board's columns — the exact
+    2. `Title (<colid>)` suffix, as written by `mondo export board` when a
+       title repeats or shadows a meta field — the id must exist on the board
+       (a leading formula guard can't reach the suffix, so raw suffices)
+    3. Case-insensitive title match against the board's columns — the exact
        header first, then the guard-stripped form
-    3. Ignore (header is dropped from the write)
+    4. Ignore (header is dropped from the write)
 
     The exact-first order means a real column title that itself starts with
     a guard-then-formula-lead (e.g. ``'-Priority``) round-trips: export
@@ -99,6 +102,7 @@ def _build_header_to_column_id(
     verbatim before trying the stripped ``-Priority``.
     """
     explicit = mapping.get("columns") or {}
+    col_ids = {c.get("id") for c in board_columns if c.get("id")}
     by_title = {c.get("title", "").casefold(): c.get("id") for c in board_columns if c.get("id")}
     resolved: dict[str, str] = {}
     for header in headers:
@@ -111,6 +115,11 @@ def _build_header_to_column_id(
         if stripped in explicit:
             resolved[header] = str(explicit[stripped])
             continue
+        if header.endswith(")"):
+            _, sep, rest = header.rpartition(" (")
+            if sep and rest[:-1] in col_ids:
+                resolved[header] = rest[:-1]
+                continue
         hit = by_title.get(header.casefold()) or by_title.get(stripped.casefold())
         if hit:
             resolved[header] = hit

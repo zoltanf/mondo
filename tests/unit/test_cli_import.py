@@ -327,6 +327,102 @@ class TestMapping:
         assert "status" in values
 
 
+class TestIdSuffixHeaders:
+    """Headers like `Notes (text1)` — written by `mondo export board` when a
+    column title repeats or shadows a meta field — resolve by the embedded id."""
+
+    @staticmethod
+    def _cols(columns: list[dict]) -> dict:
+        for c in columns:
+            c.setdefault("settings_str", "{}")
+            c.setdefault("archived", False)
+        return _ok({"boards": [{"id": "42", "name": "B", "columns": columns}]})
+
+    def test_duplicate_title_headers_resolve_by_id(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,Notes (text1),Notes (text2)", "Alpha,first,second"])
+        cols = self._cols(
+            [
+                {"id": "text1", "title": "Notes", "type": "text"},
+                {"id": "text2", "title": "Notes", "type": "text"},
+            ]
+        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        values = json.loads(body["variables"]["values"])
+        assert values["text1"] == "first"
+        assert values["text2"] == "second"
+
+    def test_meta_shadow_header_resolves_by_id(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        # A column literally titled "name" exports as "name (text9)".
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,name (text9)", "Alpha,shadowed"])
+        cols = self._cols([{"id": "text9", "title": "name", "type": "text"}])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        assert body["variables"]["name"] == "Alpha"
+        values = json.loads(body["variables"]["values"])
+        assert values["text9"] == "shadowed"
+
+    def test_literal_paren_title_still_matches_by_title(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        # "(mm)" is not a column id on the board, so the header must fall
+        # through to the plain title match, not be dropped.
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,Size (mm)", "Alpha,120"])
+        cols = self._cols([{"id": "text1", "title": "Size (mm)", "type": "text"}])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        values = json.loads(body["variables"]["values"])
+        assert values["text1"] == "120"
+
+    def test_export_labels_round_trip_to_import_resolution(self) -> None:
+        # The contract: whatever header `mondo export board` writes for a
+        # column, `mondo import board` must resolve back to that column's id.
+        from mondo.cli.export import _column_labels
+        from mondo.cli.import_ import _build_header_to_column_id
+
+        columns = [
+            {"id": "text1", "title": "Notes", "type": "text"},
+            {"id": "text2", "title": "Notes", "type": "text"},
+            {"id": "text9", "title": "name", "type": "text"},
+            {"id": "status", "title": "Status", "type": "status"},
+        ]
+        labels = _column_labels(columns)
+        resolved = _build_header_to_column_id(
+            headers=["name", *labels],
+            mapping={},
+            board_columns=columns,
+            name_col="name",
+            group_col="group",
+        )
+        assert [resolved[label] for label in labels] == [c["id"] for c in columns]
+
+
 class TestIdempotency:
     def test_skips_existing(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         src = tmp_path / "i.csv"

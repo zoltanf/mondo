@@ -73,10 +73,10 @@ class BoardRelationCodec(ColumnCodec):
         # (all from the BoardRelationValue inline fragment).
         display = entry.get("display_value")
         if display:
-            return display
+            return str(display)
         text = entry.get("text")
         if text:
-            return text
+            return str(text)
         linked = entry.get("linked_item_ids")
         if linked:
             return ", ".join(str(i) for i in linked)
@@ -101,10 +101,10 @@ class DependencyCodec(ColumnCodec):
         # the DependencyValue inline fragment). Mirrors BoardRelationCodec.
         display = entry.get("display_value")
         if display:
-            return display
+            return str(display)
         text = entry.get("text")
         if text:
-            return text
+            return str(text)
         linked = entry.get("linked_item_ids")
         if linked:
             return ", ".join(str(i) for i in linked)
