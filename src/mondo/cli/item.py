@@ -738,6 +738,7 @@ def create_cmd(
                 row,
                 raw_columns=raw_columns,
                 create_labels_default=create_labels_if_missing,
+                dry_run=opts.dry_run,
             )
     except ValueError as e:
         handle_mondo_error_or_exit(ValidationError(str(e)))
@@ -809,6 +810,7 @@ def _run_batch(
                             create_labels_default=create_labels_default,
                             tag_cache=tag_cache,
                             column_defs=column_defs,
+                            dry_run=opts.dry_run,
                         )
                     )
                 if opts.dry_run:

@@ -51,7 +51,12 @@ from mondo.columns import (
 from mondo.columns.dropdown import iter_dropdown_labels
 from mondo.columns.status import iter_status_labels
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
-from mondo.domain.columns_resolve import parse_settings, resolve_tag_names_to_ids
+from mondo.domain.columns_resolve import (
+    DRY_RUN_TAG_NAMES_MSG,
+    parse_settings,
+    resolve_tag_names_to_ids,
+    tags_value_all_ids,
+)
 from mondo.domain.resolve import resolve_by_filters, resolve_required_id
 from mondo.services.items import fetch_column_defs, read_batch_rows
 
@@ -437,8 +442,15 @@ def set_cmd(
                     usage_error_or_exit(f"--raw value is not valid JSON: {e}")
             else:
                 if col_type == "tags":
-                    # Resolve tag names to IDs before the codec sees them.
-                    raw_input = resolve_tag_names_to_ids(client, board_id, raw_input)
+                    # Resolve tag names to IDs before the codec sees them. The
+                    # shared resolver refuses name→id resolution under dry-run
+                    # (create_or_get_tag is a real mutation), raising ValueError.
+                    try:
+                        raw_input = resolve_tag_names_to_ids(
+                            client, board_id, raw_input, dry_run=opts.dry_run
+                        )
+                    except ValueError as e:
+                        handle_mondo_error_or_exit(ValidationError(str(e)))
                 try:
                     parsed = parse_value(
                         col_type, raw_input, settings, create_labels=create_labels_if_missing
@@ -502,15 +514,6 @@ def set_cmd(
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
     opts.emit(data.get("change_column_value") or {})
-
-
-def _tags_value_all_ids(raw: str) -> bool:
-    """True when every comma-separated part of a tags value is already a
-    numeric id, so no name→id resolution (a live `create_or_get_tag`
-    mutation) is needed. Mirrors the pass-through check in
-    `resolve_tag_names_to_ids`."""
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    return all(p.isdigit() or (p.startswith("-") and p[1:].isdigit()) for p in parts)
 
 
 def _build_column_set_row_vars(
@@ -628,10 +631,9 @@ def _build_column_set_row_vars(
         else:
             # dry_run tags: resolve_tag_names_to_ids would write, so only
             # accept values that are already ids; names need a live call.
-            if col_type == "tags" and not _tags_value_all_ids(str_value):
+            if col_type == "tags" and not tags_value_all_ids(str_value):
                 raise ValidationError(
-                    f"--batch row {index} (column {column_id}): resolving tag "
-                    "names requires a live call; use tag ids in --dry-run."
+                    f"--batch row {index} (column {column_id}): {DRY_RUN_TAG_NAMES_MSG}"
                 )
             try:
                 parsed = parse_value(col_type, str_value, settings, create_labels=create_labels)

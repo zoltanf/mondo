@@ -218,6 +218,7 @@ def build_column_values(
     create_labels: bool = False,
     tag_cache: dict[str, int] | None = None,
     column_defs: dict[str, dict[str, Any]] | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Apply codecs to `--column K=V` pairs, using live board column types.
 
@@ -228,6 +229,10 @@ def build_column_values(
     in a batch: a 50-row batch tagging "urgent" issues one
     `create_or_get_tag` instead of fifty, and `fetch_column_defs` runs
     once per batch instead of once per row.
+
+    `dry_run=True` forbids tag name→id resolution (`create_or_get_tag` is a
+    real mutation): tags values must already be numeric ids, otherwise
+    `ValueError`.
     """
     from mondo.columns import UnknownColumnTypeError, parse_value
 
@@ -251,7 +256,14 @@ def build_column_values(
         settings = parse_settings(definition.get("settings_str"))
         str_value = raw_value if isinstance(raw_value, str) else json.dumps(raw_value)
         if col_type == "tags":
-            str_value = resolve_tag_names_to_ids(client, board_id, str_value, cache=tag_cache)
+            # The shared resolver refuses name→id resolution under dry-run
+            # (create_or_get_tag is a real mutation), raising ValueError.
+            try:
+                str_value = resolve_tag_names_to_ids(
+                    client, board_id, str_value, cache=tag_cache, dry_run=dry_run
+                )
+            except ValueError as e:
+                raise ValueError(f"--column {col_id}={raw_value!r}: {e}") from e
         try:
             out[col_id] = parse_value(col_type, str_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
@@ -272,6 +284,7 @@ def build_create_variables_for_row(
     create_labels_default: bool,
     tag_cache: dict[str, int] | None = None,
     column_defs: dict[str, dict[str, Any]] | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Render one batch row into the `ITEM_CREATE` variable dict.
 
@@ -299,6 +312,7 @@ def build_create_variables_for_row(
                 create_labels=create_labels,
                 tag_cache=tag_cache,
                 column_defs=column_defs,
+                dry_run=dry_run,
             )
     prm = row.get("position_relative_method")
     if prm is not None:

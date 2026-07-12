@@ -26,10 +26,7 @@ import typer
 
 from mondo.api.errors import MondoError, NotFoundError, UsageError
 from mondo.api.pagination import iter_items_page
-from mondo.api.queries import (
-    CREATE_OR_GET_TAG,
-    ITEM_CREATE,
-)
+from mondo.api.queries import ITEM_CREATE
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
     client_or_exit,
@@ -38,6 +35,7 @@ from mondo.cli._exec import (
 )
 from mondo.cli.context import GlobalOpts
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
+from mondo.domain.columns_resolve import resolve_tag_names_to_ids
 from mondo.domain.resolve import resolve_required_id
 
 if TYPE_CHECKING:
@@ -123,21 +121,6 @@ def _fetch_existing_names(client: MondayClient, board_id: int) -> set[str]:
     return names
 
 
-def _resolve_tag_names_to_ids(client: MondayClient, board_id: int, value: str) -> str:
-    parts = [p.strip() for p in value.split(",") if p.strip()]
-    ids: list[int] = []
-    for part in parts:
-        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
-            ids.append(int(part))
-            continue
-        data = client.execute(CREATE_OR_GET_TAG, {"name": part, "board": board_id})
-        tag = ((data.get("data") or {}).get("create_or_get_tag")) or {}
-        if not tag.get("id"):
-            raise MondoError(f"create_or_get_tag returned no id for {part!r}")
-        ids.append(int(tag["id"]))
-    return ",".join(str(i) for i in ids)
-
-
 def _encode_row(
     client: MondayClient,
     board_id: int,
@@ -146,6 +129,7 @@ def _encode_row(
     col_defs: dict[str, dict[str, Any]],
     *,
     create_labels: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Turn a CSV row (header → string value) into a monday column_values dict."""
     from mondo.columns import UnknownColumnTypeError, parse_value
@@ -167,7 +151,13 @@ def _encode_row(
             continue
         settings = _parse_settings(definition.get("settings_str"))
         if col_type == "tags":
-            raw = _resolve_tag_names_to_ids(client, board_id, raw)
+            # Shared resolver refuses name→id resolution under dry-run
+            # (create_or_get_tag is a real mutation), raising ValueError —
+            # surfaced as this row's failure, same as a codec ValueError.
+            try:
+                raw = resolve_tag_names_to_ids(client, board_id, raw, dry_run=dry_run)
+            except ValueError as e:
+                raise ValueError(f"column {col_id}={raw!r}: {e}") from e
         try:
             out[col_id] = parse_value(col_type, raw, settings, create_labels=create_labels)
         except UnknownColumnTypeError:
@@ -275,6 +265,7 @@ def board_cmd(
                         header_to_col_id,
                         col_defs,
                         create_labels=create_labels_if_missing,
+                        dry_run=opts.dry_run,
                     )
                 except ValueError as e:
                     results.append({"status": "failed", "name": name, "error": str(e)})

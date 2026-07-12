@@ -261,6 +261,7 @@ def create_cmd(
                         columns,
                         raw_mode=False,
                         create_labels=create_labels_if_missing,
+                        dry_run=opts.dry_run,
                     )
             except MondoError as e:
                 handle_mondo_error_or_exit(e)
