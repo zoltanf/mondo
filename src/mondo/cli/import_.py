@@ -12,6 +12,10 @@ Row flow per CSV line:
 4. Optional `--idempotency-name` pre-fetches existing item names on the
    board; rows whose name already exists are skipped without a mutation.
 
+Names, cell values, and header matching strip the `'` formula guard that
+`mondo export board` prefixes onto formula-looking cells (`'=x` → `=x`),
+keeping the export → import round-trip lossless.
+
 This command emits one result object per row, and a tailing summary.
 """
 
@@ -37,6 +41,7 @@ from mondo.cli.context import GlobalOpts
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.domain.columns_resolve import resolve_tag_names_to_ids
 from mondo.domain.resolve import resolve_required_id
+from mondo.util.sanitize import strip_formula_guard
 
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
@@ -83,9 +88,15 @@ def _build_header_to_column_id(
     """Return {csv_header: monday_column_id} for header → column resolution.
 
     Priority per header:
-    1. Explicit entry in mapping['columns']
-    2. Case-insensitive title match against the board's columns
+    1. Explicit entry in mapping['columns'] (raw header, then guard-stripped)
+    2. Case-insensitive title match against the board's columns — the exact
+       header first, then the guard-stripped form
     3. Ignore (header is dropped from the write)
+
+    The exact-first order means a real column title that itself starts with
+    a guard-then-formula-lead (e.g. ``'-Priority``) round-trips: export
+    leaves an already-``'``-leading title verbatim, so import must match it
+    verbatim before trying the stripped ``-Priority``.
     """
     explicit = mapping.get("columns") or {}
     by_title = {c.get("title", "").casefold(): c.get("id") for c in board_columns if c.get("id")}
@@ -93,10 +104,14 @@ def _build_header_to_column_id(
     for header in headers:
         if header in {name_col, group_col, "id", "state"}:
             continue
+        stripped = strip_formula_guard(header)
         if header in explicit:
             resolved[header] = str(explicit[header])
             continue
-        hit = by_title.get(header.casefold())
+        if stripped in explicit:
+            resolved[header] = str(explicit[stripped])
+            continue
+        hit = by_title.get(header.casefold()) or by_title.get(stripped.casefold())
         if hit:
             resolved[header] = hit
     return resolved
@@ -138,6 +153,7 @@ def _encode_row(
     for header, raw in row_values.items():
         if raw == "" or raw is None:
             continue
+        raw = strip_formula_guard(raw)
         col_id = header_to_col_id.get(header)
         if col_id is None:
             continue
@@ -246,7 +262,7 @@ def board_cmd(
                 existing_names = _fetch_existing_names(client, board_id)
 
             for row in reader:
-                name = (row.get(name_col) or "").strip()
+                name = strip_formula_guard((row.get(name_col) or "").strip())
                 if not name:
                     results.append({"status": "failed", "error": "empty name", "row": row})
                     failed += 1
@@ -272,7 +288,7 @@ def board_cmd(
                     failed += 1
                     continue
 
-                group_id = (row.get(group_col) or "").strip() or default_group
+                group_id = strip_formula_guard((row.get(group_col) or "").strip()) or default_group
                 variables = {
                     "board": board_id,
                     "name": name,
