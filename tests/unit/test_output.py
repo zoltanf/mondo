@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 
@@ -113,6 +114,15 @@ class TestCsvFormatter:
         body = buf.getvalue().splitlines()[1]
         assert '"[""a"", ""b""]"' in body or '"[\\"a\\", \\"b\\"]"' in body or "[" in body
 
+    def test_guards_formula_cells_and_headers(self) -> None:
+        # Untrusted board data must not become live formulas when the CSV is
+        # opened in a spreadsheet — guard cells and headers (unconditional).
+        buf = io.StringIO()
+        format_output([{"=Evil": "=2+2", "n": "-5"}], fmt="csv", stream=buf)
+        rows = list(csv.reader(io.StringIO(buf.getvalue())))
+        assert rows[0] == ["'=Evil", "n"]
+        assert rows[1] == ["'=2+2", "-5"]  # plain number stays unguarded
+
 
 class TestTsvFormatter:
     def test_tab_separated(self) -> None:
@@ -121,6 +131,13 @@ class TestTsvFormatter:
         lines = buf.getvalue().splitlines()
         assert "\t" in lines[0]
         assert "," not in lines[0]
+
+    def test_guards_formula_cells_and_headers(self) -> None:
+        buf = io.StringIO()
+        format_output([{"@cmd": "+SUM(A1)", "n": "-5"}], fmt="tsv", stream=buf)
+        rows = list(csv.reader(io.StringIO(buf.getvalue()), delimiter="\t"))
+        assert rows[0] == ["'@cmd", "n"]
+        assert rows[1] == ["'+SUM(A1)", "-5"]
 
 
 # ---------- None ----------

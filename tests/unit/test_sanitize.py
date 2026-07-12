@@ -10,7 +10,9 @@ from mondo.util.sanitize import guard_formula, strip_formula_guard, strip_termin
 class TestGuardFormula:
     @pytest.mark.parametrize(
         "raw",
-        ["=SUM(A1:A9)", "+491234", "-5", "@cmd", "\tx", "\rx"],
+        # Formula leads that are NOT plain numbers stay guarded, including
+        # sign-then-operator/exponent/text and pipe-command payloads.
+        ["=SUM(A1:A9)", "@cmd", "\tx", "\rx", "-2+3", "-1e5", "+cmd|calc", "=-5", "+"],
     )
     def test_guards_formula_leads(self, raw: str) -> None:
         assert guard_formula(raw) == "'" + raw
@@ -18,6 +20,30 @@ class TestGuardFormula:
     @pytest.mark.parametrize("raw", ["hello", "", "a=b", "'=already quoted"])
     def test_leaves_safe_strings(self, raw: str) -> None:
         assert guard_formula(raw) == raw
+
+    @pytest.mark.parametrize(
+        "raw",
+        # Plain numbers (optional sign, then only digits/dots/commas) can't
+        # execute in a spreadsheet, so they must round-trip unguarded —
+        # otherwise =SUM()/pandas silently break on negatives.
+        ["-5", "+491234", "-1250", "1.234,50", "-0.5", "+1"],
+    )
+    def test_leaves_plain_numbers(self, raw: str) -> None:
+        assert guard_formula(raw) == raw
+
+    @pytest.mark.parametrize(
+        "raw",
+        # Adjacent/trailing separators are not plain numbers — guarded.
+        ["-1,,2", "+5.", "-1.", "+.5"],
+    )
+    def test_guards_malformed_numbers(self, raw: str) -> None:
+        assert guard_formula(raw) == "'" + raw
+
+    def test_guards_past_leading_bom(self) -> None:
+        # At file start the BOM is eaten as the encoding signature, leaving
+        # the cell to start with "=" — so BOM-prefixed leads must be guarded.
+        assert guard_formula("\ufeff=SUM(A1)") == "'\ufeff=SUM(A1)"
+        assert guard_formula("\ufeff-1250") == "\ufeff-1250"  # still a plain number
 
     def test_leaves_non_strings(self) -> None:
         assert guard_formula(None) is None
@@ -27,7 +53,7 @@ class TestGuardFormula:
 class TestStripFormulaGuard:
     @pytest.mark.parametrize(
         "raw",
-        ["=SUM(A1:A9)", "+491234", "-5", "@cmd", "\tx", "\rx", "hello", ""],
+        ["=SUM(A1:A9)", "+491234", "-5", "@cmd", "\tx", "\rx", "hello", "", "\ufeff=x"],
     )
     def test_round_trips_guard(self, raw: str) -> None:
         assert strip_formula_guard(guard_formula(raw)) == raw

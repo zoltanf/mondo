@@ -6,14 +6,21 @@ import csv
 import json
 from typing import Any, TextIO
 
+from mondo.util.sanitize import guard_formula
+
 
 def _stringify(value: Any) -> str:
-    """Encode a non-scalar value as JSON; leave scalars alone."""
+    """Encode a non-scalar value as JSON; leave scalars alone.
+
+    monday data is untrusted, so formula-looking cells get the ``'`` guard
+    (see ``mondo.util.sanitize``) — a spreadsheet opening the CSV won't
+    execute them.
+    """
     if value is None:
         return ""
     if isinstance(value, (str, int, float, bool)):
-        return str(value)
-    return json.dumps(value, ensure_ascii=False)
+        return guard_formula(str(value))
+    return guard_formula(json.dumps(value, ensure_ascii=False))
 
 
 def _write_rows(stream: TextIO, rows: list[dict[str, Any]]) -> None:
@@ -26,7 +33,7 @@ def _write_rows(stream: TextIO, rows: list[dict[str, Any]]) -> None:
             seen.setdefault(k, None)
     columns = list(seen)
     writer = csv.writer(stream)
-    writer.writerow(columns)
+    writer.writerow([guard_formula(c) for c in columns])
     for row in rows:
         writer.writerow([_stringify(row.get(col)) for col in columns])
 
@@ -48,7 +55,7 @@ def render(data: Any, stream: TextIO, tty: bool) -> None:
         writer = csv.writer(stream)
         writer.writerow(["key", "value"])
         for k, v in data.items():
-            writer.writerow([str(k), _stringify(v)])
+            writer.writerow([guard_formula(str(k)), _stringify(v)])
         return
 
     # Scalar

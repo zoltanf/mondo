@@ -158,6 +158,42 @@ class TestFormulaGuardStrip:
         assert body["variables"]["name"] == "=EvilName"
         assert json.loads(body["variables"]["values"]) == {"t1": "+SUM(A1)"}
 
+    def test_apostrophe_lead_title_round_trips(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        """A real title that itself starts with '-lead exports verbatim and
+        must match the EXACT header first (stripping it would miss)."""
+        cols = _ok(
+            {
+                "boards": [
+                    {
+                        "id": "42",
+                        "name": "B",
+                        "columns": [
+                            {
+                                "id": "t1",
+                                "title": "'-Priority",
+                                "type": "text",
+                                "settings_str": "{}",
+                                "archived": False,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        src = tmp_path / "i.csv"
+        # Export left the already-'-leading title verbatim; import must match it.
+        _write_csv(src, ["name,'-Priority", "Alpha,high"])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=cols)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        assert json.loads(body["variables"]["values"]) == {"t1": "high"}
+
 
 class TestMapping:
     def test_explicit_mapping(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
@@ -194,6 +230,27 @@ class TestMapping:
         body = json.loads(httpx_mock.get_requests()[1].content)
         values = json.loads(body["variables"]["values"])
         assert "status" in values and "date4" in values
+
+    def test_mapping_honors_formula_lead_title(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        """A mapping keyed on the raw (formula-lead) title is honored even
+        though export guarded the CSV header (`=Total` → `'=Total`)."""
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,'=Total", "Alpha,42"])
+        mapping = tmp_path / "map.yaml"
+        mapping.write_text("columns:\n  '=Total': status\n", encoding="utf-8")
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(
+            app,
+            ["import", "board", "--board", "42", "--from", str(src), "--mapping", str(mapping)],
+        )
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        assert "status" in json.loads(body["variables"]["values"])
 
     def test_unknown_header_ignored(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         src = tmp_path / "i.csv"
@@ -320,6 +377,22 @@ class TestGroup:
         b2 = json.loads(httpx_mock.get_requests()[2].content)
         assert b1["variables"]["group"] == "grp_a"
         assert b2["variables"]["group"] == "grp_default"
+
+    def test_group_cell_guard_is_stripped(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        # Export guards the group cell like any other; import must strip it
+        # back off so a formula-lead group id/title round-trips.
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,group", "Alpha,'=grp"])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        body = json.loads(httpx_mock.get_requests()[1].content)
+        assert body["variables"]["group"] == "=grp"
 
 
 class TestCsvErrors:
