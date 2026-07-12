@@ -305,9 +305,7 @@ class TestUserListCache:
         httpx_mock.add_response(
             url=ENDPOINT,
             method="POST",
-            json=_ok(
-                {"users": [{"id": "1", "name": "Zoe", "email": "z@x", "status": "ACTIVE"}]}
-            ),
+            json=_ok({"users": [{"id": "1", "name": "Zoe", "email": "z@x", "status": "ACTIVE"}]}),
         )
         r1 = runner.invoke(app, ["user", "list"])
         assert r1.exit_code == 0, r1.stdout

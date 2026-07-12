@@ -52,6 +52,7 @@ from mondo.columns.dropdown import iter_dropdown_labels
 from mondo.columns.status import iter_status_labels
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.domain.columns_resolve import (
+    DRY_RUN_TAG_NAMES_MSG,
     parse_settings,
     resolve_tag_names_to_ids,
     tags_value_all_ids,
@@ -441,20 +442,15 @@ def set_cmd(
                     usage_error_or_exit(f"--raw value is not valid JSON: {e}")
             else:
                 if col_type == "tags":
-                    if opts.dry_run:
-                        # resolve_tag_names_to_ids mints tags via
-                        # create_or_get_tag — a real mutation. Dry-run must
-                        # never write, so only ids are accepted here.
-                        if not tags_value_all_ids(raw_input):
-                            handle_mondo_error_or_exit(
-                                ValidationError(
-                                    "resolving tag names requires a live "
-                                    "call; use tag ids in --dry-run."
-                                )
-                            )
-                    else:
-                        # Resolve tag names to IDs before the codec sees them.
-                        raw_input = resolve_tag_names_to_ids(client, board_id, raw_input)
+                    # Resolve tag names to IDs before the codec sees them. The
+                    # shared resolver refuses name→id resolution under dry-run
+                    # (create_or_get_tag is a real mutation), raising ValueError.
+                    try:
+                        raw_input = resolve_tag_names_to_ids(
+                            client, board_id, raw_input, dry_run=opts.dry_run
+                        )
+                    except ValueError as e:
+                        handle_mondo_error_or_exit(ValidationError(str(e)))
                 try:
                     parsed = parse_value(
                         col_type, raw_input, settings, create_labels=create_labels_if_missing
@@ -637,8 +633,7 @@ def _build_column_set_row_vars(
             # accept values that are already ids; names need a live call.
             if col_type == "tags" and not tags_value_all_ids(str_value):
                 raise ValidationError(
-                    f"--batch row {index} (column {column_id}): resolving tag "
-                    "names requires a live call; use tag ids in --dry-run."
+                    f"--batch row {index} (column {column_id}): {DRY_RUN_TAG_NAMES_MSG}"
                 )
             try:
                 parsed = parse_value(col_type, str_value, settings, create_labels=create_labels)

@@ -16,6 +16,11 @@ from mondo.api.queries import CREATE_OR_GET_TAG
 if TYPE_CHECKING:
     from mondo.api.client import MondayClient
 
+# Raised (as ValueError) when a `--dry-run` tags value carries names rather
+# than ids: name→id resolution needs the `create_or_get_tag` mutation, which
+# a dry run must never issue. Callers add their own context prefix.
+DRY_RUN_TAG_NAMES_MSG = "resolving tag names requires a live call; use tag ids in --dry-run."
+
 
 def parse_settings(raw: str | None) -> dict[str, Any]:
     """Best-effort parse of a column's `settings_str`.
@@ -39,6 +44,7 @@ def resolve_tag_names_to_ids(
     raw: str,
     *,
     cache: dict[str, int] | None = None,
+    dry_run: bool = False,
 ) -> str:
     """Resolve a comma-separated list of tag names *or* ids to a comma-id string.
 
@@ -49,7 +55,13 @@ def resolve_tag_names_to_ids(
     `cache` (when provided) memoises name → id within one CLI invocation —
     a 50-row batch tagging the same `urgent` label won't issue 50 identical
     `create_or_get_tag` mutations.
+
+    `dry_run=True` forbids name→id resolution: `create_or_get_tag` is a real
+    mutation a dry run must never issue. All-id values still pass through (no
+    client call); any name raises `ValueError(DRY_RUN_TAG_NAMES_MSG)`.
     """
+    if dry_run and not tags_value_all_ids(raw):
+        raise ValueError(DRY_RUN_TAG_NAMES_MSG)
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     if not parts:
         return ""

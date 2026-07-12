@@ -121,6 +121,64 @@ class TestBasicImport:
         # Only the preflight query should have been sent.
         assert len(httpx_mock.get_requests()) == 1
 
+    TAGS_COLS_RESPONSE = _ok(
+        {
+            "boards": [
+                {
+                    "id": "42",
+                    "name": "B",
+                    "columns": [
+                        {
+                            "id": "tags7",
+                            "title": "Tags",
+                            "type": "tags",
+                            "settings_str": "{}",
+                            "archived": False,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    def test_dry_run_tag_names_row_fails_no_mutation(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        # A tags value given as names can't be resolved in --dry-run without a
+        # real create_or_get_tag mutation — the row fails instead of writing.
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,Tags", 'Alpha,"urgent,blocked"'])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self.TAGS_COLS_RESPONSE)
+        result = runner.invoke(
+            app,
+            ["--dry-run", "import", "board", "--board", "42", "--from", str(src)],
+        )
+        assert result.exit_code == 1, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["summary"]["failed"] == 1
+        assert parsed["summary"]["created"] == 0
+        assert parsed["results"][0]["status"] == "failed"
+        assert "tag ids in --dry-run" in parsed["results"][0]["error"]
+        # Only the read-only defs fetch happened; create_or_get_tag never fired.
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
+    def test_dry_run_tag_ids_pass_through(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        # Numeric tag ids need no resolution, so the row dry-runs cleanly with
+        # only the read-only defs fetch and never touches create_or_get_tag.
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,Tags", 'Alpha,"1001,1002"'])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self.TAGS_COLS_RESPONSE)
+        result = runner.invoke(
+            app,
+            ["--dry-run", "import", "board", "--board", "42", "--from", str(src)],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["results"][0]["status"] == "dry-run"
+        values = json.loads(parsed["results"][0]["variables"]["values"])
+        assert values["tags7"] == {"tag_ids": [1001, 1002]}
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
 
 class TestMapping:
     def test_explicit_mapping(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:

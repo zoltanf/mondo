@@ -20,7 +20,6 @@ from mondo.domain.column_cache import fetch_board_columns
 from mondo.domain.columns_resolve import (
     parse_settings,
     resolve_tag_names_to_ids,
-    tags_value_all_ids,
 )
 from mondo.domain.resolve import resolve_by_filters
 from mondo.util.kvparse import parse_column_kv
@@ -260,16 +259,14 @@ def build_column_values(
         settings = parse_settings(definition.get("settings_str"))
         str_value = raw_value if isinstance(raw_value, str) else json.dumps(raw_value)
         if col_type == "tags":
-            if dry_run:
-                # resolve_tag_names_to_ids mints tags via create_or_get_tag —
-                # a real mutation. Dry-run must never write.
-                if not tags_value_all_ids(str_value):
-                    raise ValueError(
-                        f"--column {col_id}={raw_value!r}: resolving tag names "
-                        "requires a live call; use tag ids in --dry-run."
-                    )
-            else:
-                str_value = resolve_tag_names_to_ids(client, board_id, str_value, cache=tag_cache)
+            # The shared resolver refuses name→id resolution under dry-run
+            # (create_or_get_tag is a real mutation), raising ValueError.
+            try:
+                str_value = resolve_tag_names_to_ids(
+                    client, board_id, str_value, cache=tag_cache, dry_run=dry_run
+                )
+            except ValueError as e:
+                raise ValueError(f"--column {col_id}={raw_value!r}: {e}") from e
         try:
             out[col_id] = parse_value(col_type, str_value, settings, create_labels=create_labels)
         except UnknownColumnTypeError:

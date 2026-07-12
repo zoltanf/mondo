@@ -414,6 +414,76 @@ class TestCreate:
         v = _last_body(httpx_mock)["variables"]
         assert json.loads(v["values"]) == {"tags9": {"tag_ids": [111]}}
 
+    def _tags_board_response(self) -> dict:
+        return _ok(
+            {
+                "boards": [
+                    {
+                        "id": "99",
+                        "name": "SubBoard",
+                        "columns": [
+                            {
+                                "id": "tags9",
+                                "title": "Tags",
+                                "type": "tags",
+                                "settings_str": "{}",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+    def test_dry_run_tag_names_issue_no_mutation(self, httpx_mock: HTTPXMock) -> None:
+        # A tags value given as names can't be resolved in --dry-run without a
+        # real create_or_get_tag mutation, so it errors instead of writing.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._tags_board_response())
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "subitem",
+                "create",
+                "--parent",
+                "1",
+                "--name",
+                "Hi",
+                "--subitems-board",
+                "99",
+                "--column",
+                "tags9=urgent,blocked",
+            ],
+        )
+        assert result.exit_code == 5, result.stdout
+        assert "tag ids in --dry-run" in ((result.output or "") + (result.stderr or ""))
+        # Only the read-only defs fetch happened; create_or_get_tag never fired.
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
+    def test_dry_run_tag_ids_pass_through(self, httpx_mock: HTTPXMock) -> None:
+        # Numeric tag ids need no resolution, so --dry-run works with only the
+        # read-only defs fetch and never touches create_or_get_tag.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self._tags_board_response())
+        result = runner.invoke(
+            app,
+            [
+                "--dry-run",
+                "subitem",
+                "create",
+                "--parent",
+                "1",
+                "--name",
+                "Hi",
+                "--subitems-board",
+                "99",
+                "--column",
+                "tags9=1001,1002",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert json.loads(parsed["variables"]["values"]) == {"tags9": {"tag_ids": [1001, 1002]}}
+        assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
+
 
 class TestMoveRenameArchive:
     def test_rename(self, httpx_mock: HTTPXMock) -> None:

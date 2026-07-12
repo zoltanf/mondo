@@ -52,10 +52,11 @@ VERSIONS_QUERY = "query { versions { kind value display_name } }"
 def _token() -> str:
     tok = os.environ.get("MONDAY_API_TOKEN")
     if not tok and os.path.exists(".env"):
-        for line in open(".env"):
-            if line.startswith("MONDAY_API_TOKEN="):
-                tok = line.split("=", 1)[1].strip()
-                break
+        with open(".env") as fh:
+            for line in fh:
+                if line.startswith("MONDAY_API_TOKEN="):
+                    tok = line.split("=", 1)[1].strip()
+                    break
     if not tok:
         sys.exit("error: MONDAY_API_TOKEN not set (env or ./.env)")
     return tok
@@ -100,7 +101,8 @@ def snapshot(api_version: str) -> list[str]:
         lines.append(f"{t['kind']} {name}")
         for f in t.get("fields") or []:
             args = ", ".join(
-                f"{a['name']}: {_typeref(a['type'])}" for a in sorted(f["args"], key=lambda a: a["name"])
+                f"{a['name']}: {_typeref(a['type'])}"
+                for a in sorted(f["args"], key=lambda a: a["name"])
             )
             sig = f"({args})" if args else ""
             lines.append(f"{name}.{f['name']}{sig}: {_typeref(f['type'])}{_dep(f)}")
