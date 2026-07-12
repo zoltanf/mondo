@@ -160,8 +160,10 @@ Exit 0 when every row succeeds, exit 1 when any row failed (the envelope
 is still emitted; a mid-batch HTTP error marks the failing + not-attempted
 rows failed rather than discarding everything). Notes:
 
-- In `--dry-run`, pass tag **ids** (name-minting is deferred until the
-  whole batch validates, so it can't run offline).
+- In `--dry-run`, pass tag **ids** — resolving tag names mints tags via a
+  real mutation, so every tag write refuses names under `--dry-run` with
+  exit 5 (`column set` single + `--batch`, `item`/`subitem create`,
+  `import board`).
 - The `name` column is rejected — rename items with `mondo item rename`.
 - Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail
   codec validation; the error points you at `mondo column clear`.
