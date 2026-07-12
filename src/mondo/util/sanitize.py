@@ -8,9 +8,23 @@ is controlled by anyone with board access. Two output surfaces guard it:
   injection). ``guard_formula`` prefixes them with a single quote — the
   spreadsheet convention for "treat as text" — and
   ``strip_formula_guard`` removes exactly that prefix on import, so the
-  ``mondo export`` → ``mondo import`` round-trip is lossless. (Corner
-  case: a value that itself starts with ``'=`` loses its apostrophe on
-  re-import; accepted for the simplicity of the conditional guard.)
+  ``mondo export`` → ``mondo import`` round-trip is lossless.
+
+  Plain-number exemption: a value that is only an optional ``+``/``-``
+  sign followed by digits/dots/commas (e.g. ``-1250``, ``+491234``,
+  ``1.234,50``) can't execute anything in a spreadsheet, so it is left
+  unguarded — otherwise every negative or plus-leading number would
+  become text and silently break ``=SUM()`` and numeric parsing in
+  pandas/DB loads. Anything with an operator or letter after the sign
+  (``-2+3``, ``-1e5``, ``+cmd|...``) is still guarded.
+
+  Corner cases (both accepted for the simplicity of the conditional
+  guard): a value that itself starts with ``'=`` loses its apostrophe on
+  re-import; and a hand-authored CSV whose cell is a literal ``'``
+  followed by a formula lead (``'=x``) is treated as a guard and loses
+  the apostrophe on import (``mondo export`` never emits such a cell —
+  it only guards non-``'``-leading values — so the round-trip it
+  produces is unaffected).
 - Terminal display (table output): raw C0/C1 control bytes (ESC, CSI,
   OSC, ...) in a value can inject escape sequences into the user's
   terminal. ``strip_terminal_controls`` drops them, keeping newline
@@ -19,10 +33,15 @@ is controlled by anyone with board access. Two output surfaces guard it:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # Leading characters Excel & friends interpret as the start of a formula.
 _FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
+
+# Plain numbers (optional sign, then only digits/dots/commas) can't execute
+# in a spreadsheet, so they stay unguarded — see the module docstring.
+_PLAIN_NUMBER = re.compile(r"^[+-]?\d[\d.,]*$")
 
 # C0 controls (minus \t and \n), DEL, and C1 controls.
 _CONTROL_CHARS: dict[int, None] = {
@@ -31,8 +50,16 @@ _CONTROL_CHARS: dict[int, None] = {
 
 
 def guard_formula(value: Any) -> Any:
-    """Prefix formula-looking strings with ``'`` (spreadsheet text guard)."""
-    if isinstance(value, str) and value.startswith(_FORMULA_LEADS):
+    """Prefix formula-looking strings with ``'`` (spreadsheet text guard).
+
+    Plain numbers (``-1250``, ``+491234``) are exempt so exports stay
+    numeric; see the module docstring.
+    """
+    if (
+        isinstance(value, str)
+        and value.startswith(_FORMULA_LEADS)
+        and not _PLAIN_NUMBER.match(value)
+    ):
         return "'" + value
     return value
 

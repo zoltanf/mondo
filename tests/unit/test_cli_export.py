@@ -244,6 +244,41 @@ class TestFormulaGuard:
         assert parsed["items"][0]["name"] == "=2+2"
         assert parsed["items"][0]["=Evil"] == "+SUM(A1)"
 
+    def test_csv_leaves_plain_numbers_unguarded(self, httpx_mock: HTTPXMock) -> None:
+        # A "-"/"+"-leading plain number can't execute as a formula, so it
+        # must export verbatim — else =SUM()/pandas break on negatives.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self.EVIL_COLS)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_items_page([_item("1", "Item", {"t1": "-1250"})]),
+        )
+        result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "csv"])
+        assert result.exit_code == 0, result.stdout
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        assert rows[1][4] == "-1250"
+
+    def test_xlsx_non_formula_row_untouched(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        # A plain (non-"="-leading) row keeps openpyxl's inferred types after
+        # the sanitize rewrite — only "="-leading string cells are downgraded.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self.EVIL_COLS)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_items_page([_item("1", "Plain", {"t1": "hello"})]),
+        )
+        out = tmp_path / "board.xlsx"
+        result = runner.invoke(
+            app,
+            ["export", "board", "--board", "42", "-f", "xlsx", "--out", str(out)],
+        )
+        assert result.exit_code == 0, result.stdout
+        ws = load_workbook(out)["items"]
+        assert ws["B2"].value == "Plain"
+        assert ws["B2"].data_type == "s"
+        assert ws["E2"].value == "hello"
+        assert ws["E2"].data_type == "s"
+
 
 class TestJsonExport:
     def test_shape(self, httpx_mock: HTTPXMock) -> None:
@@ -371,6 +406,23 @@ class TestMarkdownExport:
         assert result.exit_code == 0, result.stdout
         # A pipe in a column title must be escaped so the GFM table stays aligned.
         assert "Cost \\| EUR" in result.stdout
+
+    def test_escapes_html_in_cells_and_titles(self, httpx_mock: HTTPXMock) -> None:
+        # Board data is untrusted; raw-HTML renderers (pandoc, most SSGs)
+        # would execute smuggled markup, so cells + titles are HTML-escaped.
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=_board_name("A & B"))
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_items_page([_item("1", "<script>x</script>", {"status": "Done"})]),
+        )
+        result = runner.invoke(app, ["export", "board", "--board", "42", "-f", "md", "--flat"])
+        assert result.exit_code == 0, result.stdout
+        out = result.stdout
+        assert "<script>" not in out
+        assert "&lt;script&gt;x&lt;/script&gt;" in out
+        assert "# A &amp; B" in out
 
 
 class TestHtmlExport:

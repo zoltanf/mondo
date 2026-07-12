@@ -244,7 +244,11 @@ def _write_json(payload: Any, stream: Any) -> None:
 
 def _md_table(rows: list[dict[str, Any]], headers: list[str], stream: Any) -> None:
     def esc(v: Any) -> str:
-        return str(v if v is not None else "").replace("|", "\\|").replace("\n", " ")
+        # HTML-escape first: board data is untrusted and many markdown
+        # renderers (pandoc, most SSGs) pass raw HTML through, so an
+        # unescaped `<img onerror=...>`/`<script>` would execute.
+        text = html.escape(str(v if v is not None else ""))
+        return text.replace("|", "\\|").replace("\n", " ")
 
     stream.write("| " + " | ".join(esc(h) for h in headers) + " |\n")
     stream.write("|" + "|".join(["---"] * len(headers)) + "|\n")
@@ -262,13 +266,15 @@ def _write_markdown(
     flat: bool,
     stream: Any,
 ) -> None:
-    stream.write(f"# {board_name}\n\n")
+    # Board/group titles are untrusted board data; escape HTML so raw-HTML
+    # renderers can't execute smuggled markup (see _md_table).
+    stream.write(f"# {html.escape(board_name)}\n\n")
     if flat:
         _md_table(item_rows, [*META_FIELDS, *col_labels], stream)
     else:
         headers = ["id", "name", "state", *col_labels]
         for title, group_rows in _group_rows(item_rows, group_keys):
-            stream.write(f"## {title}\n\n")
+            stream.write(f"## {html.escape(title)}\n\n")
             _md_table(group_rows, headers, stream)
             stream.write("\n")
     if subitem_rows is not None and subitem_headers is not None:
@@ -356,20 +362,23 @@ def _write_xlsx(
     from openpyxl.styles import Font  # type: ignore[import-untyped]
     from openpyxl.utils import get_column_letter  # type: ignore[import-untyped]
 
-    def append_row(ws: Any, values: list[Any]) -> None:
+    def append_row(ws: Any, row_idx: int, values: list[Any]) -> None:
         ws.append(values)
         if sanitize:
-            # openpyxl stores "="-leading strings as live formulas; board
-            # data must stay text, so downgrade those cells back to strings
-            # (value is unchanged — Excel just shows it verbatim).
-            for cell in ws[ws.max_row]:
-                if cell.data_type == "f":
-                    cell.data_type = "s"
+            # openpyxl stores "="-leading strings as live formulas (cell.py
+            # sets data_type "f" for `len>1` "="-leading strs); board data
+            # must stay text, so downgrade just those cells back to strings
+            # (value unchanged — Excel shows it verbatim). Address them by
+            # (row, col) using the row index we track: `ws.max_row` rescans
+            # every written cell, making the whole export O(rows^2 * cols).
+            for col_idx, value in enumerate(values, start=1):
+                if isinstance(value, str) and value.startswith("=") and len(value) > 1:
+                    ws.cell(row=row_idx, column=col_idx).data_type = "s"
 
     def fill_sheet(ws: Any, headers: list[str], rows: list[dict[str, Any]]) -> None:
-        append_row(ws, headers)
-        for row in rows:
-            append_row(ws, [row.get(h, "") for h in headers])
+        append_row(ws, 1, headers)
+        for row_idx, row in enumerate(rows, start=2):
+            append_row(ws, row_idx, [row.get(h, "") for h in headers])
         for cell in ws[1]:
             cell.font = Font(bold=True)
         ws.freeze_panes = "A2"
@@ -449,7 +458,8 @@ def board_cmd(
         "--sanitize-formulas/--no-sanitize-formulas",
         help="csv/tsv: prefix cells starting with = + - @ (or tab/CR) with a "
         "single quote so spreadsheets don't execute them as formulas "
-        "(`mondo import board` strips the prefix back off on re-import). "
+        "(plain numbers like -12 keep their sign; `mondo import board` strips "
+        "the prefix back off on re-import). "
         'xlsx: store "="-leading cells as text instead of live formulas.',
     ),
     limit: int = typer.Option(MAX_PAGE_SIZE, "--limit", help=f"Page size (max {MAX_PAGE_SIZE})."),

@@ -6,13 +6,17 @@ import csv
 import json
 from typing import Any, TextIO
 
+from mondo.util.sanitize import guard_formula
+
 
 def _stringify(value: Any) -> str:
+    # monday data is untrusted: guard formula-looking cells so a spreadsheet
+    # opening the TSV won't execute them (see mondo.util.sanitize).
     if value is None:
         return ""
     if isinstance(value, (str, int, float, bool)):
-        return str(value)
-    return json.dumps(value, ensure_ascii=False)
+        return guard_formula(str(value))
+    return guard_formula(json.dumps(value, ensure_ascii=False))
 
 
 def render(data: Any, stream: TextIO, tty: bool) -> None:
@@ -26,7 +30,7 @@ def render(data: Any, stream: TextIO, tty: bool) -> None:
                 for k in row:
                     seen.setdefault(k, None)
             columns = list(seen)
-            writer.writerow(columns)
+            writer.writerow([guard_formula(c) for c in columns])
             for row in data:
                 writer.writerow([_stringify(row.get(col)) for col in columns])
             return
@@ -38,7 +42,7 @@ def render(data: Any, stream: TextIO, tty: bool) -> None:
     if isinstance(data, dict):
         writer.writerow(["key", "value"])
         for k, v in data.items():
-            writer.writerow([str(k), _stringify(v)])
+            writer.writerow([guard_formula(str(k)), _stringify(v)])
         return
 
     writer.writerow(["value"])
