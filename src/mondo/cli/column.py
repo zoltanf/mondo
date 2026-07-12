@@ -611,7 +611,7 @@ def _build_column_set_row_vars(
                 _str_value: str = str_value,
                 _settings: dict[str, Any] = settings,
                 _create_labels: bool = create_labels,
-                _column_id: str = column_id,
+                _column_id: str = str(column_id),
                 _index: int = index,
             ) -> str:
                 resolved = resolve_tag_names_to_ids(cl, board_id, _str_value, cache=cache)

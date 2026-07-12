@@ -35,7 +35,7 @@ class MirrorCodec(_ReadOnly):
         # lives in `display_value` (MirrorValue inline fragment).
         display = entry.get("display_value")
         if display:
-            return display
+            return str(display)
         return entry.get("text") or ""
 
 
@@ -47,7 +47,7 @@ class FormulaCodec(_ReadOnly):
         # lives in `display_value` (FormulaValue inline fragment).
         display = entry.get("display_value")
         if display:
-            return display
+            return str(display)
         return entry.get("text") or ""
 
 
