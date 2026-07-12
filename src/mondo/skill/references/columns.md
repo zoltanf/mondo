@@ -154,7 +154,7 @@ echo '[
 ```
 
 - **Exit 1 on any per-row failure** (the envelope is still emitted — inspect `results[].ok` and retry the failures). A mid-batch HTTP error marks the failing + not-yet-attempted rows failed and still returns the partial envelope.
-- `--dry-run` prints the resolved GraphQL document per chunk without sending. Tags-by-name can't be minted in `--dry-run` — pass tag **ids** there.
+- `--dry-run` prints the resolved GraphQL document per chunk without sending. Tags by **name** are refused in `--dry-run` with exit 5 ("resolving tag names requires a live call; use tag ids in --dry-run.") — the rule applies to every tag write: `column set` single + `--batch`, `item`/`subitem create`, and `import board`.
 - The `name` column is rejected (rename items with `mondo item rename`), same as single-item mode.
 - Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail codec validation and the error points you at `mondo column clear`.
 

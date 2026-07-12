@@ -1,7 +1,7 @@
 ---
 name: mondo
 description: Use when the user wants to do anything against monday.com via the `mondo` CLI — reading or writing workspaces, folders, boards, groups, items, subitems, columns, updates, docs, files, users, teams, webhooks, or when they paste a monday.com URL.
-version: "1.11.0"
+version: "1.12.0"
 ---
 
 # mondo
@@ -65,13 +65,13 @@ Consult these *before* improvising. Each is a Goal / Command / Output / Gotcha s
 
 ## Operating norms (every command obeys these)
 
-- **Output format:** auto-JSON when stdout isn't a TTY. Don't set `-o json` in scripts; mondo detects it. Force with `-o json|yaml|tsv|csv`.
+- **Output format:** auto-JSON when stdout isn't a TTY. Don't set `-o json` in scripts; mondo detects it. Force with `-o json|yaml|tsv|csv`. Board data is untrusted: `csv`/`tsv` output prefixes formula-leading cells (`=` `+` `-` `@`; plain numbers exempt) with `'` so spreadsheets don't execute them, and `table` output strips terminal control characters (Rich markup is never interpreted). `json`/`yaml` pass values through raw.
 - **Project before format** with `-q JMESPATH` (applied before the formatter). For the "give me id, name, status" case, `--fields KEY1,KEY2,...` (CSV of keys; dotted paths walk nested dicts) is shorter than the equivalent `-q` projection. Both are global flags surfaced in the "Output / Query" help panel.
 - **Narrow server-side, always.** On boards beyond a few hundred items a full `item list` costs ~10s per 500 items, and the full `column_values` selection is ~3x the bare item fields. Use `--group <id>`, `--filter col=val` (repeatable, AND'ed), `--max-items N`, and `--columns col1,col2`; reach for `-q` to *project*, not to *filter* — a client-side `[?group.id=='…']` still pays for every item on the board. For the lookup-by-value case use `mondo item find --board X --column COL --value VAL`. `--parent <item-id>` is the first-class subitems shortcut. See `mondo help complexity` for the cost model.
 - **Resolve ids by name with the cheap shape:** `mondo item list --board X --group G --fields id,name` is the canonical id lookup — `--fields id,name` drops `column_values` from the GraphQL query, ~3x faster per page. A `-q` expression never narrows the request (it shapes output client-side) — combine `-q` for shape with `--fields` for slimming.
 - **JSON error envelope** on stderr (non-TTY): `{"error": "...", "code": "...", "exit_code": N, "request_id": "...", "retry_in_seconds": N, "suggestion": "..."}`. Branch on `exit_code`, never parse stderr text.
 - **Stable exit codes:** 0 ok · 2 usage · 3 auth/permission · 4 rate/complexity (retry after 60s) · 5 validation · 6 not-found · 7 network. Exit 3 on a write is a **policy wall** (workspace permission or license), not bad syntax — don't burn calls retrying with different flags (`--kind private`, `--kind share`, …); surface the error to the user.
-- **Dry-run writes first:** every typed mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar. Not supported on `mondo graphql` — the raw passthrough refuses `--dry-run` with exit 2 because mondo can't safely preview a query it doesn't parse.
+- **Dry-run writes first:** every typed mutating command takes `--dry-run` (prints GraphQL + variables, sends nothing). Use it when the task is unfamiliar. Not supported on `mondo graphql` — the raw passthrough refuses `--dry-run` with exit 2 because mondo can't safely preview a query it doesn't parse. Tags by **name** are refused under `--dry-run` everywhere (`item`/`subitem create`, `column set` single + `--batch`, `import board`) because name→id resolution mints tags via a real mutation — pass tag **ids** in dry runs (exit 5 otherwise).
 - **Batch:** `item create --batch <file.json|- >` and `column set --board <id> --batch <file.json|- >` bulk-write via aliased mutations (~10 rows per HTTP call, `--chunk-size` to tune; per-row envelope: partial failure → exit 1). `column set --batch` rows are `{item, value}` or `{item, column, value}` (a top-level `--column` supplies the default). A batch still costs ~2.4s/chunk, so a few hundred rows will blow a 2-minute Bash timeout: run it in the background or raise the timeout.
 - **URLs:** pass `--with-url` on `board get`, `board list`, `board create`, `item get`, `item list`, `item find`, `item create`, `subitem get`, `doc get`, `doc list`, `doc create` to return a clickable monday.com link to the user. On the create commands this is single-call create + URL retrieval (no extra request).
 - **Wait for async state changes** with `--poll-until '<jmespath>'` + `--poll-interval` + `--poll-timeout` on `item list`, `item get`, `board get` — replaces hand-rolled bash `until/sleep` loops.

@@ -431,6 +431,10 @@ mondo --dry-run import board --board 1234567890 --from items.csv
 
 Column values use the same codec registry as `mondo item create` — so CSV
 cells like `Done`, `2026-04-25`, `urgent,blocked` parse into the right JSON.
+The importer keeps export round-trips lossless: it strips the export's `'`
+formula guard from names, values, and headers, and resolves export's
+disambiguated `Title (<colid>)` headers (duplicate or meta-shadowing column
+titles) straight to the column id.
 Each row emits a result record (`created`/`skipped`/`failed`/`dry-run`); a
 single failing row does not abort the run, and the command exits `1` if any
 row failed.
@@ -461,6 +465,12 @@ mondo export board --board 1234567890 --format md   --group topics        # one 
 Formats: `csv | tsv | json | xlsx | md | html | pdf`. Column headers are the
 board's column titles (archived columns are dropped). monday has no native
 board-export API, so every format is rendered client-side.
+
+Formula-looking cells are guarded by default: csv/tsv values starting with
+`=` `+` `-` `@` (plain numbers exempt) get a `'` prefix and xlsx stores
+`=`-leading cells as text, so spreadsheets don't execute board-controlled
+data — opt out with `--no-sanitize-formulas`. The same guard applies to any
+command's generic `-o csv` / `-o tsv` output.
 
 The human-readable formats (`md`, `html`, `pdf`) are **grouped by default**: the
 output opens with a board-name title and then one section per group that contains
@@ -860,7 +870,7 @@ codec registry (22 writable column types):
 | `country` | `US` | `{"countryCode":"US","countryName":"United States"}` |
 | `checkbox` | `true` / `false` / `clear` | `{"checked":"true"}` / `null` |
 | `rating` | `4` | `{"rating":4}` |
-| `tags` | `urgent,blocked` | `{"tag_ids":[…]}` (names resolved via `create_or_get_tag`) |
+| `tags` | `urgent,blocked` | `{"tag_ids":[…]}` (names resolved via `create_or_get_tag`; under `--dry-run` names are rejected — pass tag ids) |
 | `board_relation` | `12345,23456` | `{"item_ids":[…]}` |
 | `dependency` | `12345,23456` | `{"item_ids":[…]}` |
 | `world_clock` | `Europe/London` | `{"timezone":"Europe/London"}` |

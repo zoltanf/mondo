@@ -53,11 +53,16 @@ just want a smaller dict per row.
 
 ## Format notes
 
-- `table` — rich-rendered, TTY only. Dropped columns become `…`.
+- `table` — rich-rendered, TTY only. Dropped columns become `…`. Cell text
+  is sanitized: terminal control characters are stripped and Rich markup in
+  API data is never interpreted.
 - `json` — compact, newline-terminated. Safe to pipe into `jq`.
 - `jsonc` — pretty-printed with 2-space indent. For humans reading logs.
 - `yaml` — ruamel.yaml round-trip safe. Preserves ordering.
 - `tsv` / `csv` — flattens nested records using dotted paths. Header row first.
+  Formula-leading cells (`=` `+` `-` `@`; plain numbers exempt) get a `'`
+  prefix so a spreadsheet opening the file won't execute board-controlled
+  text — same guard as `mondo export board`, here unconditional.
 - `none` — prints the raw scalar when `--query` collapses the payload to one.
 
 ## Errors and stderr

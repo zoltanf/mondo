@@ -81,7 +81,7 @@ mondo column set --board 5094861043 --column e2e_status --batch ./col_batch.json
 }
 ```
 
-*Gotcha:* in `--dry-run` pass tag **ids**, not names (name-minting is deferred until the whole batch validates). Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail codec validation — use `mondo column clear` instead (the error says so). Full walkthrough: `mondo help batch-operations`.
+*Gotcha:* in `--dry-run` pass tag **ids**, not names — resolving names mints tags via a real mutation, so every tag write refuses names under `--dry-run` with exit 5 (this batch mode, single `column set`, `item`/`subitem create`, `import board`). Clear-shaped values (`""`, `{}`, `[]`, `null`, `{"labels":[]}`) fail codec validation — use `mondo column clear` instead (the error says so). Full walkthrough: `mondo help batch-operations`.
 
 ## Export a board
 
@@ -106,6 +106,19 @@ mondo export board 5094861043 --format html --out ./pm_export.html
 # PDF via WeasyPrint (requires --out):
 mondo export board 5094861043 --format pdf --out ./pm_export.pdf
 ```
+
+### Formula guard (csv / tsv / xlsx — on by default)
+
+Board data is controlled by anyone with board access, so exports defend the
+spreadsheet that opens them: csv/tsv cells starting with `=` `+` `-` `@`
+(or tab/CR) get a `'` prefix — the spreadsheet "treat as text" convention —
+and xlsx stores `=`-leading cells as text instead of live formulas. Plain
+numbers (`-1250`, `1.234,50`) are exempt so numeric columns stay numeric.
+`mondo import board` strips the prefix back off, keeping the round-trip
+lossless; other consumers (pandas, DB loads) will see the literal `'` on
+formula-looking text cells — disable with `--no-sanitize-formulas` if the
+destination is trusted. md/html exports HTML-escape cell text and titles
+instead.
 
 ### Grouped vs flat (md / html / pdf only)
 
@@ -176,6 +189,14 @@ mondo import board <new_board_id> --from /tmp/pm.csv \
 ```
 
 *Gotcha:* the round-trip is **lossy** for typed columns whose values are labels (status, dropdown, people). For full fidelity, use JSON export + scripting around `item create` directly.
+
+Round-trip fidelity details the importer handles for you: the `'` formula
+guard the export adds is stripped from names, cell values, headers, and the
+group cell; and export's disambiguated `Title (<colid>)` headers (emitted
+when two columns share a title or a title shadows `id`/`name`/`state`/
+`group`) resolve straight to the column id, so duplicate-title boards no
+longer drop those columns on import. Header resolution priority: explicit
+`--mapping` → `Title (<colid>)` suffix → case-insensitive title match.
 
 ## JSON error envelope (server errors only)
 
