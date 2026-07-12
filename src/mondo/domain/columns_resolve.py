@@ -38,6 +38,11 @@ def parse_settings(raw: str | None) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _is_tag_id(part: str) -> bool:
+    """True when a single tags-value part is already a numeric id."""
+    return part.isdigit() or (part.startswith("-") and part[1:].isdigit())
+
+
 def resolve_tag_names_to_ids(
     client: MondayClient,
     board_id: int,
@@ -67,7 +72,7 @@ def resolve_tag_names_to_ids(
         return ""
     resolved_ids: list[int] = []
     for part in parts:
-        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
+        if _is_tag_id(part):
             resolved_ids.append(int(part))
             continue
         if cache is not None and part in cache:
@@ -89,7 +94,6 @@ def resolve_tag_names_to_ids(
 def tags_value_all_ids(raw: str) -> bool:
     """True when every comma-separated part of a tags value is already a
     numeric id, so no name→id resolution (a live `create_or_get_tag`
-    mutation) is needed. Mirrors the pass-through check in
-    `resolve_tag_names_to_ids`."""
+    mutation) is needed."""
     parts = [p.strip() for p in raw.split(",") if p.strip()]
-    return all(p.isdigit() or (p.startswith("-") and p[1:].isdigit()) for p in parts)
+    return all(_is_tag_id(p) for p in parts)

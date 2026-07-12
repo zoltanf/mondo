@@ -17,10 +17,7 @@ from typing import TYPE_CHECKING, Any
 from mondo.api.errors import NotFoundError, UsageError
 from mondo.api.pagination import iter_items_page
 from mondo.domain.column_cache import fetch_board_columns
-from mondo.domain.columns_resolve import (
-    parse_settings,
-    resolve_tag_names_to_ids,
-)
+from mondo.domain.columns_resolve import parse_settings, resolve_tag_names_to_ids
 from mondo.domain.resolve import resolve_by_filters
 from mondo.util.kvparse import parse_column_kv
 
