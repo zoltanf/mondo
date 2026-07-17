@@ -35,6 +35,7 @@ from mondo.api.queries import (
 )
 from mondo.cli._batch import build_batch_chunks_repr, run_aliased_batch
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
+from mondo.cli._computed_text import fill_computed_text
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -247,6 +248,7 @@ def get_cmd(
         item.pop("url", None)
     from mondo.cli._field_sets import item_get_fields
 
+    fill_computed_text(item)
     opts.emit(item, selected_fields=item_get_fields())
 
 
@@ -400,7 +402,9 @@ def _list_items_impl(
         items = data.get("items") or []
         if not items:
             handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
-        opts.emit(items[0].get("subitems") or [])
+        subitems = items[0].get("subitems") or []
+        fill_computed_text(subitems)
+        opts.emit(subitems)
         return
 
     board_id = resolve_required_id(board_pos, board_flag, flag_name="--board", resource="board")
@@ -414,6 +418,7 @@ def _list_items_impl(
             apply_item_urls(items, opts, board_id=board_id)
         from mondo.cli._field_sets import item_list_fields
 
+        fill_computed_text(items)
         opts.emit(items, selected_fields=item_list_fields())
 
     # Cache eligibility (#21) keys off the *user's* filters; the --group
