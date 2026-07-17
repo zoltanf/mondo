@@ -31,6 +31,7 @@ from mondo.api.queries import (
     SUBITEM_CREATE,
     SUBITEMS_LIST,
 )
+from mondo.cli._computed_text import fill_computed_text
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -112,7 +113,9 @@ def list_cmd(
         except MondoError as e:
             handle_mondo_error_or_exit(e)
         emit_cache_provenance(opts, cached, store=store, explain=explain_cache)
-        opts.emit(list(cached.entries))
+        entries = list(cached.entries)
+        fill_computed_text(entries)
+        opts.emit(entries)
         return
 
     variables = {"parent": parent_id}
@@ -120,7 +123,9 @@ def list_cmd(
     items = data.get("items") or []
     if not items:
         handle_mondo_error_or_exit(NotFoundError(f"parent item {parent_id} not found."))
-    opts.emit(items[0].get("subitems") or [])
+    subitems = items[0].get("subitems") or []
+    fill_computed_text(subitems)
+    opts.emit(subitems)
 
 
 @app.command("get", epilog=epilog_for("subitem get"))
@@ -207,6 +212,7 @@ def get_cmd(
         handle_mondo_error_or_exit(NotFoundError(f"subitem {subitem_id} not found."))
     if not with_url:
         item.pop("url", None)
+    fill_computed_text(item)
     opts.emit(item)
 
 
@@ -283,7 +289,9 @@ def create_cmd(
     from mondo.cli._cache_invalidate import invalidate_entity
 
     invalidate_entity(opts, "subitems", scope=str(parent_id))
-    opts.emit(data.get("create_subitem") or {})
+    created = data.get("create_subitem") or {}
+    fill_computed_text(created)
+    opts.emit(created)
 
 
 @app.command("rename", epilog=epilog_for("subitem rename"))

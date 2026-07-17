@@ -29,6 +29,7 @@ from mondo.api.queries import (
 from mondo.cli._batch import build_batch_chunks_repr, run_aliased_batch
 from mondo.cli._cache_flags import reject_mutually_exclusive
 from mondo.cli._cache_invalidate import invalidate_board_items_cache, invalidate_entity
+from mondo.cli._computed_text import fill_computed_text
 from mondo.cli._confirm import confirm_or_abort as _confirm
 from mondo.cli._examples import epilog_for
 from mondo.cli._exec import (
@@ -513,7 +514,9 @@ def set_cmd(
         invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
-    opts.emit(data.get("change_column_value") or {})
+    changed = data.get("change_column_value") or {}
+    fill_computed_text(changed)
+    opts.emit(changed)
 
 
 def _build_column_set_row_vars(
@@ -738,6 +741,7 @@ def _run_column_set_batch(
     for item_id in {item for _v, item, _col, _f in per_row}:
         invalidate_entity(opts, "items", scope=str(item_id))
 
+    fill_computed_text([r["data"] for r in results if isinstance(r.get("data"), dict)])
     failed = sum(1 for r in results if not r["ok"])
     summary = {"requested": len(rows), "updated": len(results) - failed, "failed": failed}
     opts.emit({"summary": summary, "results": results})
@@ -806,7 +810,9 @@ def set_many_cmd(
         invalidate_columns_cache(opts.columns_cache_store_for_invalidation(board_id))
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
-    opts.emit(data.get("change_multiple_column_values") or {})
+    changed = data.get("change_multiple_column_values") or {}
+    fill_computed_text(changed)
+    opts.emit(changed)
 
 
 @app.command("clear", epilog=epilog_for("column clear"))
@@ -863,7 +869,9 @@ def clear_cmd(
 
     invalidate_entity(opts, "items", scope=str(item_id))
     invalidate_board_items_cache(opts, board_id)
-    opts.emit(data.get("change_column_value") or {})
+    cleared = data.get("change_column_value") or {}
+    fill_computed_text(cleared)
+    opts.emit(cleared)
 
 
 # ----- structural mutations (2b) -----

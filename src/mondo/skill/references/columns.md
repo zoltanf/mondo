@@ -168,13 +168,14 @@ mondo column clear --item 9876543210 --column e2e_dropdown -y
 
 ## Read-only columns: mirror, formula, and friends
 
-`mirror`, `formula`, `auto_number`, `creation_log`, `time_tracking`, … cannot be **written** (a `column set` attempt exits 5). But they now **read** correctly: typed reads render the computed `display_value` natively, so no graphql escape is needed.
+`mirror`, `formula`, `auto_number`, `creation_log`, `time_tracking`, … cannot be **written** (a `column set` attempt exits 5). But they **read** correctly: typed reads render the computed `display_value` natively, so no graphql escape is needed.
 
-- `column get --item <id> --column <mirror|formula|board_relation|dependency>` renders the `display_value`.
-- `item list`/`item get -o json` carry `display_value` on those column values (and `linked_item_ids` for `board_relation`/`dependency`).
-- Exports (`export board`) fall back to `display_value` when `text` is null.
+**The trap:** monday's API returns `text: null` for computed column types — the value lives in the polymorphic `display_value` field. Seeing `text: null` on every mirror row does **not** mean the column is empty or broken. mondo defuses this two ways:
 
-So the old inline-fragment escape (`... on MirrorValue { display_value }` via `mondo graphql`) is **no longer necessary** for these reads — reach for it only if you need a raw field the typed selection doesn't expose.
+- `item list`/`item get`/`subitem list`/`subitem get`/`item find` fill `text` from `display_value` when `text` is null, so `.text` consumers just work — and still carry `display_value` (plus `linked_item_ids` for `board_relation`/`dependency`).
+- `column get --item <id> --column <mirror|formula|board_relation|dependency>` renders the `display_value`; exports (`export board`) fall back to it when `text` is null. (`column get --raw` returns the untouched wire entry — there `text` stays null.)
+
+So the old inline-fragment escape (`... on MirrorValue { display_value }` via `mondo graphql`) is **never necessary** for these reads — reach for it only if you need a raw field the typed selection doesn't expose.
 
 ## Multi-column writes on `item create`
 

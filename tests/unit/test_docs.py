@@ -229,6 +229,66 @@ class TestBlocksToMarkdown:
         assert blocks_to_markdown([]) == ""
 
 
+class TestDeltaEmbeds:
+    """Quill embeds put a dict in `insert` — must render, never crash (#105).
+
+    Live shape that crashed `doc get --format markdown`:
+    `{"insert": {"newLink": {"url": "…", "title": "…", …}}}`.
+    """
+
+    def _delta_block(self, *inserts: object) -> dict:
+        return {
+            "type": "normal text",
+            "content": {"deltaFormat": [{"insert": i} for i in inserts]},
+        }
+
+    def test_newlink_card_renders_as_markdown_link(self) -> None:
+        embed = {"newLink": {"url": "https://example.com/x", "title": "Example Page"}}
+        out = blocks_to_markdown([self._delta_block("see ", embed)])
+        assert "see [Example Page](https://example.com/x)" in out
+
+    def test_link_embed_without_title_uses_url(self) -> None:
+        embed = {"newLink": {"url": "https://example.com/x", "title": ""}}
+        out = blocks_to_markdown([self._delta_block(embed)])
+        assert "[https://example.com/x](https://example.com/x)" in out
+
+    def test_mention_style_embed_renders_name(self) -> None:
+        out = blocks_to_markdown([self._delta_block({"mention": {"name": "Zoltan Fekete"}})])
+        assert "Zoltan Fekete" in out
+
+    def test_string_valued_embed_renders_verbatim(self) -> None:
+        out = blocks_to_markdown([self._delta_block({"emoji": "🎉"})])
+        assert "🎉" in out
+
+    def test_unknown_dict_embed_is_dropped_not_crashed(self) -> None:
+        out = blocks_to_markdown([self._delta_block("before", {"widget": {"kind": 3}}, "after")])
+        assert "before" in out and "after" in out
+
+    def test_link_label_brackets_are_escaped(self) -> None:
+        embed = {"newLink": {"url": "https://ok.example", "title": "A](https://bad.example) [B"}}
+        out = blocks_to_markdown([self._delta_block(embed)])
+        assert "](https://bad.example)" not in out.replace("\\]", "")
+        assert "(https://ok.example)" in out
+
+    def test_link_label_backslash_cannot_neutralize_escape(self) -> None:
+        # A trailing `\` in the title must not turn the escaped `\]` into a
+        # literal backslash + active `]` (CommonMark parses `\\]` that way).
+        embed = {"newLink": {"url": "https://ok.example", "title": "A\\](https://bad.example)"}}
+        out = blocks_to_markdown([self._delta_block(embed)])
+        assert "\\\\\\]" in out  # backslash escaped, then bracket escaped
+        assert "](https://bad.example)" not in out.replace("\\]", "")
+
+    def test_url_breakers_are_percent_encoded(self) -> None:
+        embed = {"newLink": {"url": "https://x.example/a(b) c>d", "title": "T"}}
+        out = blocks_to_markdown([self._delta_block(embed)])
+        assert "[T](https://x.example/a%28b%29%20c%3Ed)" in out
+
+    def test_html_renderer_survives_embeds(self) -> None:
+        embed = {"newLink": {"url": "https://example.com", "title": "T"}}
+        html_out = blocks_to_html([self._delta_block("x ", embed)])
+        assert "x" in html_out
+
+
 class TestBlocksToMarkdownImages:
     def _image(self, asset_id: int | None, url: str = "") -> dict:
         content: dict = {"url": url}

@@ -475,6 +475,38 @@ def _as_content_dict(content: Any) -> dict[str, Any] | None:
     return content if isinstance(content, dict) else None
 
 
+def _insert_to_text(insert: Any) -> str:
+    """Render one delta `insert` as text.
+
+    Usually a plain string, but Quill embeds (`newLink` cards, mentions,
+    emoji, …) carry a dict instead: `{"insert": {"newLink": {"url": …,
+    "title": …}}}`. Render those as a readable stand-in — a markdown link
+    when a url is present, otherwise the embed's title/name — never a crash.
+    """
+    if isinstance(insert, str):
+        return insert
+    if isinstance(insert, dict):
+        embed = next(iter(insert.values()), None)
+        if isinstance(embed, str):
+            return embed
+        if isinstance(embed, dict):
+            url = embed.get("url")
+            title = embed.get("title") or embed.get("name") or embed.get("text")
+            if isinstance(url, str) and url:
+                # Embed fields are board-user-controlled: escape the label
+                # (backslash first, so a trailing `\` can't neutralize the
+                # bracket escape) and percent-encode destination characters
+                # that would end the `(url)` early, so a crafted title/url
+                # can't inject markdown structure.
+                label = title if isinstance(title, str) and title else url
+                label = label.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+                dest = re.sub(r"[ ()<>\t\n\r]", lambda m: f"%{ord(m.group()):02X}", url)
+                return f"[{label}]({dest})"
+            if isinstance(title, str):
+                return title
+    return ""
+
+
 def _extract_text(content: Any) -> str:
     """Pull the plain text out of a block's content field.
 
@@ -491,7 +523,7 @@ def _extract_text(content: Any) -> str:
 
     delta = parsed.get("deltaFormat")
     if isinstance(delta, list):
-        pieces = [d.get("insert", "") for d in delta if isinstance(d, dict)]
+        pieces = [_insert_to_text(d.get("insert", "")) for d in delta if isinstance(d, dict)]
         return "".join(pieces)
 
     for key in ("text", "value", "plainText"):
