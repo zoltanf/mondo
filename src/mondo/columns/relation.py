@@ -64,6 +64,10 @@ class BoardRelationCodec(ColumnCodec):
             return {}
         return {"item_ids": _parse_id_list(stripped, "board_relation")}
 
+    def parse_filter(self, value: str, settings: dict[str, Any]) -> list[Any]:
+        # Filter rules want bare INTEGER item ids (["12345"] matches nothing).
+        return _parse_id_list(value.strip(), "board_relation")
+
     def render(self, value: Any, text: str | None) -> str:
         return text or ""
 
@@ -91,6 +95,10 @@ class DependencyCodec(ColumnCodec):
         if not stripped:
             return {}
         return {"item_ids": _parse_id_list(stripped, "dependency")}
+
+    def parse_filter(self, value: str, settings: dict[str, Any]) -> list[Any]:
+        # Filter rules want bare INTEGER item ids, same as board_relation.
+        return _parse_id_list(value.strip(), "dependency")
 
     def render(self, value: Any, text: str | None) -> str:
         return text or ""

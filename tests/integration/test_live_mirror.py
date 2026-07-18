@@ -268,14 +268,17 @@ def test_live_mirror_display_value_flows_and_fills_text(mirror_boards: MirrorBoa
 
 @pytest.mark.integration
 def test_live_mirror_item_get_fills_text(mirror_boards: MirrorBoards) -> None:
-    """`item get` runs the same fill as `item list`."""
-    got = invoke_json(["item", "get", "--id", str(mirror_boards.dst_item_id), "--no-cache"])
-    values = {cv["id"]: cv for cv in got.get("column_values") or []}
-    mirror = values[_MIRROR_COL]
-    # Propagation is guaranteed by the wait in the list test running first;
-    # still tolerate ordering by only asserting the fill when a value exists.
-    if mirror.get("display_value"):
-        assert mirror["text"] == mirror["display_value"]
+    """`item get` runs the same fill as `item list`. Polls its own read so the
+    test holds under random ordering / solo runs."""
+
+    def _mirror_filled() -> None:
+        got = invoke_json(["item", "get", "--id", str(mirror_boards.dst_item_id), "--no-cache"])
+        values = {cv["id"]: cv for cv in got.get("column_values") or []}
+        mirror = values[_MIRROR_COL]
+        assert mirror.get("display_value") == _EMAIL, f"not propagated yet: {mirror}"
+        assert mirror["text"] == _EMAIL
+
+    wait_for("item get to carry the filled mirror text", _mirror_filled, timeout_seconds=240.0)
 
 
 @pytest.mark.integration
@@ -317,3 +320,25 @@ def test_live_filter_on_mirror_refused_client_side(mirror_boards: MirrorBoards) 
         expect_exit=2,
     )
     assert "cannot filter on mirror" in (result.stderr or "") + (result.output or "")
+
+
+@pytest.mark.integration
+def test_live_filter_on_board_relation_matches_by_item_id(mirror_boards: MirrorBoards) -> None:
+    """`--filter <relation>=<item_id>` filters server-side with INTEGER ids
+    (string ids match nothing — codex review finding on the relation codec)."""
+
+    def _row_found() -> None:
+        rows = invoke_json(
+            [
+                "item",
+                "list",
+                "--board",
+                str(mirror_boards.dst_board_id),
+                "--filter",
+                f"{_REL_COL}={mirror_boards.src_item_id}",
+                "--no-cache",
+            ]
+        )
+        assert [r["id"] for r in rows] == [str(mirror_boards.dst_item_id)], rows
+
+    wait_for("board_relation filter to match the linked row", _row_found, timeout_seconds=240.0)

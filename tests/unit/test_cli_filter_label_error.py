@@ -143,6 +143,31 @@ def _stub_mirror_columns(httpx_mock: HTTPXMock) -> None:
     )
 
 
+def test_negated_mirror_filter_guidance_keeps_negation(httpx_mock: HTTPXMock) -> None:
+    """`--filter mir0!=x` guidance must suggest `text!=x`, not `text==x`."""
+    _stub_mirror_columns(httpx_mock)
+    result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "mir0!=closed"])
+    assert result.exit_code == 2, (result.exit_code, result.output)
+    combined = (result.output or "") + (result.stderr or "")
+    assert "text!=`closed`" in combined
+    assert "text==`closed`" not in combined
+
+
+def test_find_value_containing_not_equals_still_refused(httpx_mock: HTTPXMock) -> None:
+    """`item find --column mir0 --value 'a!=b'` round-trips through the filter
+    parser; the `!=` inside the VALUE must not shift the column split and
+    bypass the mirror refusal."""
+    _stub_mirror_columns(httpx_mock)
+    result = runner.invoke(
+        app,
+        ["item", "find", "--board", "42", "--column", "mir0", "--value", "a!=b"],
+    )
+    assert result.exit_code == 2, (result.exit_code, result.output)
+    combined = (result.output or "") + (result.stderr or "")
+    assert "cannot filter on mirror" in combined
+    assert all(b"items_page" not in r.content for r in httpx_mock.get_requests())
+
+
 @pytest.mark.parametrize("command", ["list", "find"])
 def test_filter_on_mirror_column_refused_client_side(httpx_mock: HTTPXMock, command: str) -> None:
     """monday rejects mirror/formula filters with an opaque

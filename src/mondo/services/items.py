@@ -32,13 +32,18 @@ class PositionRelative(StrEnum):
 
 
 def split_filter_expr(expr: str) -> tuple[str, str, str]:
-    """Return ``(column_id, raw_value, operator)`` for a `--filter` expression."""
-    if "!=" in expr:
-        col, _, raw = expr.partition("!=")
-        return col.strip(), raw, "not_any_of"
-    if "=" in expr:
-        col, _, raw = expr.partition("=")
-        return col.strip(), raw, "any_of"
+    """Return ``(column_id, raw_value, operator)`` for a `--filter` expression.
+
+    Split on the FIRST separator: `a=b!=c` is column `a` equals `b!=c`,
+    not column `a=b` not-equals `c` (a `!=` inside the value must not win
+    over an earlier `=` — `item find` round-trips values through this).
+    """
+    ne = expr.find("!=")
+    eq = expr.find("=")
+    if ne != -1 and eq == ne + 1:  # the first '=' belongs to '!='
+        return expr[:ne].strip(), expr[ne + 2 :], "not_any_of"
+    if eq != -1:
+        return expr[:eq].strip(), expr[eq + 1 :], "any_of"
     raise UsageError(f"invalid --filter {expr!r}: expected COL=VAL or COL!=VAL")
 
 
@@ -67,11 +72,12 @@ def build_filter_rule(
             # monday rejects these with an opaque InvalidColumnTypeException
             # ("This column type is not supported yet in the API") — refuse
             # before any request with an actionable alternative (#109).
+            shown_op, jmes_op = ("!=", "!=") if operator == "not_any_of" else ("=", "==")
             raise UsageError(
-                f"--filter {col}={raw!r}: monday cannot filter on {col_type} "
-                f"columns. Filter on the source board instead, or list and "
-                f"project client-side: "
-                f"-q '[?column_values[?id==`{col}` && text==`{raw}`]]'"
+                f"--filter {col}{shown_op}{raw!r}: monday cannot filter on "
+                f"{col_type} columns. Filter on the source board instead, or "
+                f"list and project client-side: "
+                f"-q '[?column_values[?id==`{col}` && text{jmes_op}`{raw}`]]'"
             )
         settings = parse_settings(definition.get("settings_str"))
         try:
