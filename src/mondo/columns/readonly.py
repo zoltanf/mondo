@@ -117,7 +117,7 @@ class FileCodec(ColumnCodec):
         return {"clear_all": True}
 
 
-for cls in (
+_READONLY_CODECS = (
     MirrorCodec,
     FormulaCodec,
     AutoNumberCodec,
@@ -130,6 +130,11 @@ for cls in (
     VoteCodec,
     ButtonCodec,
     SubtasksCodec,
-    FileCodec,
-):
+)
+
+# Column types whose values cannot be written through `column_values`.
+# Derived from the codec classes so the set can't drift from the registry.
+READONLY_TYPES = frozenset(cls.type_name for cls in _READONLY_CODECS)
+
+for cls in (*_READONLY_CODECS, FileCodec):
     register(cls())

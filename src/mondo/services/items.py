@@ -32,13 +32,18 @@ class PositionRelative(StrEnum):
 
 
 def split_filter_expr(expr: str) -> tuple[str, str, str]:
-    """Return ``(column_id, raw_value, operator)`` for a `--filter` expression."""
-    if "!=" in expr:
-        col, _, raw = expr.partition("!=")
-        return col.strip(), raw, "not_any_of"
-    if "=" in expr:
-        col, _, raw = expr.partition("=")
-        return col.strip(), raw, "any_of"
+    """Return ``(column_id, raw_value, operator)`` for a `--filter` expression.
+
+    Split on the FIRST separator: `a=b!=c` is column `a` equals `b!=c`,
+    not column `a=b` not-equals `c` (a `!=` inside the value must not win
+    over an earlier `=` — `item find` round-trips values through this).
+    """
+    ne = expr.find("!=")
+    eq = expr.find("=")
+    if ne != -1 and eq == ne + 1:  # the first '=' belongs to '!='
+        return expr[:ne].strip(), expr[ne + 2 :], "not_any_of"
+    if eq != -1:
+        return expr[:eq].strip(), expr[eq + 1 :], "any_of"
     raise UsageError(f"invalid --filter {expr!r}: expected COL=VAL or COL!=VAL")
 
 
@@ -63,18 +68,36 @@ def build_filter_rule(
         compare_value: list[Any] = [v.strip() for v in raw.split(",")]
     else:
         col_type = definition["type"]
+        if col_type in ("mirror", "formula"):
+            # monday rejects these with an opaque InvalidColumnTypeException
+            # ("This column type is not supported yet in the API") — refuse
+            # before any request with an actionable alternative (#109).
+            shown_op, jmes_op = ("!=", "!=") if operator == "not_any_of" else ("=", "==")
+            # JMESPath backticks hold JSON literals: `123` is a NUMBER and
+            # never equals the string `text` field — encode as a JSON string.
+            jmes_literal = json.dumps(raw)
+            raise UsageError(
+                f"--filter {col}{shown_op}{raw!r}: monday cannot filter on "
+                f"{col_type} columns. Filter on the source board instead, or "
+                f"list and project client-side: "
+                f"-q '[?column_values[?id==`{col}` && text{jmes_op}`{jmes_literal}`]]'"
+            )
         settings = parse_settings(definition.get("settings_str"))
         try:
             compare_value = parse_filter_value(col_type, raw, settings)
         except UnknownColumnTypeError:
             compare_value = [v.strip() for v in raw.split(",")]
         except ValueError as e:
-            board_hint = f"--board {board_id} " if board_id is not None else ""
-            raise UsageError(
-                f"--filter {col}={raw!r}: {e}. "
-                f"Run `mondo column labels {board_hint}--column {col}` "
-                f"for the canonical list."
-            ) from e
+            # `column labels` only serves status/dropdown — pointing other
+            # codecs' errors at it sends the agent to a command that refuses.
+            if col_type in ("status", "dropdown"):
+                board_hint = f"--board {board_id} " if board_id is not None else ""
+                raise UsageError(
+                    f"--filter {col}={raw!r}: {e}. "
+                    f"Run `mondo column labels {board_hint}--column {col}` "
+                    f"for the canonical list."
+                ) from e
+            raise UsageError(f"--filter {col}={raw!r}: {e}") from e
     return {"column_id": col, "compare_value": compare_value, "operator": operator}
 
 

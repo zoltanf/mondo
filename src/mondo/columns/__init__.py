@@ -30,8 +30,10 @@ from mondo.columns.base import (
     render_entry,
     render_value,
 )
+from mondo.columns.readonly import READONLY_TYPES
 
 __all__ = [
+    "READONLY_TYPES",
     "ColumnCodec",
     "UnknownColumnTypeError",
     "clear_payload_for",

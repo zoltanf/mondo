@@ -38,6 +38,7 @@ from mondo.cli._exec import (
     usage_error_or_exit,
 )
 from mondo.cli.context import GlobalOpts
+from mondo.columns import READONLY_TYPES
 from mondo.domain.column_cache import fetch_board_columns, invalidate_columns_cache
 from mondo.domain.columns_resolve import resolve_tag_names_to_ids
 from mondo.domain.resolve import resolve_required_id
@@ -250,6 +251,7 @@ def board_cmd(
 
     results: list[dict[str, Any]] = []
     created = skipped = failed = 0
+    skipped_readonly: list[str] = []
 
     try:
         with client, source.open("r", encoding="utf-8", newline="") as fh:
@@ -265,6 +267,22 @@ def board_cmd(
             header_to_col_id = _build_header_to_column_id(
                 headers, mapping, board_columns, name_col, group_col
             )
+            # Computed / read-only columns (mirror, formula, …) and file
+            # columns cannot be written through column_values — exports carry
+            # their display text, so drop them from the mapping instead of
+            # failing every row that has a value (#108). Reported in the
+            # summary so the omission isn't silent.
+            skipped_readonly = sorted(
+                {
+                    col_id
+                    for col_id in header_to_col_id.values()
+                    if (col_defs.get(col_id) or {}).get("type") in (*READONLY_TYPES, "file")
+                }
+            )
+            if skipped_readonly:
+                header_to_col_id = {
+                    h: c for h, c in header_to_col_id.items() if c not in skipped_readonly
+                }
 
             existing_names: set[str] = set()
             if idempotency_name:
@@ -340,12 +358,14 @@ def board_cmd(
 
         invalidate_board_items_cache(opts, board_id)
 
-    summary = {
+    summary: dict[str, Any] = {
         "created": created,
         "skipped": skipped,
         "failed": failed,
         "total": len(results),
     }
+    if skipped_readonly:
+        summary["skipped_readonly_columns"] = skipped_readonly
     opts.emit({"summary": summary, "results": results})
 
     if failed > 0:
