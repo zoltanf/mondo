@@ -177,6 +177,18 @@ mondo column clear --item 9876543210 --column e2e_dropdown -y
 
 So the old inline-fragment escape (`... on MirrorValue { display_value }` via `mondo graphql`) is **never necessary** for these reads — reach for it only if you need a raw field the typed selection doesn't expose.
 
+### Creating a configured mirror via API
+
+`column create --type mirror` **can** create a fully configured mirror, but the `--defaults` **write shape differs from the `settings_str` read shape** — and a malformed `defaults` is **silently ignored** (column created unconfigured, no error, empty `display_value`):
+
+```bash
+# WRITE shape: settings-wrapped, displayed_linked_columns is an ARRAY of objects
+mondo column create --board <dst> --title "Email" --type mirror --id mir0 --defaults \
+  '{"settings":{"relation_column":{"<rel_col_id>":true},"displayed_linked_columns":[{"board_id":"<src_board>","column_ids":["<src_col>"]}]}}'
+```
+
+`settings_str` reads back as a **map** (`{"displayed_linked_columns":{"<src_board>":["<src_col>"]}}`) — never copy that shape into `--defaults`. After a create, **verify with `column get-meta`**: empty `{}` settings means the shape was wrong. The authoritative write schema is `mondo graphql 'query { get_column_type_schema(type: mirror) }'`. Mirror values propagate asynchronously (a few seconds) — poll before concluding the mirror is broken.
+
 ## Multi-column writes on `item create`
 
 Repeat `--column k=v` to set multiple columns at item creation time:
