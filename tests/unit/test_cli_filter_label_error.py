@@ -114,3 +114,50 @@ def test_unknown_status_label_uses_exit_2_not_6(httpx_mock: HTTPXMock) -> None:
         ["item", "list", "--board", "42", "--filter", "status=NotALabel"],
     )
     assert result.exit_code == 2, (result.exit_code, result.output)
+
+
+def _stub_mirror_columns(httpx_mock: HTTPXMock) -> None:
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={
+            "data": {
+                "boards": [
+                    {
+                        "id": "42",
+                        "columns": [
+                            {
+                                "id": "mir0",
+                                "title": "Email",
+                                "type": "mirror",
+                                "settings_str": "{}",
+                                "archived": False,
+                            },
+                        ],
+                    }
+                ]
+            },
+            "extensions": {"request_id": "r"},
+        },
+        is_optional=True,
+    )
+
+
+@pytest.mark.parametrize("command", ["list", "find"])
+def test_filter_on_mirror_column_refused_client_side(httpx_mock: HTTPXMock, command: str) -> None:
+    """monday rejects mirror/formula filters with an opaque
+    InvalidColumnTypeException — refuse before any items request with an
+    actionable alternative (#109). `item find` shares the rule builder."""
+    _stub_mirror_columns(httpx_mock)
+    args = (
+        ["item", "list", "--board", "42", "--filter", "mir0=active"]
+        if command == "list"
+        else ["item", "find", "--board", "42", "--column", "mir0", "--value", "active"]
+    )
+    result = runner.invoke(app, args)
+    assert result.exit_code == 2, (result.exit_code, result.output)
+    combined = (result.output or "") + (result.stderr or "")
+    assert "cannot filter on mirror" in combined
+    assert "-q" in combined  # points at the client-side projection alternative
+    # Only the columns preflight ran — no items_page request was sent.
+    assert all(b"items_page" not in r.content for r in httpx_mock.get_requests())

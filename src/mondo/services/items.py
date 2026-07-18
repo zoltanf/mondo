@@ -63,6 +63,16 @@ def build_filter_rule(
         compare_value: list[Any] = [v.strip() for v in raw.split(",")]
     else:
         col_type = definition["type"]
+        if col_type in ("mirror", "formula"):
+            # monday rejects these with an opaque InvalidColumnTypeException
+            # ("This column type is not supported yet in the API") — refuse
+            # before any request with an actionable alternative (#109).
+            raise UsageError(
+                f"--filter {col}={raw!r}: monday cannot filter on {col_type} "
+                f"columns. Filter on the source board instead, or list and "
+                f"project client-side: "
+                f"-q '[?column_values[?id==`{col}` && text==`{raw}`]]'"
+            )
         settings = parse_settings(definition.get("settings_str"))
         try:
             compare_value = parse_filter_value(col_type, raw, settings)

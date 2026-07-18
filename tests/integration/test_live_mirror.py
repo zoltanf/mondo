@@ -297,3 +297,23 @@ def test_live_mirror_column_get_renders(mirror_boards: MirrorBoards) -> None:
         return rendered
 
     wait_for("column get to render the mirrored value", _rendered, timeout_seconds=240.0)
+
+
+@pytest.mark.integration
+def test_live_filter_on_mirror_refused_client_side(mirror_boards: MirrorBoards) -> None:
+    """`--filter` on a mirror column exits 2 with guidance before any items
+    request (#109) — previously monday's opaque InvalidColumnTypeException."""
+    from ._helpers import invoke
+
+    result = invoke(
+        [
+            "item",
+            "list",
+            "--board",
+            str(mirror_boards.dst_board_id),
+            "--filter",
+            f"{_MIRROR_COL}=whatever",
+        ],
+        expect_exit=2,
+    )
+    assert "cannot filter on mirror" in (result.stderr or "") + (result.output or "")

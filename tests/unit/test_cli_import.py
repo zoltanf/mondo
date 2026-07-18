@@ -180,6 +180,84 @@ class TestBasicImport:
         assert all(b"create_or_get_tag" not in r.content for r in httpx_mock.get_requests())
 
 
+class TestReadonlyColumnsSkipped:
+    """Mirror/formula/file cells in the CSV must not fail rows (#108).
+
+    `export board` writes computed columns' display text; importing that CSV
+    back previously failed every row with a value, because the read-only
+    codec's parse raises. The mapping now drops those columns up front and
+    the summary reports them.
+    """
+
+    MIRROR_COLS_RESPONSE = _ok(
+        {
+            "boards": [
+                {
+                    "id": "42",
+                    "name": "B",
+                    "columns": [
+                        {
+                            "id": "text0",
+                            "title": "Notes",
+                            "type": "text",
+                            "settings_str": "{}",
+                            "archived": False,
+                        },
+                        {
+                            "id": "mir0",
+                            "title": "Email",
+                            "type": "mirror",
+                            "settings_str": "{}",
+                            "archived": False,
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    def test_mirror_values_skipped_not_failed(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
+        src = tmp_path / "i.csv"
+        _write_csv(
+            src,
+            [
+                "name,Notes,Email",
+                "Alpha,hello,alice@example.com",
+            ],
+        )
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=self.MIRROR_COLS_RESPONSE)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        parsed = json.loads(result.stdout)
+        assert parsed["summary"]["created"] == 1
+        assert parsed["summary"]["failed"] == 0
+        assert parsed["summary"]["skipped_readonly_columns"] == ["mir0"]
+        # The mutation payload carries the writable column only.
+        body = json.loads(httpx_mock.get_requests()[-1].content)
+        values = json.loads(body["variables"]["values"])
+        assert values == {"text0": "hello"}
+
+    def test_summary_omits_key_when_nothing_skipped(
+        self, httpx_mock: HTTPXMock, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "i.csv"
+        _write_csv(src, ["name,Status", "Alpha,Done"])
+        httpx_mock.add_response(url=ENDPOINT, method="POST", json=COLS_RESPONSE)
+        httpx_mock.add_response(
+            url=ENDPOINT,
+            method="POST",
+            json=_ok({"create_item": {"id": "1", "name": "Alpha"}}),
+        )
+        result = runner.invoke(app, ["import", "board", "--board", "42", "--from", str(src)])
+        assert result.exit_code == 0, result.stdout
+        assert "skipped_readonly_columns" not in json.loads(result.stdout)["summary"]
+
+
 class TestFormulaGuardStrip:
     def test_export_guard_prefix_is_stripped(self, httpx_mock: HTTPXMock, tmp_path: Path) -> None:
         """Round-trip: guarded name, cell, and header land unguarded on monday."""
