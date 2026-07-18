@@ -149,8 +149,52 @@ def test_negated_mirror_filter_guidance_keeps_negation(httpx_mock: HTTPXMock) ->
     result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "mir0!=closed"])
     assert result.exit_code == 2, (result.exit_code, result.output)
     combined = (result.output or "") + (result.stderr or "")
-    assert "text!=`closed`" in combined
-    assert "text==`closed`" not in combined
+    assert 'text!=`"closed"`' in combined
+    assert "text==" not in combined
+
+
+def test_mirror_filter_guidance_quotes_numeric_values(httpx_mock: HTTPXMock) -> None:
+    """JMESPath backticks are JSON literals — a bare `123` is a number and
+    never equals the string `text`; guidance must emit `\"123\"`."""
+    _stub_mirror_columns(httpx_mock)
+    result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "mir0=123"])
+    assert result.exit_code == 2, (result.exit_code, result.output)
+    combined = (result.output or "") + (result.stderr or "")
+    assert 'text==`"123"`' in combined
+
+
+def test_relation_filter_error_has_no_labels_hint(httpx_mock: HTTPXMock) -> None:
+    """`--filter rel=Alice` surfaces the integer-id shape error without the
+    `mondo column labels` pointer (labels rejects relation columns)."""
+    httpx_mock.add_response(
+        url=ENDPOINT,
+        method="POST",
+        json={
+            "data": {
+                "boards": [
+                    {
+                        "id": "42",
+                        "columns": [
+                            {
+                                "id": "rel0",
+                                "title": "Link",
+                                "type": "board_relation",
+                                "settings_str": "{}",
+                                "archived": False,
+                            },
+                        ],
+                    }
+                ]
+            },
+            "extensions": {"request_id": "r"},
+        },
+        is_optional=True,
+    )
+    result = runner.invoke(app, ["item", "list", "--board", "42", "--filter", "rel0=Alice"])
+    assert result.exit_code == 2, (result.exit_code, result.output)
+    combined = (result.output or "") + (result.stderr or "")
+    assert "integer item IDs" in combined
+    assert "mondo column labels" not in combined
 
 
 def test_find_value_containing_not_equals_still_refused(httpx_mock: HTTPXMock) -> None:

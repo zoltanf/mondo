@@ -73,11 +73,14 @@ def build_filter_rule(
             # ("This column type is not supported yet in the API") — refuse
             # before any request with an actionable alternative (#109).
             shown_op, jmes_op = ("!=", "!=") if operator == "not_any_of" else ("=", "==")
+            # JMESPath backticks hold JSON literals: `123` is a NUMBER and
+            # never equals the string `text` field — encode as a JSON string.
+            jmes_literal = json.dumps(raw)
             raise UsageError(
                 f"--filter {col}{shown_op}{raw!r}: monday cannot filter on "
                 f"{col_type} columns. Filter on the source board instead, or "
                 f"list and project client-side: "
-                f"-q '[?column_values[?id==`{col}` && text{jmes_op}`{raw}`]]'"
+                f"-q '[?column_values[?id==`{col}` && text{jmes_op}`{jmes_literal}`]]'"
             )
         settings = parse_settings(definition.get("settings_str"))
         try:
@@ -85,12 +88,16 @@ def build_filter_rule(
         except UnknownColumnTypeError:
             compare_value = [v.strip() for v in raw.split(",")]
         except ValueError as e:
-            board_hint = f"--board {board_id} " if board_id is not None else ""
-            raise UsageError(
-                f"--filter {col}={raw!r}: {e}. "
-                f"Run `mondo column labels {board_hint}--column {col}` "
-                f"for the canonical list."
-            ) from e
+            # `column labels` only serves status/dropdown — pointing other
+            # codecs' errors at it sends the agent to a command that refuses.
+            if col_type in ("status", "dropdown"):
+                board_hint = f"--board {board_id} " if board_id is not None else ""
+                raise UsageError(
+                    f"--filter {col}={raw!r}: {e}. "
+                    f"Run `mondo column labels {board_hint}--column {col}` "
+                    f"for the canonical list."
+                ) from e
+            raise UsageError(f"--filter {col}={raw!r}: {e}") from e
     return {"column_id": col, "compare_value": compare_value, "operator": operator}
 
 
